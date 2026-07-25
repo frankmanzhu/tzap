@@ -212,6 +212,23 @@ pub struct ArchiveEntry {
     pub mode: u32,
     pub mtime: ArchiveTimestamp,
     pub diagnostics: Vec<MetadataDiagnostic>,
+    pub link_target: Option<String>,
+    pub created: Option<ArchiveTimestamp>,
+    pub accessed: Option<ArchiveTimestamp>,
+    pub attributes: Option<u32>,
+    pub uid: Option<u64>,
+    pub gid: Option<u64>,
+    pub uname: Option<String>,
+    pub gname: Option<String>,
+}
+
+fn pax_timestamp(
+    records: &crate::entry_metadata::PaxRecords,
+    key: &str,
+) -> Option<ArchiveTimestamp> {
+    let bytes = records.get(key)?;
+    let (sec, nsec) = crate::entry_metadata::parse_timestamp(bytes).ok()?;
+    Some(ArchiveTimestamp::new(sec, nsec))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2075,14 +2092,13 @@ impl OpenedArchive {
                 let shard = &shards[winner.shard_index];
                 let member =
                     self.decode_loaded_owned_tar_member(shard, winner.file_index, false)?;
-                let mtime = member
+                let v45 = member
                     .v45_metadata
                     .as_ref()
                     .ok_or(FormatError::InvalidArchive(
                         "revision-45 member metadata is missing",
-                    ))?
-                    .portable_mirror
-                    .mtime;
+                    ))?;
+                let mtime = v45.portable_mirror.mtime;
                 Ok(ArchiveEntry {
                     path,
                     file_data_size: winner.file_data_size,
@@ -2090,6 +2106,25 @@ impl OpenedArchive {
                     mode: member.mode,
                     mtime: ArchiveTimestamp::new(mtime.0, mtime.1),
                     diagnostics: member.diagnostics,
+                    link_target: member
+                        .link_target
+                        .as_ref()
+                        .map(|target| String::from_utf8_lossy(target).into_owned()),
+                    created: pax_timestamp(&v45.primary_records, "LIBARCHIVE.creationtime"),
+                    accessed: pax_timestamp(&v45.primary_records, "atime"),
+                    attributes: v45.portable_mirror.attributes,
+                    uid: v45.portable_mirror.uid,
+                    gid: v45.portable_mirror.gid,
+                    uname: v45
+                        .portable_mirror
+                        .uname
+                        .as_ref()
+                        .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
+                    gname: v45
+                        .portable_mirror
+                        .gname
+                        .as_ref()
+                        .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
                 })
             })
             .collect()
@@ -10847,6 +10882,14 @@ mod tests {
                 mode: 0o644,
                 mtime: ArchiveTimestamp::UNIX_EPOCH,
                 diagnostics: Vec::new(),
+                link_target: None,
+                created: None,
+                accessed: None,
+                attributes: None,
+                uid: None,
+                gid: None,
+                uname: None,
+                gname: None,
             }]
         );
         opened.verify().unwrap();
@@ -13521,6 +13564,14 @@ mod tests {
                 mode: 0o644,
                 mtime: ArchiveTimestamp::from_seconds(1_700_000_100),
                 diagnostics: Vec::new(),
+                link_target: None,
+                created: None,
+                accessed: None,
+                attributes: None,
+                uid: None,
+                gid: None,
+                uname: None,
+                gname: None,
             }]
         );
         assert_eq!(
@@ -14032,6 +14083,14 @@ mod tests {
                 mode: 0o644,
                 mtime: ArchiveTimestamp::UNIX_EPOCH,
                 diagnostics: Vec::new(),
+                link_target: None,
+                created: None,
+                accessed: None,
+                attributes: None,
+                uid: None,
+                gid: None,
+                uname: None,
+                gname: None,
             }]
         );
         assert_eq!(
@@ -14178,6 +14237,14 @@ mod tests {
                 mode: 0o644,
                 mtime: ArchiveTimestamp::UNIX_EPOCH,
                 diagnostics: Vec::new(),
+                link_target: None,
+                created: None,
+                accessed: None,
+                attributes: None,
+                uid: None,
+                gid: None,
+                uname: None,
+                gname: None,
             }]
         );
         assert_eq!(

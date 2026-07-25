@@ -1043,19 +1043,46 @@ fn streamed_list_entries(
                     .ok_or(FormatError::InvalidArchive(
                         "streamed tar member missing from final index",
                     ))?;
+            let v45 = &member.v45_metadata;
+            let mtime = v45.portable_mirror.mtime;
             Ok(ArchiveEntry {
                 path: entry.path.clone(),
                 file_data_size: entry.file_data_size,
                 kind: member.kind,
                 mode: member.mode,
-                mtime: ArchiveTimestamp::new(
-                    member.v45_metadata.portable_mirror.mtime.0,
-                    member.v45_metadata.portable_mirror.mtime.1,
-                ),
+                mtime: ArchiveTimestamp::new(mtime.0, mtime.1),
                 diagnostics: member.diagnostics.clone(),
+                link_target: member
+                    .link_target
+                    .as_ref()
+                    .map(|target| String::from_utf8_lossy(target).into_owned()),
+                created: parse_timestamp_opt(&v45.primary_records, "LIBARCHIVE.creationtime"),
+                accessed: parse_timestamp_opt(&v45.primary_records, "atime"),
+                attributes: v45.portable_mirror.attributes,
+                uid: v45.portable_mirror.uid,
+                gid: v45.portable_mirror.gid,
+                uname: v45
+                    .portable_mirror
+                    .uname
+                    .as_ref()
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
+                gname: v45
+                    .portable_mirror
+                    .gname
+                    .as_ref()
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
             })
         })
         .collect()
+}
+
+fn parse_timestamp_opt(
+    records: &crate::entry_metadata::PaxRecords,
+    key: &str,
+) -> Option<ArchiveTimestamp> {
+    let bytes = records.get(key)?;
+    let (sec, nsec) = crate::entry_metadata::parse_timestamp(bytes).ok()?;
+    Some(ArchiveTimestamp::new(sec, nsec))
 }
 
 struct StagedExtraction {
