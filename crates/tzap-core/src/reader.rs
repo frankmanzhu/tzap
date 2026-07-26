@@ -10528,11 +10528,13 @@ mod tests {
     use crate::wire::RecipientRecordV1;
     use crate::writer::NativeFileMetadata;
     use crate::writer::{
-        write_archive, write_archive_unencrypted, write_archive_with_dictionary,
-        write_archive_with_kdf, write_archive_with_recipient_wrap_records,
-        write_archive_with_root_auth, write_archive_with_root_auth_and_recipient_wrap_records,
+        write_archive, write_archive_sources_to_sink_single_pass, write_archive_unencrypted,
+        write_archive_with_dictionary, write_archive_with_kdf,
+        write_archive_with_recipient_wrap_records, write_archive_with_root_auth,
+        write_archive_with_root_auth_and_recipient_wrap_records, MemoryArchiveSink,
         PortableFileMetadata, PortableModeOrigin, PortablePosixOwner, RegularFile,
-        RootAuthSigningRequest, RootAuthWriterConfig, WriterOptions,
+        RegularFileSource, RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind,
+        WriterOptions,
     };
     #[cfg(target_os = "linux")]
     use crate::writer::{NativeAuxiliaryMetadata, NativeAuxiliaryNameEncoding};
@@ -19272,6 +19274,191 @@ mod tests {
         bytes.extend_from_slice(&string_pool);
 
         (bytes, sorted.first().unwrap().0, sorted.last().unwrap().0)
+    }
+
+    #[test]
+    fn opens_lists_and_verifies_archive_with_pax_metadata_and_symlink_target() {
+        struct CustomMember<'a> {
+            path: &'a str,
+            target: &'a [u8],
+            created_sec: u64,
+            created_nsec: u32,
+            accessed_sec: u64,
+            accessed_nsec: u32,
+        }
+
+        impl<'a> RegularFileSource for CustomMember<'a> {
+            fn archive_path(&self) -> &str {
+                self.path
+            }
+            fn entry_kind(&self) -> SourceEntryKind {
+                SourceEntryKind::Symlink
+            }
+            fn link_target(&self) -> Option<&[u8]> {
+                Some(self.target)
+            }
+            fn file_data_size(&self) -> u64 {
+                0
+            }
+            fn mode(&self) -> u32 {
+                0o777
+            }
+            fn mtime(&self) -> ArchiveTimestamp {
+                ArchiveTimestamp::new(1_700_000_000, 100_000_000)
+            }
+            fn portable_metadata(&self) -> PortableFileMetadata {
+                let mut primary_pax_records = std::collections::BTreeMap::default();
+                primary_pax_records.insert(
+                    "LIBARCHIVE.creationtime".into(),
+                    ArchiveTimestamp::new(self.created_sec as i64, self.created_nsec)
+                        .canonical_pax_value()
+                        .unwrap(),
+                );
+                primary_pax_records.insert(
+                    "atime".into(),
+                    ArchiveTimestamp::new(self.accessed_sec as i64, self.accessed_nsec)
+                        .canonical_pax_value()
+                        .unwrap(),
+                );
+
+                PortableFileMetadata {
+                    source_os: "macos".into(),
+                    source_filesystem: "apfs".into(),
+                    mode_origin: PortableModeOrigin::Native,
+                    posix_owner: Some(PortablePosixOwner {
+                        uid: 1001,
+                        gid: 1002,
+                        uname: Some("alice".into()),
+                        gname: Some("devs".into()),
+                    }),
+                    attributes: Some(0x05),
+                    native: NativeFileMetadata {
+                        required_profiles: vec![
+                            "macos-backup-v1".into(),
+                            "portable-v1".into(),
+                            "posix-backup-v1".into(),
+                        ],
+                        primary_pax_records,
+                        auxiliary_records: Vec::new(),
+                        ..Default::default()
+                    },
+                }
+            }
+            fn open(&self) -> Result<Box<dyn Read + '_>, crate::format::ArchiveWriteError> {
+                Ok(Box::new(std::io::Cursor::new(b"")))
+            }
+        }
+
+        let source = CustomMember {
+            path: "links/sym1",
+            target: b"target.txt",
+            created_sec: 1_700_000_100,
+            created_nsec: 500_000_000,
+            accessed_sec: 1_700_000_200,
+            accessed_nsec: 250_000_000,
+        };
+
+        let mut sink = MemoryArchiveSink::default();
+        write_archive_sources_to_sink_single_pass(
+            &[source],
+            &master_key(),
+            single_stream_options(),
+            &crate::crypto::KdfParams::Raw,
+            None,
+            None,
+            &mut sink,
+        )
+        .unwrap();
+        let archive_bytes = sink.volumes.remove(0);
+
+        let opened = open_archive(&archive_bytes, &master_key()).unwrap();
+
+        let entries = opened.list_files().unwrap();
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+
+        assert_eq!(entry.path, "links/sym1");
+        assert_eq!(entry.kind, TarEntryKind::Symlink);
+        assert_eq!(entry.link_target, Some("target.txt".to_string()));
+        assert_eq!(
+            entry.created,
+            Some(ArchiveTimestamp::new(1_700_000_100, 500_000_000))
+        );
+        assert_eq!(
+            entry.accessed,
+            Some(ArchiveTimestamp::new(1_700_000_200, 250_000_000))
+        );
+        assert_eq!(entry.attributes, Some(0x05));
+        assert_eq!(entry.uid, Some(1001));
+        assert_eq!(entry.gid, Some(1002));
+        assert_eq!(entry.uname, Some("alice".to_string()));
+        assert_eq!(entry.gname, Some("devs".to_string()));
+
+        let streamed_report = list_non_seekable_stream(
+            std::io::Cursor::new(archive_bytes),
+            &master_key(),
+            NonSeekableReaderOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(streamed_report.entries, entries);
+    }
+
+    #[test]
+    fn extraction_options_allow_absolute_symlinks_toggle() {
+        struct AbsSymlinkSource;
+
+        impl RegularFileSource for AbsSymlinkSource {
+            fn archive_path(&self) -> &str {
+                "abs_link"
+            }
+            fn entry_kind(&self) -> SourceEntryKind {
+                SourceEntryKind::Symlink
+            }
+            fn link_target(&self) -> Option<&[u8]> {
+                Some(b"/tmp/abs_target")
+            }
+            fn file_data_size(&self) -> u64 {
+                0
+            }
+            fn mode(&self) -> u32 {
+                0o777
+            }
+            fn mtime(&self) -> ArchiveTimestamp {
+                ArchiveTimestamp::new(1_700_000_000, 0)
+            }
+            fn open(&self) -> Result<Box<dyn Read + '_>, crate::format::ArchiveWriteError> {
+                Ok(Box::new(std::io::Cursor::new(b"")))
+            }
+        }
+
+        let mut sink = MemoryArchiveSink::default();
+        write_archive_sources_to_sink_single_pass(
+            &[AbsSymlinkSource],
+            &master_key(),
+            single_stream_options(),
+            &crate::crypto::KdfParams::Raw,
+            None,
+            None,
+            &mut sink,
+        )
+        .unwrap();
+        let archive_bytes = sink.volumes.remove(0);
+        let opened = open_archive(&archive_bytes, &master_key()).unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+
+        let mut options_disallowed = SafeExtractionOptions::default();
+        options_disallowed.allow_absolute_symlinks = false;
+        assert!(opened
+            .extract_indexed_files_to(tmp.path(), options_disallowed, 1)
+            .is_err());
+
+        let tmp_allowed = tempfile::tempdir().unwrap();
+        let mut options_allowed = SafeExtractionOptions::default();
+        options_allowed.allow_absolute_symlinks = true;
+        opened
+            .extract_indexed_files_to(tmp_allowed.path(), options_allowed, 1)
+            .unwrap();
     }
 
     fn test_member(path: &[u8], data: &[u8]) -> Vec<u8> {

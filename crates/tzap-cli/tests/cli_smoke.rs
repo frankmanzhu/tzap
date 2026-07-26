@@ -6519,6 +6519,62 @@ fn cli_symlink_target_and_mtime_round_trip_without_following_target() {
     assert_eq!(target_after.len(), target_before.len());
 }
 
+#[cfg(unix)]
+#[test]
+fn cli_extract_allow_absolute_symlinks_toggle() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let archive = temp.path().join("abs_symlink.tzap");
+    let link = temp.path().join("abs_link");
+    let extract_disallowed = temp.path().join("extract_disallowed");
+    let extract_allowed = temp.path().join("extract_allowed");
+
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    std::os::unix::fs::symlink("/tmp/abs_target", &link).unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .arg("create")
+        .arg("--output")
+        .arg(&archive)
+        .arg(&link)
+        .arg("--keyfile")
+        .arg(&keyfile)
+        .assert()
+        .success();
+
+    // Default extraction rejects absolute symlink
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .arg("extract")
+        .arg(&archive)
+        .arg("-C")
+        .arg(&extract_disallowed)
+        .arg("--keyfile")
+        .arg(&keyfile)
+        .assert()
+        .failure();
+
+    // Extraction with --allow-absolute-symlinks succeeds
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .arg("extract")
+        .arg(&archive)
+        .arg("-C")
+        .arg(&extract_allowed)
+        .arg("--allow-absolute-symlinks")
+        .arg("--keyfile")
+        .arg(&keyfile)
+        .assert()
+        .success();
+
+    let restored_link = extract_allowed.join("abs_link");
+    assert_eq!(
+        fs::read_link(&restored_link).unwrap(),
+        Path::new("/tmp/abs_target")
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn cli_create_rejects_windows_reserved_device_path_input() {

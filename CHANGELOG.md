@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.12 - 2026-07-26
+
+- Enables `--allow-absolute-symlinks` extraction toggle for absolute symlink recovery outside the destination directory.
+- Fixes validation logic to correctly enforce NFC normalization on absolute symlink targets.
+- Verifies implementation of PAX records such as `LIBARCHIVE.creationtime` and `atime` across the reader stack.
+- Bumps protocol test coverage by renaming legacy v36 corpus structures to accurately map to v45 expectations.
+
 ## 0.1.11 - 2026-07-17
 
 - Closes Linux revision-45 metadata gaps for sparse allocation, auxiliary

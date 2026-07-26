@@ -186,7 +186,7 @@ fn package_readmes_render_without_workspace_paths() {
     assert!(core_readme.contains("write_archive"));
     assert!(core_readme.contains("standalone archive foundation"));
     assert!(signing_readme.contains("# tzap-plugin-signing"));
-    assert!(signing_readme.contains("tzap-plugin-signing = \"0.1.11\""));
+    assert!(signing_readme.contains("tzap-plugin-signing = \"0.1.12\""));
     assert!(signing_readme.contains("authenticator_value_for_request"));
     assert!(keywrap_readme.contains("# tzap-plugin-keywrap"));
     assert!(keywrap_readme.contains("tzap-core"));

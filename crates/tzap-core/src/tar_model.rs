@@ -8565,11 +8565,11 @@ pub(crate) fn validate_symlink_target(link_path: &[u8], target: &[u8]) -> Result
     }
     let target = std::str::from_utf8(target).map_err(|_| FormatError::UnsafeArchivePath)?;
     let link_path = std::str::from_utf8(link_path).map_err(|_| FormatError::UnsafeArchivePath)?;
-    if target.starts_with('/') {
-        return Ok(());
-    }
     if target.nfc().collect::<String>() != target {
         return Err(FormatError::UnsafeArchivePath);
+    }
+    if target.starts_with('/') {
+        return Ok(());
     }
     let mut stack = link_path
         .split('/')
@@ -10245,6 +10245,36 @@ fn create_hardlink(
     }
 }
 
+#[cfg(unix)]
+fn do_create_symlink(destination: &PreparedDestination, target: &str) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::AsRawFd;
+
+    let target_c = CString::new(target.as_bytes())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "nul in target"))?;
+    let leaf_c = CString::new(destination.leaf.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "nul in leaf"))?;
+
+    let res = unsafe {
+        libc::symlinkat(
+            target_c.as_ptr(),
+            destination.parent.as_raw_fd(),
+            leaf_c.as_ptr(),
+        )
+    };
+    if res == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(unix))]
+fn do_create_symlink(destination: &PreparedDestination, target: &str) -> std::io::Result<()> {
+    destination.parent.symlink_file(target, &destination.leaf)
+}
+
 fn create_symlink(
     destination: &PreparedDestination,
     target: &[u8],
@@ -10257,7 +10287,12 @@ fn create_symlink(
     if target.starts_with('/') && !options.allow_absolute_symlinks {
         return Err(FormatError::UnsafeArchivePath);
     }
-    match destination.parent.symlink_file(target, &destination.leaf) {
+    let res = if target.starts_with('/') {
+        do_create_symlink(destination, target)
+    } else {
+        destination.parent.symlink_file(target, &destination.leaf)
+    };
+    match res {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             Err(FormatError::UnsafeOverwrite)
@@ -12444,5 +12479,26 @@ mod tests {
             diagnostic.metadata_class == "sparse-layout"
                 && diagnostic.restore_policy == Some(RestorePolicy::Content)
         }));
+    }
+
+    #[test]
+    fn validate_symlink_target_rules() {
+        // Valid absolute symlink target
+        assert!(validate_symlink_target(b"sub/link", b"/tmp/abs_target").is_ok());
+
+        // Invalid absolute symlink target with non-NFC characters
+        let non_nfc_abs = "/tmp/abs_\u{0065}\u{0301}";
+        assert!(validate_symlink_target(b"sub/link", non_nfc_abs.as_bytes()).is_err());
+
+        // Invalid symlink targets containing null, backslash, or colon
+        assert!(validate_symlink_target(b"sub/link", b"/tmp/target\0bad").is_err());
+        assert!(validate_symlink_target(b"sub/link", b"/tmp/target\\bad").is_err());
+        assert!(validate_symlink_target(b"sub/link", b"/tmp/target:bad").is_err());
+
+        // Valid relative target within sub directory
+        assert!(validate_symlink_target(b"sub/link", b"../file.txt").is_ok());
+
+        // Invalid relative target escaping root
+        assert!(validate_symlink_target(b"sub/link", b"../../file.txt").is_err());
     }
 }
