@@ -14,7 +14,7 @@ crates when origin-authenticated signatures are part of your product.
 
 ```toml
 [dependencies]
-tzap-core = "0.1.11"
+tzap-core = "0.1.12"
 ```
 
 ## What It Provides
@@ -28,6 +28,7 @@ tzap-core = "0.1.11"
 - file-backed `ArchiveReadAt` opening for lazy random-access extraction
 - safe extraction and tar metadata normalization
 - RootAuth writer request, footer, and verifier callback surfaces
+- RecipientWrap record parsing and HPKE dispatch surfaces
 
 ## Example
 
@@ -70,19 +71,20 @@ results through `ArchiveContentVerification::metadata_report()`. Custom
 `RegularFileSource` implementations can return `PortableFileMetadata` to carry
 mode origin, POSIX numeric ownership, portable attributes, and source identity.
 
-## RootAuth Integration
+## Companion Plugin Integration
 
 `tzap-core` is the standalone archive foundation. It exposes writer request,
-footer, and verification callback surfaces, so signing profiles compose cleanly
-through companion crates.
+footer, and verification callback surfaces so signing and recipient key-wrap
+profiles compose cleanly through companion crates:
 
-For Ed25519 or X.509 RootAuth signing, pair this crate with
-[`tzap-plugin-signing`](https://crates.io/crates/tzap-plugin-signing). The core
-crate recomputes archive roots and gates when a plugin verifier may claim full
-RootAuth or public no-key verification.
+- **RootAuth Signing**: Pair with [`tzap-plugin-signing`](https://crates.io/crates/tzap-plugin-signing) for Ed25519 or X.509 RootAuth profiles.
+- **HPKE RecipientWrap**: Pair with [`tzap-plugin-keywrap`](https://crates.io/crates/tzap-plugin-keywrap) for multi-recipient HPKE key wrap profiles.
 
 ## More Information
 
 - Repository: <https://github.com/tzap-org/tzap>
 - Implemented format specification: <https://github.com/tzap-org/tzap/blob/main/specs/tzap-format-revisedv45.md>
 - CLI crate: <https://crates.io/crates/tzap>
+- Signing plugin: <https://crates.io/crates/tzap-plugin-signing>
+- Keywrap plugin: <https://crates.io/crates/tzap-plugin-keywrap>
+

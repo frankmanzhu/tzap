@@ -161,3 +161,5 @@ from archive data; raw-key archives require the original 32-byte key.
 - Format specification: <https://github.com/tzap-org/tzap/blob/main/specs/tzap-format-revisedv45.md>
 - Library crate: <https://crates.io/crates/tzap-core>
 - Signing plugin crate: <https://crates.io/crates/tzap-plugin-signing>
+- Keywrap plugin crate: <https://crates.io/crates/tzap-plugin-keywrap>
+

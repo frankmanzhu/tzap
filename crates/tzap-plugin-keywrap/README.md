@@ -72,5 +72,7 @@ caller-owned through `PrivateKeyLookup::is_recipient_certificate_accepted`.
 - Repository: <https://github.com/tzap-org/tzap>
 - Core crate: <https://crates.io/crates/tzap-core>
 - CLI crate: <https://crates.io/crates/tzap>
+- Signing plugin crate: <https://crates.io/crates/tzap-plugin-signing>
 - Implemented format specification: <https://github.com/tzap-org/tzap/blob/main/specs/tzap-format-revisedv45.md>
 - v45 RecipientWrap spec: <https://github.com/tzap-org/tzap/blob/main/specs/plugin/tzap-plugin-keywrap-v1-proposed-v45.md>
+
