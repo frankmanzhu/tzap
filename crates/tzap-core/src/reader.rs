@@ -19469,10 +19469,7 @@ mod tests {
             Err(crate::format::FormatError::FilesystemExtractionFailed(msg)) => {
                 assert_eq!(msg, "failed to create symlink");
             }
-            Err(other) => panic!(
-                "expected Ok or FilesystemExtractionFailed, got {:?}",
-                other
-            ),
+            Err(other) => panic!("expected Ok or FilesystemExtractionFailed, got {:?}", other),
         }
     }
 
