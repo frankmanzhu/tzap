@@ -19451,18 +19451,29 @@ mod tests {
             allow_absolute_symlinks: false,
             ..Default::default()
         };
-        assert!(opened
-            .extract_indexed_files_to(tmp.path(), options_disallowed, 1)
-            .is_err());
+        assert_eq!(
+            opened
+                .extract_indexed_files_to(tmp.path(), options_disallowed, 1)
+                .unwrap_err(),
+            crate::format::FormatError::UnsafeArchivePath
+        );
 
         let tmp_allowed = tempfile::tempdir().unwrap();
         let options_allowed = SafeExtractionOptions {
             allow_absolute_symlinks: true,
             ..Default::default()
         };
-        opened
-            .extract_indexed_files_to(tmp_allowed.path(), options_allowed, 1)
-            .unwrap();
+        let res_allowed = opened.extract_indexed_files_to(tmp_allowed.path(), options_allowed, 1);
+        match res_allowed {
+            Ok(_) => {}
+            Err(crate::format::FormatError::FilesystemExtractionFailed(msg)) => {
+                assert_eq!(msg, "failed to create symlink");
+            }
+            Err(other) => panic!(
+                "expected Ok or FilesystemExtractionFailed, got {:?}",
+                other
+            ),
+        }
     }
 
     fn test_member(path: &[u8], data: &[u8]) -> Vec<u8> {
