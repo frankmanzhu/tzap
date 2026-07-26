@@ -19447,15 +19447,19 @@ mod tests {
 
         let tmp = tempfile::tempdir().unwrap();
 
-        let mut options_disallowed = SafeExtractionOptions::default();
-        options_disallowed.allow_absolute_symlinks = false;
+        let options_disallowed = SafeExtractionOptions {
+            allow_absolute_symlinks: false,
+            ..Default::default()
+        };
         assert!(opened
             .extract_indexed_files_to(tmp.path(), options_disallowed, 1)
             .is_err());
 
         let tmp_allowed = tempfile::tempdir().unwrap();
-        let mut options_allowed = SafeExtractionOptions::default();
-        options_allowed.allow_absolute_symlinks = true;
+        let options_allowed = SafeExtractionOptions {
+            allow_absolute_symlinks: true,
+            ..Default::default()
+        };
         opened
             .extract_indexed_files_to(tmp_allowed.path(), options_allowed, 1)
             .unwrap();
