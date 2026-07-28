@@ -3727,8 +3727,8 @@ fn windows_security_restore_privileges_available(security_information: u32) -> b
     use std::ptr;
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, SetLastError, ERROR_SUCCESS};
     use windows_sys::Win32::Security::{
-        AdjustTokenPrivileges, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED, SE_RESTORE_NAME,
-        SE_SECURITY_NAME, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
+        AdjustTokenPrivileges, LookupPrivilegeValueW, SE_BACKUP_NAME, SE_PRIVILEGE_ENABLED,
+        SE_RESTORE_NAME, SE_SECURITY_NAME, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
     };
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -3763,7 +3763,8 @@ fn windows_security_restore_privileges_available(security_information: u32) -> b
                 && GetLastError() == ERROR_SUCCESS
         }
     };
-    let available = enable(SE_RESTORE_NAME)
+    let available = enable(SE_BACKUP_NAME)
+        && enable(SE_RESTORE_NAME)
         && (security_information & 0x0000_0008 == 0 || enable(SE_SECURITY_NAME));
     // SAFETY: `token` was returned by OpenProcessToken and is closed once.
     unsafe { CloseHandle(token) };
@@ -4127,6 +4128,8 @@ struct FilesystemRestoreHandler<'a> {
     deferred_hardlinks: Vec<(Vec<u8>, Vec<u8>)>,
     defer_directories: bool,
     deferred_directories: Vec<(Vec<u8>, MemberMetadata, Vec<StagedAuxiliary>)>,
+    #[cfg(windows)]
+    deferred_windows_objects: Vec<(Vec<u8>, TarEntryKind, MemberMetadata)>,
     active_auxiliary: Option<StagedAuxiliary>,
     staged_auxiliary: Vec<StagedAuxiliary>,
 }
@@ -4155,6 +4158,8 @@ impl<'a> FilesystemRestoreHandler<'a> {
             deferred_hardlinks: Vec::new(),
             defer_directories: false,
             deferred_directories: Vec::new(),
+            #[cfg(windows)]
+            deferred_windows_objects: Vec::new(),
             active_auxiliary: None,
             staged_auxiliary: Vec::new(),
         }
@@ -4224,6 +4229,17 @@ impl<'a> FilesystemRestoreHandler<'a> {
                 }
             }
         }
+        #[cfg(windows)]
+        for (path, kind, metadata) in std::mem::take(&mut self.deferred_windows_objects) {
+            replay_windows_descendant_metadata(
+                self.root,
+                &path,
+                kind,
+                &metadata,
+                self.options,
+                &mut diagnostics,
+            )?;
+        }
         Ok(diagnostics)
     }
 
@@ -4255,6 +4271,18 @@ impl<'a> FilesystemRestoreHandler<'a> {
                 "native auxiliary payload was not restored for its archive member",
             )
             .into());
+        }
+        #[cfg(windows)]
+        if self.defer_directories
+            && self.options.restore_policy == RestorePolicy::System
+            && self.options.system_authorized
+            && matches!(member.kind, TarEntryKind::Regular | TarEntryKind::Symlink)
+        {
+            self.deferred_windows_objects.push((
+                member.path.clone(),
+                member.kind,
+                member.v45_metadata.clone(),
+            ));
         }
         if member.reparse_placeholder {
             return Ok(diagnostics);
@@ -7120,7 +7148,7 @@ fn apply_windows_security_descriptor(
             return Ok(());
         }
         return Err(FormatError::ReaderUnsupported(
-            "Windows security restoration requires SeRestorePrivilege and optional SeSecurityPrivilege",
+            "Windows security restoration requires SeBackupPrivilege, SeRestorePrivilege, and optional SeSecurityPrivilege",
         ));
     }
     let desired_access = READ_CONTROL
@@ -7132,7 +7160,7 @@ fn apply_windows_security_descriptor(
             0
         };
     // SAFETY: the original handle is live and flags preserve no-follow access to its object.
-    let security_handle = unsafe {
+    let reopened_security_handle = unsafe {
         ReOpenFile(
             file.as_raw_handle().cast(),
             desired_access,
@@ -7140,6 +7168,20 @@ fn apply_windows_security_descriptor(
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
         )
     };
+    let (security_handle, owns_security_handle) =
+        if reopened_security_handle.is_null() || reopened_security_handle as isize == -1 {
+            if file.metadata().is_ok_and(|metadata| metadata.is_dir()) {
+                // Directory finalization opens its pinned handle with the
+                // security access mask up front. ReOpenFile can still reject
+                // directory handles even with backup semantics, so retain the
+                // already-authorized pinned handle.
+                (file.as_raw_handle().cast(), false)
+            } else {
+                (reopened_security_handle, true)
+            }
+        } else {
+            (reopened_security_handle, true)
+        };
     if security_handle.is_null() || security_handle as isize == -1 {
         let error = std::io::Error::last_os_error();
         return record_metadata_application_failure(
@@ -7188,7 +7230,9 @@ fn apply_windows_security_descriptor(
             ) != 0
     };
     if !descriptor_components_ok {
-        unsafe { CloseHandle(security_handle) };
+        if owns_security_handle {
+            unsafe { CloseHandle(security_handle) };
+        }
         return Err(FormatError::InvalidArchive(
             "Windows security descriptor components are invalid",
         ));
@@ -7255,7 +7299,9 @@ fn apply_windows_security_descriptor(
         }
     }
     if let Some(set_error) = set_error {
-        unsafe { CloseHandle(security_handle) };
+        if owns_security_handle {
+            unsafe { CloseHandle(security_handle) };
+        }
         return record_metadata_application_failure(
             diagnostics,
             MetadataDiagnostic::new(
@@ -7299,7 +7345,9 @@ fn apply_windows_security_descriptor(
                 &mut needed,
             )
         } != 0;
-    unsafe { CloseHandle(security_handle) };
+    if owns_security_handle {
+        unsafe { CloseHandle(security_handle) };
+    }
     if get_ok && actual != payload && windows_security_descriptors_equivalent(payload, &actual) {
         diagnostics.push(
             MetadataDiagnostic::new(
@@ -8747,30 +8795,7 @@ fn open_existing_regular_file(target: &PreparedDestination) -> Result<fs::File, 
 fn open_existing_directory(target: &PreparedDestination) -> Result<fs::File, FormatError> {
     #[cfg(windows)]
     {
-        let mut options = CapOpenOptions::new();
-        options
-            .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-            .follow(FollowSymlinks::No);
-        let directory = target
-            .parent
-            .open_with(&target.leaf, &options)
-            .map(cap_std::fs::File::into_std)
-            .map_err(|_| {
-                FormatError::FilesystemExtractionFailed(
-                    "failed to open directory for metadata restoration",
-                )
-            })?;
-        let metadata = directory.metadata().map_err(|_| {
-            FormatError::FilesystemExtractionFailed(
-                "failed to inspect directory for metadata restoration",
-            )
-        })?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            return Err(FormatError::UnsafeArchivePath);
-        }
-        Ok(directory)
+        open_existing_windows_directory_with_access(target, 0)
     }
 
     #[cfg(not(windows))]
@@ -8795,10 +8820,121 @@ fn open_existing_directory(target: &PreparedDestination) -> Result<fs::File, For
 }
 
 #[cfg(windows)]
-fn open_existing_windows_reparse(target: &PreparedDestination) -> Result<fs::File, FormatError> {
+fn open_existing_windows_directory_with_access(
+    target: &PreparedDestination,
+    additional_access: u32,
+) -> Result<fs::File, FormatError> {
     let mut options = CapOpenOptions::new();
     options
-        .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+        .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | additional_access)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .follow(FollowSymlinks::No);
+    let directory = target
+        .parent
+        .open_with(&target.leaf, &options)
+        .map(cap_std::fs::File::into_std)
+        .map_err(|_| {
+            FormatError::FilesystemExtractionFailed(
+                "failed to open directory for metadata restoration",
+            )
+        })?;
+    let metadata = directory.metadata().map_err(|_| {
+        FormatError::FilesystemExtractionFailed(
+            "failed to inspect directory for metadata restoration",
+        )
+    })?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(FormatError::UnsafeArchivePath);
+    }
+    Ok(directory)
+}
+
+#[cfg(windows)]
+fn open_existing_windows_regular_with_access(
+    target: &PreparedDestination,
+    additional_access: u32,
+) -> Result<fs::File, FormatError> {
+    let mut options = CapOpenOptions::new();
+    options
+        .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | additional_access)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .follow(FollowSymlinks::No);
+    let file = target
+        .parent
+        .open_with(&target.leaf, &options)
+        .map(cap_std::fs::File::into_std)
+        .map_err(|_| {
+            FormatError::FilesystemExtractionFailed(
+                "failed to reopen regular file for final Windows metadata restoration",
+            )
+        })?;
+    let metadata = file.metadata().map_err(|_| {
+        FormatError::FilesystemExtractionFailed(
+            "failed to inspect regular file for final Windows metadata restoration",
+        )
+    })?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(FormatError::UnsafeArchivePath);
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn windows_security_access(
+    metadata: &MemberMetadata,
+    options: SafeExtractionOptions,
+) -> Result<u32, FormatError> {
+    use windows_sys::Win32::Storage::FileSystem::{READ_CONTROL, WRITE_DAC, WRITE_OWNER};
+    use windows_sys::Win32::System::SystemServices::ACCESS_SYSTEM_SECURITY;
+
+    if metadata.declaration.source_os != "windows"
+        || options.restore_policy != RestorePolicy::System
+        || !options.system_authorized
+    {
+        return Ok(0);
+    }
+    let Some(record) = metadata
+        .auxiliary
+        .iter()
+        .find(|record| record.kind == "windows.security-descriptor")
+    else {
+        return Ok(0);
+    };
+    let security_information = record
+        .meta
+        .get("TZAP.aux.meta.security-information")
+        .map(|value| parse_lower_hex_u32(value, "Windows security information"))
+        .transpose()?
+        .ok_or(FormatError::InvalidArchive(
+            "Windows security descriptor lacks its information mask",
+        ))?;
+    if !windows_security_restore_privileges_available(security_information) {
+        return Ok(0);
+    }
+    Ok(READ_CONTROL
+        | WRITE_DAC
+        | WRITE_OWNER
+        | if security_information & 0x0000_0008 != 0 {
+            ACCESS_SYSTEM_SECURITY
+        } else {
+            0
+        })
+}
+
+#[cfg(windows)]
+fn open_existing_windows_reparse(target: &PreparedDestination) -> Result<fs::File, FormatError> {
+    open_existing_windows_reparse_with_access(target, 0)
+}
+
+#[cfg(windows)]
+fn open_existing_windows_reparse_with_access(
+    target: &PreparedDestination,
+    additional_access: u32,
+) -> Result<fs::File, FormatError> {
+    let mut options = CapOpenOptions::new();
+    options
+        .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | additional_access)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
         .follow(FollowSymlinks::No);
@@ -8852,7 +8988,10 @@ fn apply_restored_directory_metadata(
     let directory = if exact_reparse {
         open_existing_windows_reparse(&destination)?
     } else {
-        open_existing_directory(&destination)?
+        open_existing_windows_directory_with_access(
+            &destination,
+            windows_security_access(metadata, options)?,
+        )?
     };
     #[cfg(not(windows))]
     let directory = open_existing_directory(&destination)?;
@@ -8865,6 +9004,31 @@ fn apply_restored_directory_metadata(
         options,
         diagnostics,
     )
+}
+
+#[cfg(windows)]
+pub(crate) fn replay_windows_descendant_metadata(
+    root: &Path,
+    path: &[u8],
+    kind: TarEntryKind,
+    metadata: &MemberMetadata,
+    options: SafeExtractionOptions,
+    diagnostics: &mut Vec<MetadataDiagnostic>,
+) -> Result<(), FormatError> {
+    let access = windows_security_access(metadata, options)?;
+    let file = match kind {
+        TarEntryKind::Regular => {
+            let destination = existing_safe_regular_path(root, path)?;
+            open_existing_windows_regular_with_access(&destination, access)?
+        }
+        TarEntryKind::Symlink => {
+            let destination = existing_safe_windows_reparse_path(root, path)?;
+            open_existing_windows_reparse_with_access(&destination, access)?
+        }
+        _ => return Ok(()),
+    };
+    apply_windows_security_descriptor(&file, path, metadata, options, diagnostics)?;
+    apply_windows_basic_metadata(&file, path, metadata, options, diagnostics)
 }
 
 pub(crate) fn finalize_committed_directory_metadata(
@@ -8905,6 +9069,26 @@ pub(crate) fn finalize_committed_directory_metadata(
             options,
             &mut member.diagnostics,
         )?;
+    }
+    #[cfg(windows)]
+    if options.restore_policy == RestorePolicy::System && options.system_authorized {
+        // Applying an inherited directory DACL can update a descendant's
+        // security descriptor and Windows ChangeTime. Replay exact file and
+        // reparse metadata after every directory has reached its final
+        // security state.
+        for member in members
+            .iter_mut()
+            .filter(|member| matches!(member.kind, TarEntryKind::Regular | TarEntryKind::Symlink))
+        {
+            replay_windows_descendant_metadata(
+                root,
+                &member.path,
+                member.kind,
+                &member.v45_metadata,
+                options,
+                &mut member.diagnostics,
+            )?;
+        }
     }
     Ok(())
 }

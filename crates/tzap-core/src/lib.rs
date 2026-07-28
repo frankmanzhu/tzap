@@ -8,6 +8,8 @@ pub mod crypto;
 pub mod entry_metadata;
 pub mod fec;
 pub mod format;
+#[cfg(target_os = "linux")]
+pub mod linux_metadata;
 #[cfg(target_os = "macos")]
 pub mod macos_metadata;
 pub mod metadata;
@@ -16,6 +18,8 @@ pub mod padding;
 pub mod reader;
 pub mod root_auth;
 pub mod tar_model;
+#[cfg(windows)]
+pub mod windows_metadata;
 pub mod wire;
 pub mod writer;
 

@@ -36,6 +36,8 @@ use crate::root_auth::{
     root_auth_descriptor_digest_for_revision, signer_identity_digest, ArchiveRootInputs,
     CriticalMetadataDigestInputs, DataBlockMerkleLeaf, FecLayoutObjectRow,
 };
+#[cfg(windows)]
+use crate::tar_model::replay_windows_descendant_metadata;
 use crate::tar_model::{
     metadata_verification_report, parse_tar_member_group, plan_owned_member_restore, restore_phase,
     restore_regular_file_metadata_to_open_file, restore_streaming_tar_member_group,
@@ -3422,15 +3424,46 @@ impl OpenedArchive {
                 .cmp(&restore_phase(&right.2))
                 .then_with(|| left.2.path.cmp(&right.2.path))
         });
-        planned
-            .into_iter()
+        let restored = planned
+            .iter()
             .map(|(path, entry, _)| {
                 let shard = &shards[entry.shard_index];
                 let diagnostics =
                     self.stream_loaded_file_to_path(shard, entry.file_index, root, options)?;
-                Ok((path, diagnostics))
+                Ok((path.clone(), diagnostics))
             })
-            .collect()
+            .collect::<Result<Vec<_>, FormatError>>()?;
+        #[cfg(windows)]
+        let mut restored = restored;
+        #[cfg(windows)]
+        if options.restore_policy == crate::entry_metadata::RestorePolicy::System
+            && options.system_authorized
+        {
+            // Directory security is restored last so children can be created
+            // safely. Applying an inherited DACL can update descendant
+            // security and ChangeTime, so replay exact descendant metadata
+            // only after every selected directory has reached its final state.
+            for ((_, _, member), (_, diagnostics)) in planned.iter().zip(restored.iter_mut()) {
+                if !matches!(member.kind, TarEntryKind::Regular | TarEntryKind::Symlink) {
+                    continue;
+                }
+                let metadata = member
+                    .v45_metadata
+                    .as_ref()
+                    .ok_or(FormatError::InvalidArchive(
+                        "revision-45 member metadata is missing",
+                    ))?;
+                replay_windows_descendant_metadata(
+                    root,
+                    &member.path,
+                    member.kind,
+                    metadata,
+                    options,
+                    diagnostics,
+                )?;
+            }
+        }
+        Ok(restored)
     }
 
     fn decode_loaded_owned_tar_member(

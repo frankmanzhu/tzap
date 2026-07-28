@@ -22,15 +22,13 @@ use tzap_core::format::{
     READER_MAX_ARGON2ID_PARALLELISM, READER_MAX_ARGON2ID_T_COST,
     READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
 };
-#[cfg(target_os = "linux")]
-use tzap_core::linux_posix_acl_xattr_to_schily;
 use tzap_core::reader::{ArchiveEntry, ArchiveIndexEntry, RecipientWrapRecordContext};
 use tzap_core::wire::{CryptoHeader, CryptoHeaderFixed, VolumeHeader};
 #[cfg(all(test, target_os = "macos"))]
 use tzap_core::write_archive;
 #[cfg(unix)]
 use tzap_core::PortablePosixOwner;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use tzap_core::{canonical_base64_encode, encode_percent_name};
 use tzap_core::{
     extract_non_seekable_stream_to_dir, extract_non_seekable_stream_to_dir_with_bootstrap_sidecar,
@@ -68,7 +66,7 @@ use tzap_core::{
 use tzap_core::{write_archive_with_kdf, RegularFile};
 #[cfg(test)]
 use tzap_core::{MetadataDiagnosticStatus, MetadataOperation};
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows))]
 use tzap_core::{NativeAuxiliaryMetadata, NativeAuxiliaryNameEncoding, RestoreClass};
 use tzap_plugin_keywrap::{
     dispatch_key_wrap_record, wrap_master_key_for_recipient,
@@ -3444,6 +3442,12 @@ fn apply_selected_hardlink_topology(specs: &mut [InputSpec]) -> Result<()> {
                 canonical.mtime,
                 canonical.portable_metadata.clone(),
             );
+            // A hardlink alias owns topology, not a second file object.
+            // Creation/access times belong to the canonical inode and would
+            // otherwise introduce source-OS primary keys on an alias whose
+            // v45 declaration is intentionally portable-only.
+            portable_metadata.created = None;
+            portable_metadata.accessed = None;
             portable_metadata.native = NativeFileMetadata::default();
             let alias = &mut specs[index];
             alias.entry_kind = SourceEntryKind::Hardlink;
@@ -4924,57 +4928,9 @@ fn portable_symlink_metadata(
 #[cfg(target_os = "linux")]
 fn capture_linux_symlink_metadata(
     input: &Path,
-    identity: InputIdentity,
+    _identity: InputIdentity,
 ) -> Result<NativeFileMetadata> {
-    use std::os::unix::ffi::OsStrExt;
-
-    let mut native = NativeFileMetadata::default();
-    for name in xattr::list(input)
-        .with_context(|| format!("failed to list symlink xattrs for {}", input.display()))?
-    {
-        let Some(value) = xattr::get(input, &name)
-            .with_context(|| format!("failed to read symlink xattr on {}", input.display()))?
-        else {
-            bail!("symlink xattr changed while scanning {}", input.display());
-        };
-        let name_bytes = name.as_bytes();
-        let profile = if name_bytes.starts_with(b"security.")
-            || name_bytes.starts_with(b"trusted.")
-            || name_bytes.starts_with(b"system.")
-        {
-            "linux-backup-v1"
-        } else {
-            "posix-backup-v1"
-        };
-        let encoded_name = encode_percent_name(name_bytes).map_err(|error| anyhow!(error))?;
-        native.primary_pax_records.insert(
-            format!("LIBARCHIVE.xattr.{encoded_name}"),
-            canonical_base64_encode(&value),
-        );
-        native.required_profiles.push(profile.into());
-    }
-    native.primary_pax_records.insert(
-        "TZAP.unix.ctime-observed".into(),
-        ArchiveTimestamp::new(
-            identity.change_time_seconds,
-            identity.change_time_nanoseconds as u32,
-        )
-        .canonical_pax_value()
-        .map_err(|error| anyhow!(error))?,
-    );
-    if let Some(creation_time) = identity.creation_time {
-        native.primary_pax_records.insert(
-            "LIBARCHIVE.creationtime".into(),
-            creation_time
-                .canonical_pax_value()
-                .map_err(|error| anyhow!(error))?,
-        );
-        native.required_profiles.push("linux-backup-v1".into());
-    }
-    native.required_profiles.push("posix-backup-v1".into());
-    native.required_profiles.sort();
-    native.required_profiles.dedup();
-    Ok(native)
+    tzap_core::linux_metadata::capture_linux_metadata(input, true).map_err(Into::into)
 }
 
 #[cfg(unix)]
@@ -4994,198 +4950,9 @@ fn symlink_target_bytes(path: &Path) -> io::Result<Vec<u8>> {
 #[cfg(target_os = "linux")]
 fn capture_native_file_metadata(
     input: &Path,
-    identity: InputIdentity,
+    _identity: InputIdentity,
 ) -> Result<NativeFileMetadata> {
-    use std::os::fd::AsRawFd as _;
-    use std::os::unix::ffi::OsStrExt;
-    use xattr::FileExt as _;
-
-    let (file, metadata_only) = open_linux_metadata_file(input)
-        .with_context(|| format!("failed to open {} for metadata capture", input.display()))?;
-    let opened_identity = input_identity(&file.metadata().with_context(|| {
-        format!(
-            "failed to identify opened metadata object {}",
-            input.display()
-        )
-    })?)?;
-    if opened_identity != identity {
-        bail!("input changed before metadata capture: {}", input.display());
-    }
-    let mut native = NativeFileMetadata::default();
-    // Keep the primary local-PAX record comfortably below its aggregate cap.
-    // Larger aggregate xattr sets use the format's hashed auxiliary framing.
-    const INLINE_XATTR_BUDGET: usize = 32 * 1024 * 1024;
-    let mut inline_xattr_bytes = 0usize;
-    #[cfg(target_os = "linux")]
-    let mut captured_posix_acl = false;
-    let metadata_path =
-        metadata_only.then(|| PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd())));
-    for name in if let Some(path) = &metadata_path {
-        xattr::list_deref(path)
-    } else {
-        file.list_xattr()
-    }
-    .with_context(|| format!("failed to list xattrs for {}", input.display()))?
-    {
-        let name_bytes = name.as_bytes();
-        let Some(value) = if let Some(path) = &metadata_path {
-            xattr::get_deref(path, &name)
-        } else {
-            file.get_xattr(&name)
-        }
-        .with_context(|| format!("failed to read xattr on {}", input.display()))?
-        else {
-            bail!("xattr changed while scanning {}", input.display());
-        };
-        #[cfg(target_os = "linux")]
-        if name_bytes == b"system.posix_acl_access" || name_bytes == b"system.posix_acl_default" {
-            let key = if name_bytes.ends_with(b"access") {
-                "SCHILY.acl.access"
-            } else {
-                "SCHILY.acl.default"
-            };
-            native.primary_pax_records.insert(
-                key.into(),
-                linux_posix_acl_xattr_to_schily(&value).map_err(|error| anyhow!(error))?,
-            );
-            captured_posix_acl = true;
-            native.required_profiles.push("posix-backup-v1".into());
-            continue;
-        }
-        let profile = if name_bytes.starts_with(b"security.")
-            || name_bytes.starts_with(b"trusted.")
-            || name_bytes.starts_with(b"system.")
-        {
-            "linux-backup-v1"
-        } else if name_bytes.starts_with(b"com.apple.") {
-            "macos-backup-v1"
-        } else {
-            "posix-backup-v1"
-        };
-        let restore_class = if profile == "linux-backup-v1" {
-            RestoreClass::System
-        } else {
-            RestoreClass::SameOs
-        };
-        let encoded_name = encode_percent_name(name_bytes).map_err(|error| anyhow!(error))?;
-        let encoded_value = canonical_base64_encode(&value);
-        if inline_xattr_bytes
-            .saturating_add(encoded_name.len())
-            .saturating_add(encoded_value.len())
-            > INLINE_XATTR_BUDGET
-        {
-            let mut record =
-                NativeAuxiliaryMetadata::new("generic.xattr", profile, restore_class, value);
-            record.name_encoding = NativeAuxiliaryNameEncoding::Bytes;
-            record.name = name_bytes.to_vec();
-            native.auxiliary_records.push(record);
-        } else {
-            inline_xattr_bytes = inline_xattr_bytes
-                .saturating_add(encoded_name.len())
-                .saturating_add(encoded_value.len());
-            native
-                .primary_pax_records
-                .insert(format!("LIBARCHIVE.xattr.{encoded_name}"), encoded_value);
-        }
-        native.required_profiles.push(profile.into());
-    }
-    #[cfg(target_os = "linux")]
-    if captured_posix_acl {
-        native
-            .primary_pax_records
-            .insert("TZAP.acl.projection".into(), b"exact".to_vec());
-        native.primary_pax_records.insert(
-            "TZAP.acl.syntax".into(),
-            b"schily-posix1e-extra-id-v1".to_vec(),
-        );
-    }
-    native.required_profiles.sort();
-    native.required_profiles.dedup();
-    if !metadata_only {
-        capture_linux_inode_flags(&file, &mut native).with_context(|| {
-            format!(
-                "failed to capture Linux inode flags for {}",
-                input.display()
-            )
-        })?;
-        capture_linux_project_id(&file, &mut native).with_context(|| {
-            format!("failed to capture Linux project ID for {}", input.display())
-        })?;
-    }
-    native.primary_pax_records.insert(
-        "TZAP.unix.ctime-observed".into(),
-        ArchiveTimestamp::new(
-            identity.change_time_seconds,
-            identity.change_time_nanoseconds as u32,
-        )
-        .canonical_pax_value()
-        .map_err(|error| anyhow!(error))?,
-    );
-    if let Some(creation_time) = identity.creation_time {
-        native.primary_pax_records.insert(
-            "LIBARCHIVE.creationtime".into(),
-            creation_time
-                .canonical_pax_value()
-                .map_err(|error| anyhow!(error))?,
-        );
-        native.required_profiles.push("linux-backup-v1".into());
-    }
-    native.required_profiles.push("posix-backup-v1".into());
-    native.required_profiles.sort();
-    native.required_profiles.dedup();
-    native.auxiliary_records.sort_by(|left, right| {
-        left.kind
-            .cmp(&right.kind)
-            .then_with(|| left.name.cmp(&right.name))
-    });
-    let final_identity =
-        input_identity(&file.metadata().with_context(|| {
-            format!("failed to reidentify metadata object {}", input.display())
-        })?)?;
-    if final_identity != identity {
-        bail!("input changed during metadata capture: {}", input.display());
-    }
-    Ok(native)
-}
-
-#[cfg(target_os = "linux")]
-fn open_linux_metadata_file(input: &Path) -> io::Result<(File, bool)> {
-    use std::os::unix::fs::OpenOptionsExt as _;
-
-    match fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(input)
-    {
-        Ok(file) => Ok((file, false)),
-        Err(error)
-            if error.raw_os_error() == Some(libc::ENXIO)
-                || error.raw_os_error() == Some(libc::ENODEV) =>
-        {
-            use std::ffi::CString;
-            use std::os::fd::FromRawFd as _;
-            use std::os::unix::ffi::OsStrExt as _;
-
-            let path = CString::new(input.as_os_str().as_bytes()).map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidInput, "path contains a NUL byte")
-            })?;
-            // SAFETY: `path` is NUL-terminated and a successful descriptor is
-            // transferred immediately to `File`.
-            let fd = unsafe {
-                libc::open(
-                    path.as_ptr(),
-                    libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_PATH,
-                )
-            };
-            if fd < 0 {
-                Err(io::Error::last_os_error())
-            } else {
-                // SAFETY: `fd` is newly opened and exclusively owned here.
-                Ok((unsafe { File::from_raw_fd(fd) }, true))
-            }
-        }
-        Err(error) => Err(error),
-    }
+    tzap_core::linux_metadata::capture_linux_metadata(input, false).map_err(Into::into)
 }
 
 #[cfg(target_os = "macos")]
@@ -6786,71 +6553,6 @@ fn capture_native_file_metadata(
     _identity: InputIdentity,
 ) -> Result<NativeFileMetadata> {
     Ok(NativeFileMetadata::default())
-}
-
-#[cfg(target_os = "linux")]
-fn capture_linux_inode_flags(file: &File, native: &mut NativeFileMetadata) -> io::Result<()> {
-    use std::os::fd::AsRawFd;
-
-    let mut flags: libc::c_long = 0;
-    // SAFETY: the request writes one c_long to a valid pointer and observes a
-    // live file descriptor owned by `file`.
-    if unsafe { libc::ioctl(file.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags) } != 0 {
-        let error = io::Error::last_os_error();
-        if error.raw_os_error() == Some(libc::ENOTTY)
-            || error.raw_os_error() == Some(libc::EOPNOTSUPP)
-        {
-            return Ok(());
-        }
-        return Err(error);
-    }
-    native.primary_pax_records.insert(
-        "TZAP.linux.fsflags".into(),
-        format!("{:016x}", flags as u64).into_bytes(),
-    );
-    native.required_profiles.push("linux-backup-v1".into());
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn capture_linux_project_id(file: &File, native: &mut NativeFileMetadata) -> io::Result<()> {
-    use std::os::fd::AsRawFd;
-
-    // All fields are integer/reserved storage, so an all-zero value is valid input.
-    let mut attributes: linux_raw_sys::general::fsxattr = unsafe { std::mem::zeroed() };
-    // SAFETY: the request writes one fsxattr through a valid pointer for a live descriptor.
-    if unsafe {
-        libc::ioctl(
-            file.as_raw_fd(),
-            linux_raw_sys::ioctl::FS_IOC_FSGETXATTR as libc::Ioctl,
-            &mut attributes,
-        )
-    } != 0
-    {
-        let error = io::Error::last_os_error();
-        if linux_project_id_ioctl_unavailable(&error) {
-            return Ok(());
-        }
-        return Err(error);
-    }
-    if attributes.fsx_projid != 0 {
-        native.primary_pax_records.insert(
-            "TZAP.linux.project-id".into(),
-            attributes.fsx_projid.to_string().into_bytes(),
-        );
-        native.required_profiles.push("linux-backup-v1".into());
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn linux_project_id_ioctl_unavailable(error: &io::Error) -> bool {
-    error.raw_os_error().is_some_and(|code| {
-        code == libc::ENOTTY
-            || code == libc::EOPNOTSUPP
-            || code == libc::EINVAL
-            || code == libc::ENOSYS
-    })
 }
 
 fn source_os_label() -> &'static str {
@@ -10503,6 +10205,8 @@ mod tests {
             Some(b"first.txt".as_slice())
         );
         assert_eq!(specs[1].size, 0);
+        assert_eq!(specs[1].portable_metadata.created, None);
+        assert_eq!(specs[1].portable_metadata.accessed, None);
         assert!(specs[1]
             .portable_metadata
             .native
@@ -10882,11 +10586,6 @@ mod tests {
         let identity = input_identity(&fs::metadata(&path).unwrap()).unwrap();
 
         let native = capture_native_file_metadata(&path, identity).unwrap();
-        let shared = tzap_core::macos_metadata::capture_macos_metadata(&path, false).unwrap();
-        assert_eq!(
-            shared.native, native,
-            "CLI and reusable TZAP metadata capture must remain identical"
-        );
 
         assert_eq!(
             native.required_profiles,
@@ -10989,19 +10688,6 @@ mod tests {
                 .unwrap(),
             expected_acl
         );
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_project_id_capture_treats_missing_ioctl_as_unavailable() {
-        for code in [libc::ENOTTY, libc::EOPNOTSUPP, libc::EINVAL, libc::ENOSYS] {
-            assert!(linux_project_id_ioctl_unavailable(
-                &io::Error::from_raw_os_error(code)
-            ));
-        }
-        assert!(!linux_project_id_ioctl_unavailable(
-            &io::Error::from_raw_os_error(libc::EIO)
-        ));
     }
 
     #[cfg(target_os = "linux")]
@@ -11109,6 +10795,11 @@ mod tests {
         let identity = input_identity(&fs::metadata(&path).unwrap()).unwrap();
 
         let native = capture_native_file_metadata(&path, identity).unwrap();
+        let shared = tzap_core::macos_metadata::capture_macos_metadata(&path, false).unwrap();
+        assert_eq!(
+            shared.native, native,
+            "CLI and reusable TZAP metadata capture must remain identical"
+        );
 
         assert_eq!(
             native.required_profiles,

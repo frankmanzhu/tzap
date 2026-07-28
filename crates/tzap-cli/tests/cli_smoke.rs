@@ -43,6 +43,172 @@ fn expected_input_mode(_path: &Path) -> u32 {
     0o644
 }
 
+#[cfg(windows)]
+fn create_windows_relative_symlink(path: &Path, target: &str) {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+    };
+    use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+
+    fs::write(path, []).unwrap();
+    let target = target.encode_utf16().collect::<Vec<_>>();
+    let target_bytes = target.len() * 2;
+    let mut path_units = target.clone();
+    path_units.push(0);
+    path_units.extend_from_slice(&target);
+    path_units.push(0);
+    let payload_len = 12 + path_units.len() * 2;
+    let mut reparse = Vec::with_capacity(8 + payload_len);
+    reparse.extend_from_slice(&0xA000_000Cu32.to_le_bytes());
+    reparse.extend_from_slice(&(payload_len as u16).to_le_bytes());
+    reparse.extend_from_slice(&0u16.to_le_bytes());
+    reparse.extend_from_slice(&0u16.to_le_bytes());
+    reparse.extend_from_slice(&(target_bytes as u16).to_le_bytes());
+    reparse.extend_from_slice(&((target_bytes + 2) as u16).to_le_bytes());
+    reparse.extend_from_slice(&(target_bytes as u16).to_le_bytes());
+    reparse.extend_from_slice(&1u32.to_le_bytes());
+    for unit in path_units {
+        reparse.extend_from_slice(&unit.to_le_bytes());
+    }
+
+    let file = fs::OpenOptions::new()
+        .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .unwrap();
+    let mut returned = 0u32;
+    // SAFETY: the handle and complete relative-symlink reparse buffer remain
+    // live for the synchronous call.
+    let result = unsafe {
+        DeviceIoControl(
+            file.as_raw_handle().cast(),
+            FSCTL_SET_REPARSE_POINT,
+            reparse.as_ptr().cast(),
+            reparse.len() as u32,
+            std::ptr::null_mut(),
+            0,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    assert_ne!(
+        result,
+        0,
+        "failed to create relative symlink fixture: {}",
+        std::io::Error::last_os_error()
+    );
+}
+
+#[cfg(windows)]
+fn windows_basic_info(
+    path: &Path,
+    write: bool,
+) -> windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileBasicInfo, GetFileInformationByHandleEx, FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS,
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+    };
+
+    let mut options = fs::OpenOptions::new();
+    options
+        .access_mode(if write {
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE
+        } else {
+            FILE_GENERIC_READ
+        })
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT);
+    let file = options.open(path).unwrap();
+    let mut info = FILE_BASIC_INFO::default();
+    let status = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle().cast(),
+            FileBasicInfo,
+            (&mut info as *mut FILE_BASIC_INFO).cast(),
+            std::mem::size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    };
+    assert_ne!(
+        status,
+        0,
+        "failed to read basic metadata for {}",
+        path.display()
+    );
+    info
+}
+
+#[cfg(windows)]
+fn set_windows_basic_info(
+    path: &Path,
+    info: &windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO,
+) {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileBasicInfo, SetFileInformationByHandle, FILE_FLAG_BACKUP_SEMANTICS,
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+    };
+
+    let file = fs::OpenOptions::new()
+        .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .unwrap();
+    let status = unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle().cast(),
+            FileBasicInfo,
+            (info as *const windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO).cast(),
+            std::mem::size_of::<windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO>() as u32,
+        )
+    };
+    assert_ne!(
+        status,
+        0,
+        "failed to set basic metadata for {}",
+        path.display()
+    );
+}
+
+#[cfg(windows)]
+fn windows_process_is_elevated() -> bool {
+    use std::mem::size_of;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    let mut token = std::ptr::null_mut();
+    // SAFETY: the pseudo process handle is valid, and `token` receives one
+    // owned handle which is closed below.
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+        return false;
+    }
+    let mut elevation = TOKEN_ELEVATION::default();
+    let mut returned = 0u32;
+    // SAFETY: `token` is live and `elevation` is a correctly sized writable
+    // output buffer for TokenElevation.
+    let result = unsafe {
+        GetTokenInformation(
+            token,
+            TokenElevation,
+            (&mut elevation as *mut TOKEN_ELEVATION).cast(),
+            size_of::<TOKEN_ELEVATION>() as u32,
+            &mut returned,
+        )
+    };
+    // SAFETY: `token` is owned by this function and closed exactly once.
+    unsafe {
+        CloseHandle(token);
+    }
+    result != 0 && elevation.TokenIsElevated != 0
+}
+
 #[derive(Clone)]
 struct PayloadRecordLocation {
     volume_index: usize,
@@ -5349,6 +5515,336 @@ fn cli_directory_metadata_round_trips_after_children() {
     );
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn cli_linux_entry_kind_restore_policy_matrix() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt as _;
+    use std::os::unix::fs::{symlink, FileTypeExt as _, MetadataExt as _, PermissionsExt as _};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let input_root = temp.path().join("matrix");
+    let directory = input_root.join("directory");
+    let file = directory.join("file.txt");
+    let link = input_root.join("link.txt");
+    let fifo = input_root.join("events.fifo");
+    let archive = temp.path().join("linux-policy-matrix.tzap");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(&file, b"matrix payload").unwrap();
+    symlink("directory/file.txt", &link).unwrap();
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    let fifo_c = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o620) }, 0);
+
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o640)).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o750)).unwrap();
+    let expected_mtime = UNIX_EPOCH + Duration::new(1_700_000_321, 654_321_000);
+    fs::File::open(&file)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(expected_mtime))
+        .unwrap();
+    fs::File::open(&directory)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(expected_mtime))
+        .unwrap();
+
+    let acl = [
+        2, 0, 0, 0, // POSIX ACL xattr version
+        1, 0, 6, 0, 0xff, 0xff, 0xff, 0xff, // owning user
+        2, 0, 6, 0, 0x39, 0x30, 0, 0, // named user 12345
+        4, 0, 4, 0, 0xff, 0xff, 0xff, 0xff, // owning group
+        0x10, 0, 6, 0, 0xff, 0xff, 0xff, 0xff, // mask
+        0x20, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, // other
+    ];
+    let mut directory_acl = acl;
+    for permission_index in [6, 14, 30] {
+        directory_acl[permission_index] = 7;
+    }
+    directory_acl[22] = 5;
+    xattr::set(&file, "user.tzap.matrix", b"file metadata").unwrap();
+    xattr::set(&file, "system.posix_acl_access", &acl).unwrap();
+    xattr::set(&directory, "user.tzap.matrix", b"directory metadata").unwrap();
+    xattr::set(&directory, "system.posix_acl_access", &directory_acl).unwrap();
+
+    let source_file = fs::symlink_metadata(&file).unwrap();
+    let source_directory = fs::symlink_metadata(&directory).unwrap();
+    let source_fifo = fs::symlink_metadata(&fifo).unwrap();
+    let expected_file_acl = xattr::get(&file, "system.posix_acl_access")
+        .unwrap()
+        .unwrap();
+    let expected_directory_acl = xattr::get(&directory, "system.posix_acl_access")
+        .unwrap()
+        .unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "create",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "-o",
+            archive.to_str().unwrap(),
+            input_root.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let policies: &[&str] = if unsafe { libc::geteuid() } == 0 {
+        &["portable", "same-os", "system"]
+    } else {
+        &["portable", "same-os"]
+    };
+    for &policy in policies {
+        let destination = temp.path().join(format!("extract-{policy}"));
+        let mut command = Command::cargo_bin("tzap").unwrap();
+        command.args([
+            "extract",
+            "--restore",
+            policy,
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "-C",
+            destination.to_str().unwrap(),
+        ]);
+        if policy != "portable" {
+            command.arg("--allow-degraded");
+        }
+        command.arg(archive.to_str().unwrap()).assert().success();
+
+        let restored_root = destination.join("matrix");
+        let restored_file = restored_root.join("directory/file.txt");
+        let restored_directory = restored_root.join("directory");
+        let restored_link = restored_root.join("link.txt");
+        let restored_fifo = restored_root.join("events.fifo");
+        let file_metadata = fs::symlink_metadata(&restored_file).unwrap();
+        let directory_metadata = fs::symlink_metadata(&restored_directory).unwrap();
+
+        assert_eq!(fs::read(&restored_file).unwrap(), b"matrix payload");
+        assert_eq!(
+            fs::read_link(&restored_link).unwrap(),
+            Path::new("directory/file.txt")
+        );
+        assert_eq!(file_metadata.mode() & 0o7777, source_file.mode() & 0o7777);
+        assert_eq!(
+            directory_metadata.mode() & 0o7777,
+            source_directory.mode() & 0o7777
+        );
+        assert_eq!(
+            (file_metadata.mtime(), file_metadata.mtime_nsec()),
+            (source_file.mtime(), source_file.mtime_nsec())
+        );
+        assert_eq!(
+            (directory_metadata.mtime(), directory_metadata.mtime_nsec()),
+            (source_directory.mtime(), source_directory.mtime_nsec())
+        );
+
+        if policy == "portable" {
+            assert_eq!(
+                xattr::get(&restored_file, "user.tzap.matrix").unwrap(),
+                None
+            );
+            assert!(!restored_fifo.exists());
+            continue;
+        }
+
+        assert_eq!(
+            xattr::get(&restored_file, "user.tzap.matrix")
+                .unwrap()
+                .as_deref(),
+            Some(b"file metadata".as_slice())
+        );
+        assert_eq!(
+            xattr::get(&restored_directory, "user.tzap.matrix")
+                .unwrap()
+                .as_deref(),
+            Some(b"directory metadata".as_slice())
+        );
+        assert_eq!(
+            xattr::get(&restored_file, "system.posix_acl_access")
+                .unwrap()
+                .as_deref(),
+            Some(expected_file_acl.as_slice())
+        );
+        assert_eq!(
+            xattr::get(&restored_directory, "system.posix_acl_access")
+                .unwrap()
+                .as_deref(),
+            Some(expected_directory_acl.as_slice())
+        );
+
+        if policy == "same-os" {
+            assert!(!restored_fifo.exists());
+        } else {
+            let fifo_metadata = fs::symlink_metadata(&restored_fifo).unwrap();
+            assert!(fifo_metadata.file_type().is_fifo());
+            assert_eq!(fifo_metadata.mode() & 0o7777, source_fifo.mode() & 0o7777);
+            assert_eq!(fifo_metadata.uid(), source_fifo.uid());
+            assert_eq!(fifo_metadata.gid(), source_fifo.gid());
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn cli_windows_entry_kind_restore_policy_matrix() {
+    use std::os::windows::fs::MetadataExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY,
+    };
+
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let input_root = temp.path().join("matrix");
+    let directory = input_root.join("directory");
+    let file = directory.join("file.txt");
+    let link = input_root.join("link.txt");
+    let archive = temp.path().join("windows-policy-matrix.tzap");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(&file, b"matrix payload").unwrap();
+    create_windows_relative_symlink(&link, r"directory\file.txt");
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    fs::write(
+        PathBuf::from(format!("{}:tzap.matrix", file.display())),
+        b"file alternate data",
+    )
+    .unwrap();
+    fs::write(
+        PathBuf::from(format!("{}:tzap.matrix", directory.display())),
+        b"directory alternate data",
+    )
+    .unwrap();
+
+    let mut file_basic = windows_basic_info(&file, true);
+    file_basic.CreationTime = 132_500_000_001_234_567;
+    file_basic.LastAccessTime = 132_600_000_002_345_678;
+    file_basic.LastWriteTime = 132_700_000_003_456_789;
+    file_basic.ChangeTime = 132_800_000_004_567_890;
+    file_basic.FileAttributes = FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN;
+    set_windows_basic_info(&file, &file_basic);
+
+    let mut directory_basic = windows_basic_info(&directory, true);
+    directory_basic.CreationTime = 132_510_000_001_234_567;
+    directory_basic.LastAccessTime = 132_610_000_002_345_678;
+    directory_basic.LastWriteTime = 132_710_000_003_456_789;
+    directory_basic.ChangeTime = 132_810_000_004_567_890;
+    directory_basic.FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
+    set_windows_basic_info(&directory, &directory_basic);
+
+    let source_file = windows_basic_info(&file, false);
+    let source_directory = windows_basic_info(&directory, false);
+    let source_link = fs::symlink_metadata(&link).unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "create",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "-o",
+            archive.to_str().unwrap(),
+            input_root.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let policies: &[&str] = if windows_process_is_elevated() {
+        &["portable", "same-os", "system"]
+    } else {
+        &["portable", "same-os"]
+    };
+    for &policy in policies {
+        let destination = temp.path().join(format!("extract-{policy}"));
+        let mut extract = Command::cargo_bin("tzap").unwrap();
+        extract.args([
+            "extract",
+            "--restore",
+            policy,
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "-C",
+            destination.to_str().unwrap(),
+        ]);
+        if policy == "portable" {
+            // Portable restoration intentionally has no cross-platform
+            // representation for Windows HIDDEN/SYSTEM/ARCHIVE bits.
+            extract.arg("--allow-degraded");
+        }
+        extract.arg(archive.to_str().unwrap());
+        extract.assert().success();
+
+        let restored_root = destination.join("matrix");
+        let restored_file = restored_root.join("directory/file.txt");
+        let restored_directory = restored_root.join("directory");
+        let restored_link = restored_root.join("link.txt");
+        let file_metadata = fs::symlink_metadata(&restored_file).unwrap();
+        let link_metadata = fs::symlink_metadata(&restored_link).unwrap();
+        let restored_file_basic = windows_basic_info(&restored_file, false);
+        let restored_directory_basic = windows_basic_info(&restored_directory, false);
+
+        assert_eq!(fs::read(&restored_file).unwrap(), b"matrix payload");
+        assert_eq!(
+            fs::read_link(&restored_link).unwrap(),
+            Path::new(r"directory\file.txt")
+        );
+        assert!(link_metadata.file_type().is_symlink());
+        assert_eq!(
+            file_metadata.last_write_time(),
+            fs::symlink_metadata(&file).unwrap().last_write_time()
+        );
+
+        let restored_file_stream =
+            PathBuf::from(format!("{}:tzap.matrix", restored_file.display()));
+        let restored_directory_stream =
+            PathBuf::from(format!("{}:tzap.matrix", restored_directory.display()));
+        if policy == "portable" {
+            assert!(!restored_file_stream.exists());
+            assert!(!restored_directory_stream.exists());
+            continue;
+        }
+
+        assert_eq!(restored_file_basic.CreationTime, source_file.CreationTime);
+        assert_eq!(
+            restored_file_basic.LastAccessTime,
+            source_file.LastAccessTime
+        );
+        assert_eq!(restored_file_basic.LastWriteTime, source_file.LastWriteTime);
+        assert_eq!(restored_file_basic.ChangeTime, source_file.ChangeTime);
+        assert_eq!(
+            restored_file_basic.FileAttributes
+                & (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY),
+            source_file.FileAttributes
+                & (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY)
+        );
+        assert_eq!(
+            restored_directory_basic.CreationTime,
+            source_directory.CreationTime
+        );
+        assert_eq!(
+            restored_directory_basic.LastAccessTime,
+            source_directory.LastAccessTime
+        );
+        assert_eq!(
+            restored_directory_basic.LastWriteTime,
+            source_directory.LastWriteTime
+        );
+        assert_eq!(
+            restored_directory_basic.ChangeTime,
+            source_directory.ChangeTime
+        );
+        assert_eq!(
+            fs::read(restored_file_stream).unwrap(),
+            b"file alternate data"
+        );
+        assert_eq!(
+            fs::read(restored_directory_stream).unwrap(),
+            b"directory alternate data"
+        );
+        assert_ne!(source_link.file_attributes(), 0);
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn cli_macos_native_metadata_round_trips_for_files_and_directories() {
@@ -5457,6 +5953,241 @@ fn cli_macos_native_metadata_round_trips_for_files_and_directories() {
             .unwrap();
         assert!(acl.status.success());
         assert!(String::from_utf8_lossy(&acl.stdout).contains("everyone deny delete"));
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn cli_macos_entry_kind_restore_policy_matrix() {
+    use std::ffi::CString;
+    use std::os::macos::fs::MetadataExt as _;
+    use std::os::unix::ffi::OsStrExt as _;
+    use std::os::unix::fs::{symlink, FileTypeExt as _, MetadataExt as _, PermissionsExt as _};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let input_root = temp.path().join("matrix");
+    let directory = input_root.join("directory");
+    let file = directory.join("file.txt");
+    let link = input_root.join("link.txt");
+    let fifo = input_root.join("events.fifo");
+    let archive = temp.path().join("macos-policy-matrix.tzap");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(&file, b"matrix payload").unwrap();
+    symlink("directory/file.txt", &link).unwrap();
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    let fifo_c = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o620) }, 0);
+
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o640)).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o750)).unwrap();
+    let expected_mtime = UNIX_EPOCH + Duration::new(1_700_000_321, 654_321_000);
+    fs::File::open(&file)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(expected_mtime))
+        .unwrap();
+    fs::File::open(&directory)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(expected_mtime))
+        .unwrap();
+
+    for (path, marker) in [(&file, 0x41u8), (&directory, 0x42), (&fifo, 0x43)] {
+        xattr::set(path, "com.tzap.matrix", &[marker; 19]).unwrap();
+        assert!(std::process::Command::new("chmod")
+            .args(["+a", "everyone deny delete"])
+            .arg(path)
+            .status()
+            .unwrap()
+            .success());
+        assert!(std::process::Command::new("chflags")
+            .arg("hidden")
+            .arg(path)
+            .status()
+            .unwrap()
+            .success());
+    }
+    xattr::set(&file, "com.apple.FinderInfo", &[0x51; 32]).unwrap();
+    xattr::set(&directory, "com.apple.FinderInfo", &[0x52; 32]).unwrap();
+    fs::write(
+        file.join("..namedfork/rsrc"),
+        vec![0x61; 2 * 1024 * 1024 + 17],
+    )
+    .unwrap();
+    xattr::set(&link, "com.tzap.matrix-link", b"link metadata").unwrap();
+    assert!(std::process::Command::new("chmod")
+        .args(["-h", "+a", "everyone deny delete"])
+        .arg(&link)
+        .status()
+        .unwrap()
+        .success());
+    assert!(std::process::Command::new("chflags")
+        .args(["-h", "hidden"])
+        .arg(&link)
+        .status()
+        .unwrap()
+        .success());
+
+    let source_file = fs::symlink_metadata(&file).unwrap();
+    let source_directory = fs::symlink_metadata(&directory).unwrap();
+    let source_link = fs::symlink_metadata(&link).unwrap();
+    let source_fifo = fs::symlink_metadata(&fifo).unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "create",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "-o",
+            archive.to_str().unwrap(),
+            input_root.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let policies: &[&str] = if unsafe { libc::geteuid() } == 0 {
+        &["portable", "same-os", "system"]
+    } else {
+        &["portable", "same-os"]
+    };
+    for &policy in policies {
+        let destination = temp.path().join(format!("extract-{policy}"));
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args([
+                "extract",
+                "--restore",
+                policy,
+                "--keyfile",
+                keyfile.to_str().unwrap(),
+                "-C",
+                destination.to_str().unwrap(),
+                archive.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+
+        let restored_root = destination.join("matrix");
+        let restored_file = restored_root.join("directory/file.txt");
+        let restored_directory = restored_root.join("directory");
+        let restored_link = restored_root.join("link.txt");
+        let restored_fifo = restored_root.join("events.fifo");
+        let file_metadata = fs::symlink_metadata(&restored_file).unwrap();
+        let directory_metadata = fs::symlink_metadata(&restored_directory).unwrap();
+        let link_metadata = fs::symlink_metadata(&restored_link).unwrap();
+
+        assert_eq!(fs::read(&restored_file).unwrap(), b"matrix payload");
+        assert_eq!(
+            fs::read_link(&restored_link).unwrap(),
+            Path::new("directory/file.txt")
+        );
+        assert_eq!(file_metadata.mode() & 0o7777, source_file.mode() & 0o7777);
+        assert_eq!(
+            directory_metadata.mode() & 0o7777,
+            source_directory.mode() & 0o7777
+        );
+        assert_eq!(
+            (file_metadata.mtime(), file_metadata.mtime_nsec()),
+            (source_file.mtime(), source_file.mtime_nsec())
+        );
+        assert_eq!(
+            (directory_metadata.mtime(), directory_metadata.mtime_nsec()),
+            (source_directory.mtime(), source_directory.mtime_nsec())
+        );
+        assert!(link_metadata.file_type().is_symlink());
+
+        if policy == "portable" {
+            assert_eq!(xattr::get(&restored_file, "com.tzap.matrix").unwrap(), None);
+            assert_eq!(
+                xattr::get(&restored_link, "com.tzap.matrix-link").unwrap(),
+                None
+            );
+            assert_eq!(file_metadata.st_flags() & libc::UF_HIDDEN, 0);
+            assert!(!restored_fifo.exists());
+            continue;
+        }
+
+        assert_eq!(file_metadata.st_flags(), source_file.st_flags());
+        assert_eq!(directory_metadata.st_flags(), source_directory.st_flags());
+        assert_eq!(link_metadata.st_flags(), source_link.st_flags());
+        assert_eq!(
+            (
+                file_metadata.st_birthtime(),
+                file_metadata.st_birthtime_nsec()
+            ),
+            (source_file.st_birthtime(), source_file.st_birthtime_nsec())
+        );
+        assert_eq!(
+            (
+                directory_metadata.st_birthtime(),
+                directory_metadata.st_birthtime_nsec(),
+            ),
+            (
+                source_directory.st_birthtime(),
+                source_directory.st_birthtime_nsec(),
+            )
+        );
+        assert_eq!(
+            xattr::get(&restored_file, "com.tzap.matrix")
+                .unwrap()
+                .as_deref(),
+            Some([0x41; 19].as_slice())
+        );
+        assert_eq!(
+            xattr::get(&restored_directory, "com.tzap.matrix")
+                .unwrap()
+                .as_deref(),
+            Some([0x42; 19].as_slice())
+        );
+        assert_eq!(
+            xattr::get(&restored_link, "com.tzap.matrix-link")
+                .unwrap()
+                .as_deref(),
+            Some(b"link metadata".as_slice())
+        );
+        assert_eq!(
+            xattr::get(&restored_file, "com.apple.FinderInfo")
+                .unwrap()
+                .as_deref(),
+            Some([0x51; 32].as_slice())
+        );
+        assert_eq!(
+            xattr::get(&restored_directory, "com.apple.FinderInfo")
+                .unwrap()
+                .as_deref(),
+            Some([0x52; 32].as_slice())
+        );
+        assert_eq!(
+            fs::read(restored_file.join("..namedfork/rsrc")).unwrap(),
+            vec![0x61; 2 * 1024 * 1024 + 17]
+        );
+        for restored in [&restored_file, &restored_directory, &restored_link] {
+            let acl = std::process::Command::new("ls")
+                .args(["-lde"])
+                .arg(restored)
+                .output()
+                .unwrap();
+            assert!(acl.status.success());
+            assert!(String::from_utf8_lossy(&acl.stdout).contains("everyone deny delete"));
+        }
+
+        if policy == "same-os" {
+            assert!(!restored_fifo.exists());
+        } else {
+            let fifo_metadata = fs::symlink_metadata(&restored_fifo).unwrap();
+            assert!(fifo_metadata.file_type().is_fifo());
+            assert_eq!(fifo_metadata.mode() & 0o7777, source_fifo.mode() & 0o7777);
+            assert_eq!(fifo_metadata.st_flags(), source_fifo.st_flags());
+            assert_eq!(fifo_metadata.uid(), source_fifo.uid());
+            assert_eq!(fifo_metadata.gid(), source_fifo.gid());
+            assert_eq!(
+                xattr::get(&restored_fifo, "com.tzap.matrix")
+                    .unwrap()
+                    .as_deref(),
+                Some([0x43; 19].as_slice())
+            );
+        }
     }
 }
 
