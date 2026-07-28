@@ -6869,22 +6869,34 @@ fn source_os_label() -> &'static str {
     }
 }
 
-#[cfg(windows)]
 fn portable_attributes(metadata: &fs::Metadata) -> Option<u32> {
-    use std::os::windows::fs::MetadataExt;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let attributes = metadata.file_attributes();
+        let mut projection = 0u32;
+        projection |= u32::from(attributes & 0x0000_0001 != 0);
+        projection |= u32::from(attributes & 0x0000_0002 != 0) << 1;
+        projection |= u32::from(attributes & 0x0000_0004 != 0) << 2;
+        projection |= u32::from(attributes & 0x0000_0020 != 0) << 3;
+        Some(projection)
+    }
 
-    let attributes = metadata.file_attributes();
-    let mut projection = 0u32;
-    projection |= u32::from(attributes & 0x0000_0001 != 0);
-    projection |= u32::from(attributes & 0x0000_0002 != 0) << 1;
-    projection |= u32::from(attributes & 0x0000_0004 != 0) << 2;
-    projection |= u32::from(attributes & 0x0000_0020 != 0) << 3;
-    Some(projection)
-}
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::darwin::fs::MetadataExt;
+        let flags = metadata.st_flags();
+        let mut projection = 0u32;
+        projection |= u32::from(flags & (libc::UF_IMMUTABLE | libc::SF_IMMUTABLE) != 0);
+        projection |= u32::from(flags & libc::UF_HIDDEN != 0) << 1;
+        if projection != 0 { Some(projection) } else { None }
+    }
 
-#[cfg(not(windows))]
-fn portable_attributes(_metadata: &fs::Metadata) -> Option<u32> {
-    None
+    #[cfg(all(unix, not(target_os = "macos"), not(windows)))]
+    {
+        let _ = metadata;
+        None
+    }
 }
 
 fn write_archive_outputs(output: &str, volumes: &[Vec<u8>], force: bool) -> Result<()> {
