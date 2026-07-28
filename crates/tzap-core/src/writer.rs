@@ -487,6 +487,10 @@ pub struct PortableFileMetadata {
     pub mode_origin: PortableModeOrigin,
     pub posix_owner: Option<PortablePosixOwner>,
     pub attributes: Option<u32>,
+    /// Creation (birth) time when available from the source filesystem.
+    pub created: Option<ArchiveTimestamp>,
+    /// Last access time when available from the source filesystem.
+    pub accessed: Option<ArchiveTimestamp>,
     pub native: NativeFileMetadata,
 }
 
@@ -521,6 +525,8 @@ impl Default for PortableFileMetadata {
             mode_origin: PortableModeOrigin::Projected,
             posix_owner: None,
             attributes: None,
+            created: None,
+            accessed: None,
             native: NativeFileMetadata::default(),
         }
     }
@@ -8734,6 +8740,8 @@ mod tests {
                 gname: Some("archive".into()),
             }),
             attributes: Some(1),
+            created: None,
+            accessed: None,
             native: NativeFileMetadata::default(),
         };
         let group = build_regular_file_member_group(
@@ -8776,6 +8784,8 @@ mod tests {
                 gname: Some("archive".into()),
             }),
             attributes: None,
+            created: None,
+            accessed: None,
             native: NativeFileMetadata::default(),
         };
         let bytes = build_primary_member_prefix(
@@ -8895,6 +8905,8 @@ mod tests {
                 gname: Some("group".into()),
             }),
             attributes: Some(1),
+            created: None,
+            accessed: None,
             native: NativeFileMetadata::default(),
         };
         let bytes = build_primary_member_prefix(

@@ -4855,6 +4855,9 @@ fn readonly_mode(metadata: &fs::Metadata) -> u32 {
 }
 
 fn portable_input_metadata(identity: InputIdentity, input: &Path) -> Result<PortableFileMetadata> {
+    let metadata = fs::symlink_metadata(input)?;
+    let created = metadata.created().ok().and_then(|t| archive_timestamp(t).ok());
+    let accessed = metadata.accessed().ok().and_then(|t| archive_timestamp(t).ok());
     Ok(PortableFileMetadata {
         source_os: source_os_label().into(),
         source_filesystem: "unknown".into(),
@@ -4873,6 +4876,8 @@ fn portable_input_metadata(identity: InputIdentity, input: &Path) -> Result<Port
         #[cfg(not(unix))]
         posix_owner: None,
         attributes: identity.attributes,
+        created,
+        accessed,
         native: capture_native_file_metadata(input, identity)?,
     })
 }
@@ -4899,6 +4904,8 @@ fn portable_symlink_metadata(
         #[cfg(not(unix))]
         posix_owner: None,
         attributes: identity.attributes,
+        created: None,
+        accessed: None,
         #[cfg(target_os = "linux")]
         native: capture_linux_symlink_metadata(_input, identity)?,
         #[cfg(target_os = "macos")]
@@ -11158,6 +11165,8 @@ mod tests {
                         gname: None,
                     }),
                     attributes: None,
+                    created: None,
+                    accessed: None,
                     native: archive_native,
                 },
             }],

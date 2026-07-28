@@ -11907,6 +11907,8 @@ mod tests {
                         gname: Some("staff".into()),
                     }),
                     attributes: Some(1),
+            created: None,
+            accessed: None,
                     native: Default::default(),
                 },
                 ..RegularFile::new("header-fields.txt", b"header metadata")
@@ -11925,6 +11927,8 @@ mod tests {
                         gname: Some("g".repeat(40)),
                     }),
                     attributes: Some(2),
+            created: None,
+            accessed: None,
                     native: Default::default(),
                 },
                 ..RegularFile::new("pax-overrides.txt", b"PAX metadata")
@@ -12186,6 +12190,8 @@ mod tests {
                         gname: None,
                     }),
                     attributes: None,
+            created: None,
+            accessed: None,
                     native: Default::default(),
                 },
                 ..RegularFile::new("privileged.sh", b"#!/bin/sh\n")
@@ -12595,6 +12601,8 @@ mod tests {
                     mode_origin: PortableModeOrigin::Projected,
                     posix_owner: None,
                     attributes: Some(1),
+            created: None,
+            accessed: None,
                     native: Default::default(),
                 },
                 ..RegularFile::new("readonly.txt", b"readonly")
@@ -19332,6 +19340,8 @@ mod tests {
                         gname: Some("devs".into()),
                     }),
                     attributes: Some(0x05),
+            created: None,
+            accessed: None,
                     native: NativeFileMetadata {
                         required_profiles: vec![
                             "macos-backup-v1".into(),

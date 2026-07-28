@@ -452,6 +452,8 @@ where
                         gname,
                     }),
                     attributes: None,
+                    created: None,
+                    accessed: None,
                     native: Default::default(),
                 };
                 let has_sparse_declaration = metadata.gnu_sparse_major.is_some()
@@ -1133,6 +1135,8 @@ mod tests {
                 gname: None,
             }),
             attributes: None,
+            created: None,
+            accessed: None,
             native: Default::default(),
         };
         file
