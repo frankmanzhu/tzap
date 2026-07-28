@@ -7239,6 +7239,23 @@ fn build_primary_member_layout(
             hex::encode(attributes.to_be_bytes()).into_bytes(),
         );
     }
+    for (key, timestamp) in [
+        ("LIBARCHIVE.creationtime", portable_metadata.created),
+        ("atime", portable_metadata.accessed),
+    ] {
+        if let Some(timestamp) = timestamp {
+            let value = timestamp.canonical_pax_value()?;
+            if let Some(native_value) = portable_metadata.native.primary_pax_records.get(key) {
+                if native_value != &value {
+                    return Err(FormatError::WriterUnsupported(
+                        "portable timestamp conflicts with native primary metadata",
+                    ));
+                }
+            } else {
+                pax_records.insert(key.into(), value);
+            }
+        }
+    }
     if sparse_map.is_some() {
         pax_records.insert("GNU.sparse.major".into(), b"1".to_vec());
         pax_records.insert("GNU.sparse.minor".into(), b"0".to_vec());
@@ -8768,6 +8785,44 @@ mod tests {
         assert_ne!(
             parsed.v45_metadata.file_entry_flags & REQUIRES_SYSTEM_RESTORE,
             0
+        );
+    }
+
+    #[test]
+    fn regular_file_writer_serializes_portable_creation_and_access_times() {
+        let created = ArchiveTimestamp::new(1_600_000_000, 123_456_789);
+        let accessed = ArchiveTimestamp::new(1_700_000_000, 987_654_321);
+        let portable_metadata = PortableFileMetadata {
+            created: Some(created),
+            accessed: Some(accessed),
+            ..PortableFileMetadata::default()
+        };
+
+        let group = build_regular_file_member_group(
+            b"timestamps.txt",
+            b"timestamps",
+            0o644,
+            ArchiveTimestamp::UNIX_EPOCH,
+            &portable_metadata,
+        )
+        .unwrap();
+        let parsed = parse_tar_member_group(&group, 4096).unwrap();
+
+        assert_eq!(
+            parsed
+                .v45_metadata
+                .primary_records
+                .get("LIBARCHIVE.creationtime")
+                .map(Vec::as_slice),
+            Some(b"1600000000.123456789".as_slice())
+        );
+        assert_eq!(
+            parsed
+                .v45_metadata
+                .primary_records
+                .get("atime")
+                .map(Vec::as_slice),
+            Some(b"1700000000.987654321".as_slice())
         );
     }
 

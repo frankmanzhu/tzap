@@ -8,6 +8,8 @@ pub mod crypto;
 pub mod entry_metadata;
 pub mod fec;
 pub mod format;
+#[cfg(target_os = "macos")]
+pub mod macos_metadata;
 pub mod metadata;
 pub mod non_seekable_reader;
 pub mod padding;

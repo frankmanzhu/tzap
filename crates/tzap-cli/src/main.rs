@@ -4856,8 +4856,14 @@ fn readonly_mode(metadata: &fs::Metadata) -> u32 {
 
 fn portable_input_metadata(identity: InputIdentity, input: &Path) -> Result<PortableFileMetadata> {
     let metadata = fs::symlink_metadata(input)?;
-    let created = metadata.created().ok().and_then(|t| archive_timestamp(t).ok());
-    let accessed = metadata.accessed().ok().and_then(|t| archive_timestamp(t).ok());
+    let created = metadata
+        .created()
+        .ok()
+        .and_then(|t| archive_timestamp(t).ok());
+    let accessed = metadata
+        .accessed()
+        .ok()
+        .and_then(|t| archive_timestamp(t).ok());
     Ok(PortableFileMetadata {
         source_os: source_os_label().into(),
         source_filesystem: "unknown".into(),
@@ -6884,12 +6890,11 @@ fn portable_attributes(metadata: &fs::Metadata) -> Option<u32> {
 
     #[cfg(target_os = "macos")]
     {
-        use std::os::darwin::fs::MetadataExt;
-        let flags = metadata.st_flags();
-        let mut projection = 0u32;
-        projection |= u32::from(flags & (libc::UF_IMMUTABLE | libc::SF_IMMUTABLE) != 0);
-        projection |= u32::from(flags & libc::UF_HIDDEN != 0) << 1;
-        if projection != 0 { Some(projection) } else { None }
+        let _ = metadata;
+        // Exact BSD flags are carried by TZAP.macos.st-flags. The portable
+        // four-bit projection is Windows-specific and cannot be restored
+        // faithfully on macOS.
+        None
     }
 
     #[cfg(all(unix, not(target_os = "macos"), not(windows)))]
@@ -10877,6 +10882,11 @@ mod tests {
         let identity = input_identity(&fs::metadata(&path).unwrap()).unwrap();
 
         let native = capture_native_file_metadata(&path, identity).unwrap();
+        let shared = tzap_core::macos_metadata::capture_macos_metadata(&path, false).unwrap();
+        assert_eq!(
+            shared.native, native,
+            "CLI and reusable TZAP metadata capture must remain identical"
+        );
 
         assert_eq!(
             native.required_profiles,

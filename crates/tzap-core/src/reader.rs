@@ -231,6 +231,24 @@ fn pax_timestamp(
     Some(ArchiveTimestamp::new(sec, nsec))
 }
 
+fn exposed_file_attributes(
+    records: &crate::entry_metadata::PaxRecords,
+    portable_attributes: Option<u32>,
+) -> Option<u32> {
+    for key in ["TZAP.macos.st-flags", "TZAP.windows.file-attributes"] {
+        let Some(value) = records.get(key) else {
+            continue;
+        };
+        let Ok(value) = std::str::from_utf8(value) else {
+            continue;
+        };
+        if let Ok(attributes) = u32::from_str_radix(value, 16) {
+            return Some(attributes);
+        }
+    }
+    portable_attributes
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveIndexEntry {
     pub path: String,
@@ -2112,7 +2130,10 @@ impl OpenedArchive {
                         .map(|target| String::from_utf8_lossy(target).into_owned()),
                     created: pax_timestamp(&v45.primary_records, "LIBARCHIVE.creationtime"),
                     accessed: pax_timestamp(&v45.primary_records, "atime"),
-                    attributes: v45.portable_mirror.attributes,
+                    attributes: exposed_file_attributes(
+                        &v45.primary_records,
+                        v45.portable_mirror.attributes,
+                    ),
                     uid: v45.portable_mirror.uid,
                     gid: v45.portable_mirror.gid,
                     uname: v45
@@ -10539,6 +10560,20 @@ mod tests {
     #[cfg(target_os = "linux")]
     use crate::writer::{NativeAuxiliaryMetadata, NativeAuxiliaryNameEncoding};
 
+    #[test]
+    fn exposed_attributes_prefer_exact_native_platform_flags() {
+        let mut records = crate::entry_metadata::PaxRecords::new();
+        records.insert("TZAP.macos.st-flags".into(), b"0000000000008000".to_vec());
+        assert_eq!(exposed_file_attributes(&records, Some(2)), Some(0x8000));
+
+        records.remove("TZAP.macos.st-flags");
+        records.insert("TZAP.windows.file-attributes".into(), b"00000022".to_vec());
+        assert_eq!(exposed_file_attributes(&records, Some(2)), Some(0x22));
+
+        records.clear();
+        assert_eq!(exposed_file_attributes(&records, Some(2)), Some(2));
+    }
+
     fn master_key() -> MasterKey {
         MasterKey::from_raw_key(&[0x42; 32]).unwrap()
     }
@@ -11907,8 +11942,8 @@ mod tests {
                         gname: Some("staff".into()),
                     }),
                     attributes: Some(1),
-            created: None,
-            accessed: None,
+                    created: None,
+                    accessed: None,
                     native: Default::default(),
                 },
                 ..RegularFile::new("header-fields.txt", b"header metadata")
@@ -11927,8 +11962,8 @@ mod tests {
                         gname: Some("g".repeat(40)),
                     }),
                     attributes: Some(2),
-            created: None,
-            accessed: None,
+                    created: None,
+                    accessed: None,
                     native: Default::default(),
                 },
                 ..RegularFile::new("pax-overrides.txt", b"PAX metadata")
@@ -12190,8 +12225,8 @@ mod tests {
                         gname: None,
                     }),
                     attributes: None,
-            created: None,
-            accessed: None,
+                    created: None,
+                    accessed: None,
                     native: Default::default(),
                 },
                 ..RegularFile::new("privileged.sh", b"#!/bin/sh\n")
@@ -12601,8 +12636,8 @@ mod tests {
                     mode_origin: PortableModeOrigin::Projected,
                     posix_owner: None,
                     attributes: Some(1),
-            created: None,
-            accessed: None,
+                    created: None,
+                    accessed: None,
                     native: Default::default(),
                 },
                 ..RegularFile::new("readonly.txt", b"readonly")
@@ -19340,8 +19375,8 @@ mod tests {
                         gname: Some("devs".into()),
                     }),
                     attributes: Some(0x05),
-            created: None,
-            accessed: None,
+                    created: None,
+                    accessed: None,
                     native: NativeFileMetadata {
                         required_profiles: vec![
                             "macos-backup-v1".into(),
