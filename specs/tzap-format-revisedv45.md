@@ -2371,7 +2371,28 @@ struct FileEntry {
     tar_member_group_size: u64,       // metadata records + primary entry + padding
     file_data_size:        u64,       // logical file payload size, 0 for non-regular entries
     flags:                 u32,
-    _reserved:             u32,
+
+    // Metadata properties elevated from PAX/ustar records for instant access
+    mtime_nsec:            u32,       // Modified time (nanoseconds, 0..999,999,999)
+    mtime_sec:             i64,       // Modified time (seconds since Unix epoch)
+    created_nsec:          u32,
+    accessed_nsec:         u32,
+    created_sec:           i64,       // Creation time (or 0 if missing)
+    accessed_sec:          i64,       // Accessed time (or 0 if missing)
+    uid:                   u64,       // Numeric user ID (u64::MAX if missing)
+    gid:                   u64,       // Numeric group ID (u64::MAX if missing)
+    mode:                  u32,       // UNIX mode bits
+    attributes:            u32,       // Portable attributes (e.g., TZAP.macos.st-flags / TZAP.windows.file-attributes)
+    uname_offset:          u32,       // Owner name offset into string_pool (length=0 if missing)
+    uname_length:          u32,
+    gname_offset:          u32,       // Group name offset into string_pool (length=0 if missing)
+    gname_length:          u32,
+    link_target_offset:    u32,       // Link target offset into string_pool (length=0 if missing)
+    link_target_length:    u32,
+    kind:                  u8,        // TarEntryKind equivalent (e.g., '0' for regular, '5' for directory)
+    metadata_flags:        u8,        // Metadata valid bitmask (e.g. bit 0: created, bit 1: accessed, etc.)
+    _reserved1:            u16,
+    _reserved2:            u32,
 }
 ```
 
@@ -2512,7 +2533,7 @@ Because the primary index is sorted by hash, listing files alphabetically
 requires either (a) reading all shards, building a full file table in
 memory, and sorting by path, or (b) using a path-locality structure.
 
-For typical archives (≤1M files × 56-byte FileEntry records + path
+For typical archives (≤1M files × 144-byte FileEntry records + path
 strings), option (a) uses roughly 75-120 MiB of RAM depending on average
 path length — acceptable for many offline operations.
 
