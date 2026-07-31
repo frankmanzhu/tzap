@@ -5232,6 +5232,91 @@ fn build_index_shard_plaintext(
                 "FileEntry.frame_count",
             )?);
         }
+        let (uname_offset, uname_length) = {
+            let uname = row
+                .member
+                .portable_metadata
+                .posix_owner
+                .as_ref()
+                .and_then(|o| o.uname.as_ref());
+            match uname {
+                Some(val) if !val.is_empty() => {
+                    let bytes = val.as_bytes();
+                    let offset = u32_len(string_pool.len(), "FileEntry.string_offset")?;
+                    string_pool.extend_from_slice(bytes);
+                    (offset, u32_len(bytes.len(), "FileEntry.string_length")?)
+                }
+                _ => (0, 0),
+            }
+        };
+
+        let (gname_offset, gname_length) = {
+            let gname = row
+                .member
+                .portable_metadata
+                .posix_owner
+                .as_ref()
+                .and_then(|o| o.gname.as_ref());
+            match gname {
+                Some(val) if !val.is_empty() => {
+                    let bytes = val.as_bytes();
+                    let offset = u32_len(string_pool.len(), "FileEntry.string_offset")?;
+                    string_pool.extend_from_slice(bytes);
+                    (offset, u32_len(bytes.len(), "FileEntry.string_length")?)
+                }
+                _ => (0, 0),
+            }
+        };
+
+        let (link_target_offset, link_target_length) = {
+            match row.member.link_target.as_deref() {
+                Some(val) if !val.is_empty() => {
+                    let offset = u32_len(string_pool.len(), "FileEntry.string_offset")?;
+                    string_pool.extend_from_slice(val);
+                    (offset, u32_len(val.len(), "FileEntry.string_length")?)
+                }
+                _ => (0, 0),
+            }
+        };
+
+        let kind_u8 = match row.member.entry_kind {
+            SourceEntryKind::Regular => 0,
+            SourceEntryKind::Directory => 5,
+            SourceEntryKind::Symlink => 2,
+            SourceEntryKind::Hardlink => 1,
+            SourceEntryKind::CharacterDevice => 3,
+            SourceEntryKind::BlockDevice => 4,
+            SourceEntryKind::Fifo => 6,
+            SourceEntryKind::ReparseDirectory => 5,
+            SourceEntryKind::ReparseRegular => 0,
+        };
+
+        let uid = row
+            .member
+            .portable_metadata
+            .posix_owner
+            .as_ref()
+            .map(|o| o.uid)
+            .unwrap_or(u64::MAX);
+        let gid = row
+            .member
+            .portable_metadata
+            .posix_owner
+            .as_ref()
+            .map(|o| o.gid)
+            .unwrap_or(u64::MAX);
+
+        let mut metadata_flags = 0u8;
+        if row.member.portable_metadata.created.is_some() {
+            metadata_flags |= 1;
+        }
+        if row.member.portable_metadata.accessed.is_some() {
+            metadata_flags |= 2;
+        }
+        if row.member.portable_metadata.attributes.is_some() {
+            metadata_flags |= 4;
+        }
+
         file_entries.push(FileEntry {
             path_hash: row.path_hash,
             path_offset,
@@ -5246,6 +5331,50 @@ fn build_index_shard_plaintext(
                 row.member.sparse_extents.is_some(),
                 &row.member.portable_metadata,
             ),
+            mtime_nsec: row.member.mtime.nanoseconds,
+            mtime_sec: row.member.mtime.seconds,
+            created_nsec: row
+                .member
+                .portable_metadata
+                .created
+                .as_ref()
+                .map(|t| t.nanoseconds)
+                .unwrap_or(0),
+            created_sec: row
+                .member
+                .portable_metadata
+                .created
+                .as_ref()
+                .map(|t| t.seconds)
+                .unwrap_or(0),
+            accessed_nsec: row
+                .member
+                .portable_metadata
+                .accessed
+                .as_ref()
+                .map(|t| t.nanoseconds)
+                .unwrap_or(0),
+            accessed_sec: row
+                .member
+                .portable_metadata
+                .accessed
+                .as_ref()
+                .map(|t| t.seconds)
+                .unwrap_or(0),
+            uid,
+            gid,
+            mode: row.member.mode,
+            attributes: row.member.portable_metadata.attributes.unwrap_or(0),
+            uname_offset,
+            uname_length,
+            gname_offset,
+            gname_length,
+            link_target_offset,
+            link_target_length,
+            kind: kind_u8,
+            metadata_flags,
+            _reserved1: 0,
+            _reserved2: 0,
         });
     }
 

@@ -168,6 +168,32 @@ pub enum TarEntryKind {
     Fifo,
 }
 
+impl TarEntryKind {
+    pub fn to_u8(self) -> u8 {
+        match self {
+            TarEntryKind::Regular => 0,
+            TarEntryKind::Directory => 5,
+            TarEntryKind::Symlink => 2,
+            TarEntryKind::Hardlink => 1,
+            TarEntryKind::CharacterDevice => 3,
+            TarEntryKind::BlockDevice => 4,
+            TarEntryKind::Fifo => 6,
+        }
+    }
+
+    pub fn from_u8(val: u8) -> Self {
+        match val {
+            5 => TarEntryKind::Directory,
+            2 => TarEntryKind::Symlink,
+            1 => TarEntryKind::Hardlink,
+            3 => TarEntryKind::CharacterDevice,
+            4 => TarEntryKind::BlockDevice,
+            6 => TarEntryKind::Fifo,
+            _ => TarEntryKind::Regular,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetadataOperation {
     Capture,

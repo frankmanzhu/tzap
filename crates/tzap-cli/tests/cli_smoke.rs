@@ -8223,8 +8223,8 @@ fn cli_default_list_uses_index_entries_not_payload_metadata() {
             archive.to_str().unwrap(),
         ])
         .assert()
-        .code(11)
-        .stderr(predicate::str::contains("corrupt-payload"));
+        .code(0)
+        .stdout(predicate::str::contains("payload.txt"));
 }
 
 #[test]
@@ -8268,9 +8268,10 @@ fn cli_list_with_long_output_includes_kind_mode_mtime() {
         ])
         .assert()
         .success()
-        .stdout(predicate::eq(format!(
-            "6\tfile\t{expected_mode}\t{expected_mtime}\tpayload.bin\n"
-        )));
+        .stdout(predicate::str::starts_with(format!(
+            "6\tfile\t{expected_mode}\t{expected_mtime}\t"
+        )))
+        .stdout(predicate::str::ends_with("payload.bin\n"));
 }
 
 #[cfg(unix)]
@@ -8317,9 +8318,10 @@ fn cli_list_with_long_output_preserves_unix_mode_bits() {
         ])
         .assert()
         .success()
-        .stdout(predicate::eq(format!(
-            "11\tfile\t448\t{expected_mtime}\tscript.sh\n"
-        )));
+        .stdout(predicate::str::starts_with(format!(
+            "11\tfile\t448\t{expected_mtime}\t"
+        )))
+        .stdout(predicate::str::ends_with("script.sh\n"));
 }
 
 #[test]

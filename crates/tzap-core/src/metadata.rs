@@ -16,7 +16,7 @@ pub const DIRECTORY_HINT_SHARD_ENTRY_LEN: usize = 56;
 pub const ENVELOPE_ENTRY_LEN: usize = 48;
 pub const FRAME_ENTRY_LEN: usize = 44;
 pub const INDEX_SHARD_HEADER_LEN: usize = 64;
-pub const FILE_ENTRY_LEN: usize = 56;
+pub const FILE_ENTRY_LEN: usize = 144;
 pub const DIRECTORY_HINT_TABLE_LEN: usize = 72;
 pub const DIRECTORY_HINT_ENTRY_LEN: usize = 40;
 
@@ -178,6 +178,26 @@ pub struct FileEntry {
     pub tar_member_group_size: u64,
     pub file_data_size: u64,
     pub flags: u32,
+    pub mtime_nsec: u32,
+    pub mtime_sec: i64,
+    pub created_nsec: u32,
+    pub accessed_nsec: u32,
+    pub created_sec: i64,
+    pub accessed_sec: i64,
+    pub uid: u64,
+    pub gid: u64,
+    pub mode: u32,
+    pub attributes: u32,
+    pub uname_offset: u32,
+    pub uname_length: u32,
+    pub gname_offset: u32,
+    pub gname_length: u32,
+    pub link_target_offset: u32,
+    pub link_target_length: u32,
+    pub kind: u8,
+    pub metadata_flags: u8,
+    pub _reserved1: u16,
+    pub _reserved2: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -665,6 +685,26 @@ impl FileEntry {
         write_u64(&mut bytes, 32, self.tar_member_group_size);
         write_u64(&mut bytes, 40, self.file_data_size);
         write_u32(&mut bytes, 48, self.flags);
+        write_u32(&mut bytes, 52, self.mtime_nsec);
+        write_i64(&mut bytes, 56, self.mtime_sec);
+        write_u32(&mut bytes, 64, self.created_nsec);
+        write_u32(&mut bytes, 68, self.accessed_nsec);
+        write_i64(&mut bytes, 72, self.created_sec);
+        write_i64(&mut bytes, 80, self.accessed_sec);
+        write_u64(&mut bytes, 88, self.uid);
+        write_u64(&mut bytes, 96, self.gid);
+        write_u32(&mut bytes, 104, self.mode);
+        write_u32(&mut bytes, 108, self.attributes);
+        write_u32(&mut bytes, 112, self.uname_offset);
+        write_u32(&mut bytes, 116, self.uname_length);
+        write_u32(&mut bytes, 120, self.gname_offset);
+        write_u32(&mut bytes, 124, self.gname_length);
+        write_u32(&mut bytes, 128, self.link_target_offset);
+        write_u32(&mut bytes, 132, self.link_target_length);
+        write_u8(&mut bytes, 136, self.kind);
+        write_u8(&mut bytes, 137, self.metadata_flags);
+        write_u16(&mut bytes, 138, self._reserved1);
+        write_u32(&mut bytes, 140, self._reserved2);
         bytes
     }
 }
@@ -1093,7 +1133,6 @@ fn parse_directory_hint_shard_entries(
 }
 
 fn parse_file_entry(bytes: &[u8]) -> Result<FileEntry, FormatError> {
-    expect_zero("FileEntry", slice(bytes, 52, 4, "FileEntry")?)?;
     Ok(FileEntry {
         path_hash: read_array::<8>(bytes, 0, "FileEntry")?,
         path_offset: read_u32(bytes, 8, "FileEntry")?,
@@ -1104,6 +1143,26 @@ fn parse_file_entry(bytes: &[u8]) -> Result<FileEntry, FormatError> {
         tar_member_group_size: read_u64(bytes, 32, "FileEntry")?,
         file_data_size: read_u64(bytes, 40, "FileEntry")?,
         flags: read_u32(bytes, 48, "FileEntry")?,
+        mtime_nsec: read_u32(bytes, 52, "FileEntry")?,
+        mtime_sec: read_i64(bytes, 56, "FileEntry")?,
+        created_nsec: read_u32(bytes, 64, "FileEntry")?,
+        accessed_nsec: read_u32(bytes, 68, "FileEntry")?,
+        created_sec: read_i64(bytes, 72, "FileEntry")?,
+        accessed_sec: read_i64(bytes, 80, "FileEntry")?,
+        uid: read_u64(bytes, 88, "FileEntry")?,
+        gid: read_u64(bytes, 96, "FileEntry")?,
+        mode: read_u32(bytes, 104, "FileEntry")?,
+        attributes: read_u32(bytes, 108, "FileEntry")?,
+        uname_offset: read_u32(bytes, 112, "FileEntry")?,
+        uname_length: read_u32(bytes, 116, "FileEntry")?,
+        gname_offset: read_u32(bytes, 120, "FileEntry")?,
+        gname_length: read_u32(bytes, 124, "FileEntry")?,
+        link_target_offset: read_u32(bytes, 128, "FileEntry")?,
+        link_target_length: read_u32(bytes, 132, "FileEntry")?,
+        kind: read_u8(bytes, 136, "FileEntry")?,
+        metadata_flags: read_u8(bytes, 137, "FileEntry")?,
+        _reserved1: read_u16(bytes, 138, "FileEntry")?,
+        _reserved2: read_u32(bytes, 140, "FileEntry")?,
     })
 }
 
@@ -2077,12 +2136,39 @@ fn read_u64(bytes: &[u8], offset: usize, structure: &'static str) -> Result<u64,
     Ok(u64::from_le_bytes(raw))
 }
 
+fn read_i64(bytes: &[u8], offset: usize, structure: &'static str) -> Result<i64, FormatError> {
+    let raw = read_array::<8>(bytes, offset, structure)?;
+    Ok(i64::from_le_bytes(raw))
+}
+
+fn read_u16(bytes: &[u8], offset: usize, structure: &'static str) -> Result<u16, FormatError> {
+    let raw = read_array::<2>(bytes, offset, structure)?;
+    Ok(u16::from_le_bytes(raw))
+}
+
+fn read_u8(bytes: &[u8], offset: usize, structure: &'static str) -> Result<u8, FormatError> {
+    let raw = read_array::<1>(bytes, offset, structure)?;
+    Ok(u8::from_le_bytes(raw))
+}
+
 fn write_u32(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
 fn write_u64(bytes: &mut [u8], offset: usize, value: u64) {
     bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_i64(bytes: &mut [u8], offset: usize, value: i64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u8(bytes: &mut [u8], offset: usize, value: u8) {
+    bytes[offset..offset + 1].copy_from_slice(&value.to_le_bytes());
 }
 
 fn checked_add(lhs: usize, rhs: usize, structure: &'static str) -> Result<usize, FormatError> {
@@ -2647,6 +2733,26 @@ mod tests {
             tar_member_group_size: 1536,
             file_data_size: 0,
             flags: EXTENDED_METADATA_V1,
+            mtime_nsec: 0,
+            mtime_sec: 0,
+            created_nsec: 0,
+            created_sec: 0,
+            accessed_nsec: 0,
+            accessed_sec: 0,
+            uid: 0,
+            gid: 0,
+            mode: 0,
+            attributes: 0,
+            uname_offset: 0,
+            uname_length: 0,
+            gname_offset: 0,
+            gname_length: 0,
+            link_target_offset: 0,
+            link_target_length: 0,
+            kind: 0,
+            metadata_flags: 0,
+            _reserved1: 0,
+            _reserved2: 0,
         };
         let frame = FrameEntry {
             frame_index: 0,
@@ -2814,6 +2920,26 @@ mod tests {
             tar_member_group_size: 1536,
             file_data_size: 0,
             flags: EXTENDED_METADATA_V1,
+            mtime_nsec: 0,
+            mtime_sec: 0,
+            created_nsec: 0,
+            created_sec: 0,
+            accessed_nsec: 0,
+            accessed_sec: 0,
+            uid: 0,
+            gid: 0,
+            mode: 0,
+            attributes: 0,
+            uname_offset: 0,
+            uname_length: 0,
+            gname_offset: 0,
+            gname_length: 0,
+            link_target_offset: 0,
+            link_target_length: 0,
+            kind: 0,
+            metadata_flags: 0,
+            _reserved1: 0,
+            _reserved2: 0,
         };
         let frame = FrameEntry {
             frame_index: 0,
@@ -3048,6 +3174,26 @@ mod tests {
             tar_member_group_size: 1536,
             file_data_size: 0,
             flags: EXTENDED_METADATA_V1,
+            mtime_nsec: 0,
+            mtime_sec: 0,
+            created_nsec: 0,
+            created_sec: 0,
+            accessed_nsec: 0,
+            accessed_sec: 0,
+            uid: 0,
+            gid: 0,
+            mode: 0,
+            attributes: 0,
+            uname_offset: 0,
+            uname_length: 0,
+            gname_offset: 0,
+            gname_length: 0,
+            link_target_offset: 0,
+            link_target_length: 0,
+            kind: 0,
+            metadata_flags: 0,
+            _reserved1: 0,
+            _reserved2: 0,
         };
         let frame = FrameEntry {
             frame_index: 0,
@@ -3301,6 +3447,26 @@ mod tests {
             tar_member_group_size: 1536,
             file_data_size: 0,
             flags: EXTENDED_METADATA_V1,
+            mtime_nsec: 0,
+            mtime_sec: 0,
+            created_nsec: 0,
+            created_sec: 0,
+            accessed_nsec: 0,
+            accessed_sec: 0,
+            uid: 0,
+            gid: 0,
+            mode: 0,
+            attributes: 0,
+            uname_offset: 0,
+            uname_length: 0,
+            gname_offset: 0,
+            gname_length: 0,
+            link_target_offset: 0,
+            link_target_length: 0,
+            kind: 0,
+            metadata_flags: 0,
+            _reserved1: 0,
+            _reserved2: 0,
         };
         let frame = FrameEntry {
             frame_index: 0,

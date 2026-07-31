@@ -263,6 +263,17 @@ pub struct ArchiveIndexEntry {
     pub frame_count: u32,
     pub offset_in_first_frame_plaintext: u32,
     pub layout: ArchiveIndexEntryLayout,
+    pub kind: TarEntryKind,
+    pub mtime: ArchiveTimestamp,
+    pub created: Option<ArchiveTimestamp>,
+    pub accessed: Option<ArchiveTimestamp>,
+    pub mode: u32,
+    pub attributes: Option<u32>,
+    pub uid: Option<u64>,
+    pub gid: Option<u64>,
+    pub uname: Option<String>,
+    pub gname: Option<String>,
+    pub link_target: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4116,6 +4127,23 @@ fn archive_index_entry_from_loaded_file_with_path(
         .get(file_index)
         .ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
     let layout = archive_index_entry_layout(shard, file)?;
+
+    let resolve_string = |offset: u32, len: u32| -> Result<Option<String>, FormatError> {
+        if len == 0 {
+            return Ok(None);
+        }
+        let end = offset
+            .checked_add(len)
+            .ok_or(FormatError::InvalidArchive("String pool offset overflow"))?;
+        let bytes = shard
+            .string_pool
+            .get(offset as usize..end as usize)
+            .ok_or(FormatError::InvalidArchive("String pool out of bounds"))?;
+        Ok(Some(String::from_utf8(bytes.to_vec()).map_err(|_| {
+            FormatError::InvalidArchive("Invalid UTF-8 in string pool")
+        })?))
+    };
+
     Ok(ArchiveIndexEntry {
         name: archive_entry_name(&path),
         path,
@@ -4127,6 +4155,37 @@ fn archive_index_entry_from_loaded_file_with_path(
         frame_count: file.frame_count,
         offset_in_first_frame_plaintext: file.offset_in_first_frame_plaintext,
         layout,
+        kind: TarEntryKind::from_u8(file.kind),
+        mtime: ArchiveTimestamp::new(file.mtime_sec, file.mtime_nsec),
+        created: if (file.metadata_flags & 1) != 0 {
+            Some(ArchiveTimestamp::new(file.created_sec, file.created_nsec))
+        } else {
+            None
+        },
+        accessed: if (file.metadata_flags & 2) != 0 {
+            Some(ArchiveTimestamp::new(file.accessed_sec, file.accessed_nsec))
+        } else {
+            None
+        },
+        mode: file.mode,
+        attributes: if (file.metadata_flags & 4) != 0 {
+            Some(file.attributes)
+        } else {
+            None
+        },
+        uid: if file.uid == u64::MAX {
+            None
+        } else {
+            Some(file.uid)
+        },
+        gid: if file.gid == u64::MAX {
+            None
+        } else {
+            Some(file.gid)
+        },
+        uname: resolve_string(file.uname_offset, file.uname_length)?,
+        gname: resolve_string(file.gname_offset, file.gname_length)?,
+        link_target: resolve_string(file.link_target_offset, file.link_target_length)?,
     })
 }
 
@@ -19314,6 +19373,26 @@ mod tests {
                 tar_member_group_size: file.member_group_size,
                 file_data_size: file.file_data_size,
                 flags: crate::entry_metadata::EXTENDED_METADATA_V1,
+                mtime_nsec: 0,
+                mtime_sec: 0,
+                created_nsec: 0,
+                created_sec: 0,
+                accessed_nsec: 0,
+                accessed_sec: 0,
+                uid: 0,
+                gid: 0,
+                mode: 0,
+                attributes: 0,
+                uname_offset: 0,
+                uname_length: 0,
+                gname_offset: 0,
+                gname_length: 0,
+                link_target_offset: 0,
+                link_target_length: 0,
+                kind: 0,
+                metadata_flags: 0,
+                _reserved1: 0,
+                _reserved2: 0,
             });
         }
 

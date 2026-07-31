@@ -1833,13 +1833,20 @@ fn run(cli: Cli) -> Result<()> {
                 );
                 Ok(())
             } else if long {
-                let entries = opened.list_files()?;
-                emit_entry_metadata_diagnostics(quiet, &entries)?;
+                let entries = opened.list_index_entries()?;
                 for entry in entries {
                     let kind = archive_entry_kind_label(entry.kind);
+                    let uid = entry.uid.map_or("null".to_owned(), |v| v.to_string());
+                    let gid = entry.gid.map_or("null".to_owned(), |v| v.to_string());
+                    let uname = entry.uname.as_deref().unwrap_or("null");
+                    let gname = entry.gname.as_deref().unwrap_or("null");
+                    let created = entry.created.map_or("null".to_owned(), |t| t.to_string());
+                    let accessed = entry.accessed.map_or("null".to_owned(), |t| t.to_string());
+                    let attributes = entry.attributes.map_or("null".to_owned(), |v| format!("{:#010X}", v));
+                    let link_target = entry.link_target.as_deref().unwrap_or("null");
                     println!(
-                        "{}\t{}\t{}\t{}\t{}",
-                        entry.file_data_size, kind, entry.mode, entry.mtime, entry.path
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        entry.file_data_size, kind, entry.mode, entry.mtime, created, accessed, uid, gid, uname, gname, attributes, link_target, entry.path
                     );
                 }
                 Ok(())
