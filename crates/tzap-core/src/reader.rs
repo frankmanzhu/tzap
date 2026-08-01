@@ -2107,6 +2107,127 @@ impl OpenedArchive {
             .collect()
     }
 
+    pub fn list_directory_contents(&self, path: &str) -> Result<Vec<ArchiveIndexEntry>, FormatError> {
+        let normalized = crate::metadata::normalize_lookup_directory_path(path, self.crypto_header.max_path_length)?;
+        let target_hash = crate::metadata::hash_prefix(&normalized);
+
+        let mut locating_hint_shard = None;
+        for shard_entry in &self.index_root.directory_hint_shards {
+            if target_hash >= shard_entry.first_dir_hash && target_hash <= shard_entry.last_dir_hash {
+                locating_hint_shard = Some(shard_entry);
+                break;
+            }
+        }
+        
+        let mut shard_rows = Vec::new();
+        if let Some(hint_shard) = locating_hint_shard {
+            let table = self.load_directory_hint_table(hint_shard)?;
+            if let Some(entry_index) = table.lookup_directory_index(&normalized) {
+                if let Some(rows) = table.shard_rows_for_entry(entry_index) {
+                    shard_rows.extend_from_slice(rows);
+                }
+            } else {
+                return Ok(Vec::new());
+            }
+        } else if self.index_root.directory_hint_shards.is_empty() {
+            shard_rows = (0..self.index_root.shards.len() as u32).collect();
+        } else {
+            return Ok(Vec::new());
+        }
+
+        let mut loaded_shards = Vec::new();
+        for &row_index in &shard_rows {
+            if let Some(shard_entry) = self.index_root.shards.get(row_index as usize) {
+                let shard = self.load_index_shard(shard_entry)?;
+                loaded_shards.push(shard);
+            }
+        }
+
+        let winners = final_index_entry_winners(&loaded_shards)?;
+        
+        let mut results = Vec::new();
+        let mut seen_children = std::collections::HashSet::new();
+
+        let prefix_len = if normalized.is_empty() { 0 } else { normalized.len() + 1 };
+
+        for (entry_path, winner) in winners {
+            if crate::metadata::is_directory_ancestor(&normalized, entry_path.as_bytes()) {
+                let suffix = &entry_path.as_bytes()[prefix_len..];
+                
+                let (child_path, is_implicit_dir) = if let Some(slash_idx) = suffix.iter().position(|&c| c == b'/') {
+                    let mut child = if normalized.is_empty() {
+                        Vec::new()
+                    } else {
+                        let mut p = normalized.clone();
+                        p.push(b'/');
+                        p
+                    };
+                    child.extend_from_slice(&suffix[..slash_idx]);
+                    (String::from_utf8_lossy(&child).into_owned(), true)
+                } else {
+                    (entry_path.clone(), false)
+                };
+
+                if seen_children.insert(child_path.clone()) {
+                    if is_implicit_dir {
+                        let name = child_path.split('/').last().unwrap_or("").to_string();
+                        results.push(ArchiveIndexEntry {
+                            path: child_path.clone(),
+                            name,
+                            file_data_size: 0,
+                            flags: 0,
+                            path_hash: [0; 8],
+                            tar_member_group_size: 0,
+                            first_frame_index: 0,
+                            frame_count: 0,
+                            offset_in_first_frame_plaintext: 0,
+                            layout: ArchiveIndexEntryLayout {
+                                compressed_size: 0,
+                                decompressed_frame_size: 0,
+                                envelope_count: 0,
+                                first_envelope_index: None,
+                                last_envelope_index: None,
+                                first_payload_block_index: None,
+                                payload_data_block_count: 0,
+                                payload_parity_block_count: 0,
+                                payload_encrypted_size: 0,
+                            },
+                            kind: crate::tar_model::TarEntryKind::Directory,
+                            mtime: crate::entry_metadata::ArchiveTimestamp { seconds: 0, nanoseconds: 0 },
+                            created: None,
+                            accessed: None,
+                            mode: 0o755,
+                            attributes: None,
+                            uid: None,
+                            gid: None,
+                            uname: None,
+                            gname: None,
+                            link_target: None,
+                        });
+                    } else {
+                        let entry = archive_index_entry_from_loaded_file_with_path(
+                            entry_path,
+                            &loaded_shards[winner.shard_index],
+                            winner.file_index,
+                        )?;
+                        results.push(entry);
+                    }
+                } else if !is_implicit_dir {
+                    if let Some(existing) = results.iter_mut().find(|e| e.path == child_path) {
+                        let entry = archive_index_entry_from_loaded_file_with_path(
+                            entry_path,
+                            &loaded_shards[winner.shard_index],
+                            winner.file_index,
+                        )?;
+                        *existing = entry;
+                    }
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     /// Look up one archive path using encrypted index metadata only.
     pub fn lookup_index_entry(&self, path: &str) -> Result<Option<ArchiveIndexEntry>, FormatError> {
         let normalized = normalize_lookup_file_path(path, self.crypto_header.max_path_length)?;
