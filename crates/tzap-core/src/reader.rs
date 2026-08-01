@@ -959,6 +959,10 @@ impl OpenedArchive {
         }
     }
 
+    pub fn observed_archive_bytes(&self) -> u64 {
+        self.observed_archive_bytes
+    }
+
     fn missing_volume_count(&self) -> u32 {
         self.crypto_header
             .stripe_width
