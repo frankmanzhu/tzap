@@ -1368,6 +1368,45 @@ fn validate_index_shard_tables(
             );
         }
 
+        if file.kind > 6 {
+            return invalid("FileEntry", "kind is invalid");
+        }
+        if file.metadata_flags & !0x07 != 0 {
+            return invalid("FileEntry", "metadata_flags has reserved bits set");
+        }
+        if file.uname_length > 0 {
+            let uname_bytes = string_slice(
+                string_pool,
+                file.uname_offset as u64,
+                file.uname_length as u64,
+                "FileEntry",
+            )?;
+            if std::str::from_utf8(uname_bytes).is_err() {
+                return invalid("FileEntry", "uname string is not valid UTF-8");
+            }
+        }
+        if file.gname_length > 0 {
+            let gname_bytes = string_slice(
+                string_pool,
+                file.gname_offset as u64,
+                file.gname_length as u64,
+                "FileEntry",
+            )?;
+            if std::str::from_utf8(gname_bytes).is_err() {
+                return invalid("FileEntry", "gname string is not valid UTF-8");
+            }
+        }
+        if file.link_target_length > 0 {
+            let link_bytes = string_slice(
+                string_pool,
+                file.link_target_offset as u64,
+                file.link_target_length as u64,
+                "FileEntry",
+            )?;
+            if std::str::from_utf8(link_bytes).is_err() {
+                return invalid("FileEntry", "link_target string is not valid UTF-8");
+            }
+        }
         let path = string_slice(
             string_pool,
             file.path_offset as u64,

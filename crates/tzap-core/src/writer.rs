@@ -5280,15 +5280,19 @@ fn build_index_shard_plaintext(
         };
 
         let kind_u8 = match row.member.entry_kind {
-            SourceEntryKind::Regular => 0,
-            SourceEntryKind::Directory => 5,
-            SourceEntryKind::Symlink => 2,
-            SourceEntryKind::Hardlink => 1,
-            SourceEntryKind::CharacterDevice => 3,
-            SourceEntryKind::BlockDevice => 4,
-            SourceEntryKind::Fifo => 6,
-            SourceEntryKind::ReparseDirectory => 5,
-            SourceEntryKind::ReparseRegular => 0,
+            SourceEntryKind::Regular | SourceEntryKind::ReparseRegular => {
+                crate::tar_model::TarEntryKind::Regular.to_u8()
+            }
+            SourceEntryKind::Directory | SourceEntryKind::ReparseDirectory => {
+                crate::tar_model::TarEntryKind::Directory.to_u8()
+            }
+            SourceEntryKind::Symlink => crate::tar_model::TarEntryKind::Symlink.to_u8(),
+            SourceEntryKind::Hardlink => crate::tar_model::TarEntryKind::Hardlink.to_u8(),
+            SourceEntryKind::CharacterDevice => {
+                crate::tar_model::TarEntryKind::CharacterDevice.to_u8()
+            }
+            SourceEntryKind::BlockDevice => crate::tar_model::TarEntryKind::BlockDevice.to_u8(),
+            SourceEntryKind::Fifo => crate::tar_model::TarEntryKind::Fifo.to_u8(),
         };
 
         let uid = row

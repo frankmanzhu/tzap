@@ -2150,7 +2150,7 @@ impl OpenedArchive {
         let winners = final_index_entry_winners(&loaded_shards)?;
         
         let mut results = Vec::new();
-        let mut seen_children = std::collections::HashSet::new();
+        let mut child_indices: HashMap<String, usize> = HashMap::new();
 
         let prefix_len = if normalized.is_empty() { 0 } else { normalized.len() + 1 };
 
@@ -2172,58 +2172,64 @@ impl OpenedArchive {
                     (entry_path.clone(), false)
                 };
 
-                if seen_children.insert(child_path.clone()) {
-                    if is_implicit_dir {
-                        let name = child_path.split('/').last().unwrap_or("").to_string();
-                        results.push(ArchiveIndexEntry {
-                            path: child_path.clone(),
-                            name,
-                            file_data_size: 0,
-                            flags: 0,
-                            path_hash: [0; 8],
-                            tar_member_group_size: 0,
-                            first_frame_index: 0,
-                            frame_count: 0,
-                            offset_in_first_frame_plaintext: 0,
-                            layout: ArchiveIndexEntryLayout {
-                                compressed_size: 0,
-                                decompressed_frame_size: 0,
-                                envelope_count: 0,
-                                first_envelope_index: None,
-                                last_envelope_index: None,
-                                first_payload_block_index: None,
-                                payload_data_block_count: 0,
-                                payload_parity_block_count: 0,
-                                payload_encrypted_size: 0,
-                            },
-                            kind: crate::tar_model::TarEntryKind::Directory,
-                            mtime: crate::entry_metadata::ArchiveTimestamp { seconds: 0, nanoseconds: 0 },
-                            created: None,
-                            accessed: None,
-                            mode: 0o755,
-                            attributes: None,
-                            uid: None,
-                            gid: None,
-                            uname: None,
-                            gname: None,
-                            link_target: None,
-                        });
-                    } else {
-                        let entry = archive_index_entry_from_loaded_file_with_path(
-                            entry_path,
-                            &loaded_shards[winner.shard_index],
-                            winner.file_index,
-                        )?;
-                        results.push(entry);
+                match child_indices.entry(child_path.clone()) {
+                    std::collections::hash_map::Entry::Vacant(vacant) => {
+                        let idx = results.len();
+                        vacant.insert(idx);
+                        if is_implicit_dir {
+                            let name = child_path.split('/').next_back().unwrap_or("").to_string();
+                            results.push(ArchiveIndexEntry {
+                                path: child_path,
+                                name,
+                                file_data_size: 0,
+                                flags: 0,
+                                path_hash: [0; 8],
+                                tar_member_group_size: 0,
+                                first_frame_index: 0,
+                                frame_count: 0,
+                                offset_in_first_frame_plaintext: 0,
+                                layout: ArchiveIndexEntryLayout {
+                                    compressed_size: 0,
+                                    decompressed_frame_size: 0,
+                                    envelope_count: 0,
+                                    first_envelope_index: None,
+                                    last_envelope_index: None,
+                                    first_payload_block_index: None,
+                                    payload_data_block_count: 0,
+                                    payload_parity_block_count: 0,
+                                    payload_encrypted_size: 0,
+                                },
+                                kind: crate::tar_model::TarEntryKind::Directory,
+                                mtime: crate::entry_metadata::ArchiveTimestamp { seconds: 0, nanoseconds: 0 },
+                                created: None,
+                                accessed: None,
+                                mode: 0o755,
+                                attributes: None,
+                                uid: None,
+                                gid: None,
+                                uname: None,
+                                gname: None,
+                                link_target: None,
+                            });
+                        } else {
+                            let entry = archive_index_entry_from_loaded_file_with_path(
+                                entry_path,
+                                &loaded_shards[winner.shard_index],
+                                winner.file_index,
+                            )?;
+                            results.push(entry);
+                        }
                     }
-                } else if !is_implicit_dir {
-                    if let Some(existing) = results.iter_mut().find(|e| e.path == child_path) {
-                        let entry = archive_index_entry_from_loaded_file_with_path(
-                            entry_path,
-                            &loaded_shards[winner.shard_index],
-                            winner.file_index,
-                        )?;
-                        *existing = entry;
+                    std::collections::hash_map::Entry::Occupied(occupied) => {
+                        if !is_implicit_dir {
+                            let idx = *occupied.get();
+                            let entry = archive_index_entry_from_loaded_file_with_path(
+                                entry_path,
+                                &loaded_shards[winner.shard_index],
+                                winner.file_index,
+                            )?;
+                            results[idx] = entry;
+                        }
                     }
                 }
             }
@@ -19813,5 +19819,211 @@ mod tests {
         } else {
             512 - remainder
         }
+    }
+
+    #[test]
+    fn list_index_entries_and_lookup_index_entry_header_metadata_coverage() {
+        struct TestSource {
+            path: &'static str,
+            kind: SourceEntryKind,
+            target: Option<&'static [u8]>,
+            created: Option<ArchiveTimestamp>,
+            accessed: Option<ArchiveTimestamp>,
+            attributes: Option<u32>,
+            uid: Option<u64>,
+            gid: Option<u64>,
+            uname: Option<&'static str>,
+            gname: Option<&'static str>,
+        }
+
+        impl RegularFileSource for TestSource {
+            fn archive_path(&self) -> &str {
+                self.path
+            }
+            fn entry_kind(&self) -> SourceEntryKind {
+                self.kind
+            }
+            fn link_target(&self) -> Option<&[u8]> {
+                self.target
+            }
+            fn file_data_size(&self) -> u64 {
+                0
+            }
+            fn mode(&self) -> u32 {
+                0o755
+            }
+            fn mtime(&self) -> ArchiveTimestamp {
+                ArchiveTimestamp::new(1_700_000_000, 100_000_000)
+            }
+            fn portable_metadata(&self) -> PortableFileMetadata {
+                let posix_owner = if self.uid.is_some() || self.gid.is_some() || self.uname.is_some() || self.gname.is_some() {
+                    Some(PortablePosixOwner {
+                        uid: self.uid.unwrap_or(u64::MAX),
+                        gid: self.gid.unwrap_or(u64::MAX),
+                        uname: self.uname.map(|s| s.to_string()),
+                        gname: self.gname.map(|s| s.to_string()),
+                    })
+                } else {
+                    None
+                };
+                PortableFileMetadata {
+                    posix_owner,
+                    attributes: self.attributes,
+                    created: self.created,
+                    accessed: self.accessed,
+                    ..Default::default()
+                }
+            }
+            fn open(&self) -> Result<Box<dyn Read + '_>, crate::format::ArchiveWriteError> {
+                Ok(Box::new(std::io::Cursor::new(b"")))
+            }
+        }
+
+        let s1 = TestSource {
+            path: "symlink.txt",
+            kind: SourceEntryKind::Symlink,
+            target: Some(b"target.txt"),
+            created: Some(ArchiveTimestamp::new(1_700_000_100, 200_000_000)),
+            accessed: Some(ArchiveTimestamp::new(1_700_000_300, 400_000_000)),
+            attributes: Some(0x05),
+            uid: Some(1001),
+            gid: Some(1002),
+            uname: Some("alice"),
+            gname: Some("devs"),
+        };
+
+        let s2 = TestSource {
+            path: "plain.txt",
+            kind: SourceEntryKind::Regular,
+            target: None,
+            created: None,
+            accessed: None,
+            attributes: None,
+            uid: None,
+            gid: None,
+            uname: None,
+            gname: None,
+        };
+
+        let mut sink = MemoryArchiveSink::default();
+        write_archive_sources_to_sink_single_pass(
+            &[s1, s2],
+            &master_key(),
+            single_stream_options(),
+            &crate::crypto::KdfParams::Raw,
+            None,
+            None,
+            &mut sink,
+        )
+        .unwrap();
+
+        let archive_bytes = sink.volumes.remove(0);
+        let opened = open_archive(&archive_bytes, &master_key()).unwrap();
+
+        let index_entries = opened.list_index_entries().unwrap();
+        assert_eq!(index_entries.len(), 2);
+
+        let e1 = index_entries.iter().find(|e| e.path == "symlink.txt").unwrap();
+        assert_eq!(e1.kind, TarEntryKind::Symlink);
+        assert_eq!(e1.link_target, Some("target.txt".to_string()));
+        assert_eq!(e1.created, Some(ArchiveTimestamp::new(1_700_000_100, 200_000_000)));
+        assert_eq!(e1.accessed, Some(ArchiveTimestamp::new(1_700_000_300, 400_000_000)));
+        assert_eq!(e1.attributes, Some(0x05));
+        assert_eq!(e1.uid, Some(1001));
+        assert_eq!(e1.gid, Some(1002));
+        assert_eq!(e1.uname, Some("alice".to_string()));
+        assert_eq!(e1.gname, Some("devs".to_string()));
+
+        let e2 = index_entries.iter().find(|e| e.path == "plain.txt").unwrap();
+        assert_eq!(e2.kind, TarEntryKind::Regular);
+        assert_eq!(e2.link_target, None);
+        assert_eq!(e2.created, None);
+        assert_eq!(e2.accessed, None);
+        assert_eq!(e2.attributes, None);
+        assert_eq!(e2.uid, None);
+        assert_eq!(e2.gid, None);
+        assert_eq!(e2.uname, None);
+        assert_eq!(e2.gname, None);
+
+        let looked_up1 = opened.lookup_index_entry("symlink.txt").unwrap().unwrap();
+        assert_eq!(looked_up1, *e1);
+        let looked_up2 = opened.lookup_index_entry("plain.txt").unwrap().unwrap();
+        assert_eq!(looked_up2, *e2);
+    }
+
+    #[test]
+    fn list_directory_contents_functional_verification() {
+        struct DirTestSource {
+            path: &'static str,
+            kind: SourceEntryKind,
+        }
+
+        impl RegularFileSource for DirTestSource {
+            fn archive_path(&self) -> &str {
+                self.path
+            }
+            fn entry_kind(&self) -> SourceEntryKind {
+                self.kind
+            }
+            fn file_data_size(&self) -> u64 {
+                0
+            }
+            fn mode(&self) -> u32 {
+                0o755
+            }
+            fn mtime(&self) -> ArchiveTimestamp {
+                ArchiveTimestamp::from_seconds(1_700_000_000)
+            }
+            fn open(&self) -> Result<Box<dyn Read + '_>, crate::format::ArchiveWriteError> {
+                Ok(Box::new(std::io::Cursor::new(b"")))
+            }
+        }
+
+        let sources = [
+            DirTestSource {
+                path: "docs/file1.txt",
+                kind: SourceEntryKind::Regular,
+            },
+            DirTestSource {
+                path: "docs/sub/file2.txt",
+                kind: SourceEntryKind::Regular,
+            },
+            DirTestSource {
+                path: "docs/sub",
+                kind: SourceEntryKind::Directory,
+            },
+        ];
+
+        let mut sink = MemoryArchiveSink::default();
+        write_archive_sources_to_sink_single_pass(
+            &sources,
+            &master_key(),
+            single_stream_options(),
+            &crate::crypto::KdfParams::Raw,
+            None,
+            None,
+            &mut sink,
+        )
+        .unwrap();
+
+        let archive_bytes = sink.volumes.remove(0);
+        let opened = open_archive(&archive_bytes, &master_key()).unwrap();
+
+        let root_contents = opened.list_directory_contents("").unwrap();
+        assert_eq!(root_contents.len(), 1);
+        assert_eq!(root_contents[0].path, "docs");
+        assert_eq!(root_contents[0].name, "docs");
+        assert_eq!(root_contents[0].kind, TarEntryKind::Directory);
+
+        let docs_contents = opened.list_directory_contents("docs").unwrap();
+        assert_eq!(docs_contents.len(), 2);
+        
+        let file1 = docs_contents.iter().find(|e| e.path == "docs/file1.txt").unwrap();
+        assert_eq!(file1.name, "file1.txt");
+        assert_eq!(file1.kind, TarEntryKind::Regular);
+
+        let sub_dir = docs_contents.iter().find(|e| e.path == "docs/sub").unwrap();
+        assert_eq!(sub_dir.name, "sub");
+        assert_eq!(sub_dir.kind, TarEntryKind::Directory);
     }
 }
