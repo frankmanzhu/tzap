@@ -7411,6 +7411,10 @@ fn apply_windows_security_descriptor(
 fn windows_security_descriptors_equivalent(expected: &[u8], actual: &[u8]) -> bool {
     const DACL_PRESENT: u16 = 0x0004;
     const SACL_PRESENT: u16 = 0x0010;
+    const DACL_AUTO_INHERIT_REQ: u16 = 0x0100;
+    const SACL_AUTO_INHERIT_REQ: u16 = 0x0200;
+    const DACL_AUTO_INHERITED: u16 = 0x0400;
+    const SACL_AUTO_INHERITED: u16 = 0x0800;
     const DACL_PROTECTED: u16 = 0x1000;
     const SACL_PROTECTED: u16 = 0x2000;
 
@@ -7419,7 +7423,8 @@ fn windows_security_descriptors_equivalent(expected: &[u8], actual: &[u8]) -> bo
     }
     let expected_control = u16::from_le_bytes([expected[2], expected[3]]);
     let actual_control = u16::from_le_bytes([actual[2], actual[3]]);
-    let mut ignorable = 0u16;
+    let mut ignorable =
+        DACL_AUTO_INHERIT_REQ | SACL_AUTO_INHERIT_REQ | DACL_AUTO_INHERITED | SACL_AUTO_INHERITED;
     if expected_control & DACL_PRESENT == 0 && actual_control & DACL_PRESENT == 0 {
         ignorable |= DACL_PROTECTED;
     }
@@ -11354,6 +11359,10 @@ mod tests {
         assert!(windows_security_descriptors_equivalent(
             &descriptor(base | 0x2000),
             &descriptor(base)
+        ));
+        assert!(windows_security_descriptors_equivalent(
+            &descriptor(base | 0x0400),
+            &descriptor(base | 0x0100)
         ));
         assert!(!windows_security_descriptors_equivalent(
             &descriptor(base | 0x1000),
