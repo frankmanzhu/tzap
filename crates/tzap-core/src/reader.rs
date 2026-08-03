@@ -2111,18 +2111,25 @@ impl OpenedArchive {
             .collect()
     }
 
-    pub fn list_directory_contents(&self, path: &str) -> Result<Vec<ArchiveIndexEntry>, FormatError> {
-        let normalized = crate::metadata::normalize_lookup_directory_path(path, self.crypto_header.max_path_length)?;
+    pub fn list_directory_contents(
+        &self,
+        path: &str,
+    ) -> Result<Vec<ArchiveIndexEntry>, FormatError> {
+        let normalized = crate::metadata::normalize_lookup_directory_path(
+            path,
+            self.crypto_header.max_path_length,
+        )?;
         let target_hash = crate::metadata::hash_prefix(&normalized);
 
         let mut locating_hint_shard = None;
         for shard_entry in &self.index_root.directory_hint_shards {
-            if target_hash >= shard_entry.first_dir_hash && target_hash <= shard_entry.last_dir_hash {
+            if target_hash >= shard_entry.first_dir_hash && target_hash <= shard_entry.last_dir_hash
+            {
                 locating_hint_shard = Some(shard_entry);
                 break;
             }
         }
-        
+
         let mut shard_rows = Vec::new();
         if let Some(hint_shard) = locating_hint_shard {
             let table = self.load_directory_hint_table(hint_shard)?;
@@ -2148,29 +2155,34 @@ impl OpenedArchive {
         }
 
         let winners = final_index_entry_winners(&loaded_shards)?;
-        
+
         let mut results = Vec::new();
         let mut child_indices: HashMap<String, usize> = HashMap::new();
 
-        let prefix_len = if normalized.is_empty() { 0 } else { normalized.len() + 1 };
+        let prefix_len = if normalized.is_empty() {
+            0
+        } else {
+            normalized.len() + 1
+        };
 
         for (entry_path, winner) in winners {
             if crate::metadata::is_directory_ancestor(&normalized, entry_path.as_bytes()) {
                 let suffix = &entry_path.as_bytes()[prefix_len..];
-                
-                let (child_path, is_implicit_dir) = if let Some(slash_idx) = suffix.iter().position(|&c| c == b'/') {
-                    let mut child = if normalized.is_empty() {
-                        Vec::new()
+
+                let (child_path, is_implicit_dir) =
+                    if let Some(slash_idx) = suffix.iter().position(|&c| c == b'/') {
+                        let mut child = if normalized.is_empty() {
+                            Vec::new()
+                        } else {
+                            let mut p = normalized.clone();
+                            p.push(b'/');
+                            p
+                        };
+                        child.extend_from_slice(&suffix[..slash_idx]);
+                        (String::from_utf8_lossy(&child).into_owned(), true)
                     } else {
-                        let mut p = normalized.clone();
-                        p.push(b'/');
-                        p
+                        (entry_path.clone(), false)
                     };
-                    child.extend_from_slice(&suffix[..slash_idx]);
-                    (String::from_utf8_lossy(&child).into_owned(), true)
-                } else {
-                    (entry_path.clone(), false)
-                };
 
                 match child_indices.entry(child_path.clone()) {
                     std::collections::hash_map::Entry::Vacant(vacant) => {
@@ -2200,7 +2212,10 @@ impl OpenedArchive {
                                     payload_encrypted_size: 0,
                                 },
                                 kind: crate::tar_model::TarEntryKind::Directory,
-                                mtime: crate::entry_metadata::ArchiveTimestamp { seconds: 0, nanoseconds: 0 },
+                                mtime: crate::entry_metadata::ArchiveTimestamp {
+                                    seconds: 0,
+                                    nanoseconds: 0,
+                                },
                                 created: None,
                                 accessed: None,
                                 mode: 0o755,
@@ -19856,7 +19871,11 @@ mod tests {
                 ArchiveTimestamp::new(1_700_000_000, 100_000_000)
             }
             fn portable_metadata(&self) -> PortableFileMetadata {
-                let posix_owner = if self.uid.is_some() || self.gid.is_some() || self.uname.is_some() || self.gname.is_some() {
+                let posix_owner = if self.uid.is_some()
+                    || self.gid.is_some()
+                    || self.uname.is_some()
+                    || self.gname.is_some()
+                {
                     Some(PortablePosixOwner {
                         uid: self.uid.unwrap_or(u64::MAX),
                         gid: self.gid.unwrap_or(u64::MAX),
@@ -19923,18 +19942,30 @@ mod tests {
         let index_entries = opened.list_index_entries().unwrap();
         assert_eq!(index_entries.len(), 2);
 
-        let e1 = index_entries.iter().find(|e| e.path == "symlink.txt").unwrap();
+        let e1 = index_entries
+            .iter()
+            .find(|e| e.path == "symlink.txt")
+            .unwrap();
         assert_eq!(e1.kind, TarEntryKind::Symlink);
         assert_eq!(e1.link_target, Some("target.txt".to_string()));
-        assert_eq!(e1.created, Some(ArchiveTimestamp::new(1_700_000_100, 200_000_000)));
-        assert_eq!(e1.accessed, Some(ArchiveTimestamp::new(1_700_000_300, 400_000_000)));
+        assert_eq!(
+            e1.created,
+            Some(ArchiveTimestamp::new(1_700_000_100, 200_000_000))
+        );
+        assert_eq!(
+            e1.accessed,
+            Some(ArchiveTimestamp::new(1_700_000_300, 400_000_000))
+        );
         assert_eq!(e1.attributes, Some(0x05));
         assert_eq!(e1.uid, Some(1001));
         assert_eq!(e1.gid, Some(1002));
         assert_eq!(e1.uname, Some("alice".to_string()));
         assert_eq!(e1.gname, Some("devs".to_string()));
 
-        let e2 = index_entries.iter().find(|e| e.path == "plain.txt").unwrap();
+        let e2 = index_entries
+            .iter()
+            .find(|e| e.path == "plain.txt")
+            .unwrap();
         assert_eq!(e2.kind, TarEntryKind::Regular);
         assert_eq!(e2.link_target, None);
         assert_eq!(e2.created, None);
@@ -20017,8 +20048,11 @@ mod tests {
 
         let docs_contents = opened.list_directory_contents("docs").unwrap();
         assert_eq!(docs_contents.len(), 2);
-        
-        let file1 = docs_contents.iter().find(|e| e.path == "docs/file1.txt").unwrap();
+
+        let file1 = docs_contents
+            .iter()
+            .find(|e| e.path == "docs/file1.txt")
+            .unwrap();
         assert_eq!(file1.name, "file1.txt");
         assert_eq!(file1.kind, TarEntryKind::Regular);
 

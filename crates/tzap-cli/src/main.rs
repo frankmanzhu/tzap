@@ -1842,11 +1842,25 @@ fn run(cli: Cli) -> Result<()> {
                     let gname = entry.gname.as_deref().unwrap_or("null");
                     let created = entry.created.map_or("null".to_owned(), |t| t.to_string());
                     let accessed = entry.accessed.map_or("null".to_owned(), |t| t.to_string());
-                    let attributes = entry.attributes.map_or("null".to_owned(), |v| format!("{:#010X}", v));
+                    let attributes = entry
+                        .attributes
+                        .map_or("null".to_owned(), |v| format!("{:#010X}", v));
                     let link_target = entry.link_target.as_deref().unwrap_or("null");
                     println!(
                         "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        entry.file_data_size, kind, entry.mode, entry.mtime, created, accessed, uid, gid, uname, gname, attributes, link_target, entry.path
+                        entry.file_data_size,
+                        kind,
+                        entry.mode,
+                        entry.mtime,
+                        created,
+                        accessed,
+                        uid,
+                        gid,
+                        uname,
+                        gname,
+                        attributes,
+                        link_target,
+                        entry.path
                     );
                 }
                 Ok(())
