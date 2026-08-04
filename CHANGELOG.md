@@ -4,14 +4,23 @@
 
 ## 0.2.0 - 2026-08-04
 
-- Exposes the `list` function.
-- Fixes issues with the pax column.
-- Closes/fixes the gap in the metadata column.
-- Applies fixes from code review.
-- Adds a staging certificate.
-- Fixes Continuous Integration (CI) pipelines.
-- Updates `tzap` to v45.
-- Formatting changes.
+- Updates the tzap format to the v45 specification, incorporating format-level
+  improvements and spec refinements.
+- Adds cross-platform native metadata capture and restore: Linux sparse files,
+  xattrs, project IDs, FIFO/device descriptors, and whiteouts; macOS Darwin
+  flags, ACLs, FinderInfo, resource forks, and creation time; Windows reparse
+  points, security descriptors, and object IDs.
+- Exposes the `list` function in the public API for downstream consumers.
+- Fixes PAX column handling and closes metadata column gaps across the reader
+  and writer stacks.
+- Enhances the reader with indexed entry lookups, frame-based streaming, and
+  richer index-only metadata in archive listings.
+- Improves the writer with phase-native progress reporting for metadata-heavy
+  archives.
+- Adds a staging root CA certificate for development and testing workflows.
+- Significantly expands CLI smoke test coverage.
+- Applies code-review fixes and formatting cleanups.
+- Fixes multiple CI pipeline stability issues.
 
 ## 0.1.12 - 2026-07-26
 
