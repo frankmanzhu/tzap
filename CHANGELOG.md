@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-04
+
+- Exposes the `list` function.
+- Fixes issues with the pax column.
+- Closes/fixes the gap in the metadata column.
+- Applies fixes from code review.
+- Adds a staging certificate.
+- Fixes Continuous Integration (CI) pipelines.
+- Updates `tzap` to v45.
+- Formatting changes.
+
 ## 0.1.12 - 2026-07-26
 
 - Enables `--allow-absolute-symlinks` extraction toggle for absolute symlink recovery outside the destination directory.

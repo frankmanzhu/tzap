@@ -16,8 +16,8 @@ signing profile logic.
 
 ```toml
 [dependencies]
-tzap-core = "0.1.12"
-tzap-plugin-signing = "0.1.12"
+tzap-core = "0.2.0"
+tzap-plugin-signing = "0.2.0"
 ```
 
 ## Architecture
