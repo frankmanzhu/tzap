@@ -205,12 +205,16 @@ fn capture_linux_times(identity: LinuxIdentity, native: &mut NativeFileMetadata)
             .canonical_pax_value()
             .map_err(io::Error::other)?,
     );
+    // The ctime-observed record above always belongs to the linux-backup-v1
+    // profile, so that profile must be selected whenever this capture runs.
+    // (Selecting it only alongside `created` made archives invalid on libcs
+    // where std cannot expose the birth time, e.g. musl.)
+    native.required_profiles.push("linux-backup-v1".into());
     if let Some(created) = identity.created {
         native.primary_pax_records.insert(
             "LIBARCHIVE.creationtime".into(),
             created.canonical_pax_value().map_err(io::Error::other)?,
         );
-        native.required_profiles.push("linux-backup-v1".into());
     }
     native.required_profiles.push("posix-backup-v1".into());
     Ok(())
