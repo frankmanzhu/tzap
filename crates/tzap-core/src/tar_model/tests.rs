@@ -619,6 +619,30 @@ fn prepared_regular_file_uses_open_parent_after_parent_path_swap() {
     assert!(!outside.path().join("file.txt").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn directory_sync_tolerates_filesystems_that_reject_dir_fsync() {
+    use super::restore::benign_directory_sync_error;
+    // tmpfs and overlay lower layers on older kernels reject fsync on directories with
+    // EINVAL/EOPNOTSUPP/ENOTSUP; those errors must not fail an otherwise-good restore.
+    for code in [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP] {
+        assert!(
+            benign_directory_sync_error(&std::io::Error::from_raw_os_error(code)),
+            "errno {code} should be tolerated"
+        );
+    }
+    // Real failures (I/O error, out of space, bad fd) must still surface.
+    for code in [libc::EIO, libc::ENOSPC, libc::EBADF] {
+        assert!(
+            !benign_directory_sync_error(&std::io::Error::from_raw_os_error(code)),
+            "errno {code} must remain a hard failure"
+        );
+    }
+    assert!(!benign_directory_sync_error(&std::io::Error::other(
+        "no errno attached"
+    )));
+}
+
 #[cfg(windows)]
 #[test]
 fn open_file_publication_preserves_even_and_odd_length_names() {

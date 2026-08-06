@@ -1516,11 +1516,13 @@ impl<'a> FilesystemRestoreHandler<'a> {
     /// fsync the restore root directory at the end of the archive.
     #[cfg(unix)]
     fn sync_root_for_durability(&self) -> Result<(), FormatError> {
-        std::fs::File::open(self.root)
-            .and_then(|root_file| root_file.sync_all())
-            .map_err(|_| {
-                FormatError::FilesystemExtractionFailed("failed to sync restore root directory")
-            })
+        match std::fs::File::open(self.root).and_then(|root_file| root_file.sync_all()) {
+            Ok(()) => Ok(()),
+            Err(error) if benign_directory_sync_error(&error) => Ok(()),
+            Err(_) => Err(FormatError::FilesystemExtractionFailed(
+                "failed to sync restore root directory",
+            )),
+        }
     }
 
     #[cfg(not(unix))]
@@ -2586,16 +2588,53 @@ fn existing_safe_windows_reparse_path(
     Ok(destination)
 }
 
+/// True when a directory fsync failed in a way that carries no durability loss on the
+/// backing filesystem. tmpfs and overlay lower layers on older kernels reject fsync on
+/// directories with EINVAL/EOPNOTSUPP/ENOTSUP; entries there are volatile or already
+/// durable by construction, so the sync is meaningless. Tolerate the rejection the way
+/// cargo, rustc, git, and PostgreSQL do rather than failing the restore.
+#[cfg(unix)]
+pub(crate) fn benign_directory_sync_error(error: &std::io::Error) -> bool {
+    error.raw_os_error().is_some_and(|code| {
+        code == libc::EINVAL || code == libc::ENOTSUP || code == libc::EOPNOTSUPP
+    })
+}
+
 /// fsync a destination directory so a rename/create published beneath it is durable
 /// before the restore is reported successful. The per-file data sync happens in
 /// `publish_regular_file`; this makes the directory entry itself survive power loss.
 #[cfg(unix)]
 pub(crate) fn sync_directory(directory: &CapDir) -> Result<(), FormatError> {
-    // SAFETY: the directory handle is live for the duration of the call.
-    if unsafe { libc::fsync(directory.as_raw_fd()) } != 0 {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "failed to sync destination directory",
-        ));
+    // cap-std opens ambient directories with O_PATH on Linux, and fsync on an
+    // O_PATH handle fails with EBADF. Reopen the pinned directory through its
+    // own handle — openat on an O_PATH dirfd is a valid base for relative
+    // opens, and "." addresses the directory itself — so the fsync targets a
+    // real read-only directory fd without re-traversing any pathname.
+    // SAFETY: the directory handle is live for the duration of the call, and the
+    // reopened fd is checked and closed within this function.
+    let reopened = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            c".".as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+        )
+    };
+    if reopened < 0 {
+        // A durability handle could not be obtained (e.g. a write-only
+        // directory). The entry was already published; treat the sync as
+        // best-effort rather than failing the restore.
+        return Ok(());
+    }
+    let sync_result = unsafe { libc::fsync(reopened) };
+    // SAFETY: `reopened` is a live fd owned by this call.
+    unsafe { libc::close(reopened) };
+    if sync_result != 0 {
+        let error = std::io::Error::last_os_error();
+        if !benign_directory_sync_error(&error) {
+            return Err(FormatError::FilesystemExtractionFailed(
+                "failed to sync destination directory",
+            ));
+        }
     }
     Ok(())
 }
