@@ -1,7 +1,9 @@
-use super::*;
 use super::restore::{plan_restore, PreparedDestination, StagedAuxiliary};
 #[cfg(windows)]
-use super::sparse::{prepare_windows_sparse_file, query_windows_sparse_ranges, windows_file_system_is_refs};
+use super::sparse::{
+    prepare_windows_sparse_file, query_windows_sparse_ranges, windows_file_system_is_refs,
+};
+use super::*;
 
 const MACOS_SETTABLE_ORDINARY_FLAGS: u32 = 0x0000_800f;
 const MACOS_SETTABLE_SYSTEM_FLAGS: u32 = 0x0007_0000;
@@ -9,7 +11,8 @@ const MACOS_SETTABLE_SYSTEM_FLAGS: u32 = 0x0007_0000;
 // Darwin SF_SUPPORTED bit have System-class restore semantics even when this
 // reader deliberately does not register the bit for built-in application.
 const MACOS_SYSTEM_CLASS_FLAGS: u32 = 0x009f_0086;
-pub(crate) const MACOS_KNOWN_SETTABLE_FLAGS: u32 = MACOS_SETTABLE_ORDINARY_FLAGS | MACOS_SETTABLE_SYSTEM_FLAGS;
+pub(crate) const MACOS_KNOWN_SETTABLE_FLAGS: u32 =
+    MACOS_SETTABLE_ORDINARY_FLAGS | MACOS_SETTABLE_SYSTEM_FLAGS;
 
 pub(crate) fn parse_macos_flags(encoded: &[u8]) -> Result<u32, FormatError> {
     std::str::from_utf8(encoded)
@@ -286,7 +289,10 @@ pub(crate) fn windows_reparse_metadata_supported(metadata: &MemberMetadata) -> b
             .is_some_and(|record| native_auxiliary_restore_supported(record, true, None))
 }
 
-pub(crate) fn native_primary_restore_unsupported(metadata: &MemberMetadata, include_system: bool) -> bool {
+pub(crate) fn native_primary_restore_unsupported(
+    metadata: &MemberMetadata,
+    include_system: bool,
+) -> bool {
     metadata.primary_records.keys().any(|key| {
         let native = key.starts_with("TZAP.linux.")
             || key.starts_with("TZAP.macos.")

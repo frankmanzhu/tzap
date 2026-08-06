@@ -559,7 +559,11 @@ pub fn test_ca_cert(cn: &str) -> (X509, PKey<Private>) {
     (builder.build(), key)
 }
 
-pub fn test_leaf_cert(cn: &str, ca_cert: &X509Ref, ca_key: &PKeyRef<Private>) -> (X509, PKey<Private>) {
+pub fn test_leaf_cert(
+    cn: &str,
+    ca_cert: &X509Ref,
+    ca_key: &PKeyRef<Private>,
+) -> (X509, PKey<Private>) {
     let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
     let mut name = X509NameBuilder::new().unwrap();
     name.append_entry_by_text("CN", cn).unwrap();

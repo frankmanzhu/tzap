@@ -8,32 +8,28 @@ use sha2::{Digest, Sha256};
 
 use crate::compression::{decompress_exact_zstd_frame, validate_exact_zstd_frame};
 use crate::crypto::{
-    decrypt_padded_aead_object, verify_integrity_tag, AeadObjectContext, HmacDomain,
-    MasterKey, Subkeys,
+    decrypt_padded_aead_object, verify_integrity_tag, AeadObjectContext, HmacDomain, MasterKey,
+    Subkeys,
 };
 use crate::fec::repair_data_gf16;
 use crate::format::{
-    BlockKind, FormatError,
-    BLOCK_RECORD_FRAMING_LEN,
-    CRITICAL_RECOVERY_LOCATOR_LEN, LOCATOR_PAIR_LEN, VOLUME_HEADER_LEN,
+    BlockKind, FormatError, BLOCK_RECORD_FRAMING_LEN, CRITICAL_RECOVERY_LOCATOR_LEN,
+    LOCATOR_PAIR_LEN, VOLUME_HEADER_LEN,
 };
 use crate::metadata::{
-    hash_prefix, DirectoryHintShardEntry, DirectoryHintTable,
-    EnvelopeEntry, FileEntry, FrameEntry, IndexRoot, IndexShard, MetadataLimits, ShardEntry,
+    hash_prefix, DirectoryHintShardEntry, DirectoryHintTable, EnvelopeEntry, FileEntry, FrameEntry,
+    IndexRoot, IndexShard, MetadataLimits, ShardEntry,
 };
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
 #[cfg(windows)]
 use crate::tar_model::replay_windows_descendant_metadata;
 use crate::tar_model::{
-    validate_tar_stream_total_extraction_size,
-    TarEntryKind, TarStreamTotalExtractionSizeValidator,
+    validate_tar_stream_total_extraction_size, TarEntryKind, TarStreamTotalExtractionSizeValidator,
 };
 use crate::wire::{
-    BlockRecord, CriticalMetadataImage,
-    CryptoHeader, CryptoHeaderFixed, ExtensionTlv, ManifestFooter,
-    RootAuthFooterV1, VolumeHeader, VolumeTrailer,
+    BlockRecord, CriticalMetadataImage, CryptoHeader, CryptoHeaderFixed, ExtensionTlv,
+    ManifestFooter, RootAuthFooterV1, VolumeHeader, VolumeTrailer,
 };
-
 
 #[derive(Debug)]
 pub(crate) struct ParsedBlockRegion {
@@ -260,7 +256,11 @@ pub(crate) fn block_record_len(block_size: usize) -> Result<u64, FormatError> {
     u64::try_from(len).map_err(|_| FormatError::InvalidArchive("BlockRecord length overflow"))
 }
 
-pub(crate) fn checked_u64_mul(lhs: u64, rhs: u64, reason: &'static str) -> Result<u64, FormatError> {
+pub(crate) fn checked_u64_mul(
+    lhs: u64,
+    rhs: u64,
+    reason: &'static str,
+) -> Result<u64, FormatError> {
     lhs.checked_mul(rhs)
         .ok_or(FormatError::InvalidArchive(reason))
 }
@@ -1026,7 +1026,9 @@ impl<'a> ObjectLoadContext<'a> {
     }
 }
 
-pub(crate) fn dictionary_extent_from_index_root(index_root: &IndexRoot) -> Result<ObjectExtent, FormatError> {
+pub(crate) fn dictionary_extent_from_index_root(
+    index_root: &IndexRoot,
+) -> Result<ObjectExtent, FormatError> {
     if index_root.header.dictionary_data_block_count == 0
         || index_root.header.dictionary_encrypted_size == 0
         || index_root.header.dictionary_decompressed_size == 0
@@ -1606,7 +1608,9 @@ pub(crate) fn object_block_range(
     Ok((first_block_index, end))
 }
 
-pub(crate) fn validate_non_overlapping_object_ranges(ranges: &mut [(u64, u64)]) -> Result<(), FormatError> {
+pub(crate) fn validate_non_overlapping_object_ranges(
+    ranges: &mut [(u64, u64)],
+) -> Result<(), FormatError> {
     ranges.sort_unstable();
     for pair in ranges.windows(2) {
         if pair[0].1 > pair[1].0 {
@@ -1703,7 +1707,11 @@ pub(crate) fn read_at_vec_unchecked(
     Ok(out)
 }
 
-pub(crate) fn parallel_map_ref<T, U, F>(items: &[T], jobs: usize, f: F) -> Result<Vec<U>, FormatError>
+pub(crate) fn parallel_map_ref<T, U, F>(
+    items: &[T],
+    jobs: usize,
+    f: F,
+) -> Result<Vec<U>, FormatError>
 where
     T: Sync,
     U: Send,
@@ -1730,12 +1738,20 @@ where
     })
 }
 
-pub(crate) fn checked_add(lhs: usize, rhs: usize, structure: &'static str) -> Result<usize, FormatError> {
+pub(crate) fn checked_add(
+    lhs: usize,
+    rhs: usize,
+    structure: &'static str,
+) -> Result<usize, FormatError> {
     lhs.checked_add(rhs)
         .ok_or(FormatError::InvalidArchive(structure))
 }
 
-pub(crate) fn checked_u64_add(lhs: u64, rhs: u64, structure: &'static str) -> Result<u64, FormatError> {
+pub(crate) fn checked_u64_add(
+    lhs: u64,
+    rhs: u64,
+    structure: &'static str,
+) -> Result<u64, FormatError> {
     lhs.checked_add(rhs)
         .ok_or(FormatError::InvalidArchive(structure))
 }
@@ -1743,4 +1759,3 @@ pub(crate) fn checked_u64_add(lhs: u64, rhs: u64, structure: &'static str) -> Re
 pub(crate) fn to_usize(value: u64, structure: &'static str) -> Result<usize, FormatError> {
     usize::try_from(value).map_err(|_| FormatError::InvalidArchive(structure))
 }
-

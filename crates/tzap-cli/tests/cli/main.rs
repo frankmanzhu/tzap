@@ -5,8 +5,8 @@ mod common;
 mod create;
 mod errors;
 mod extract;
-mod verify;
 mod keywrap;
+mod verify;
 
 use common::*;
 

@@ -3,29 +3,22 @@ use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-
-use crate::crypto::{
-    verify_integrity_tag, HmacDomain, KdfParams,
-    MasterKey, Subkeys,
-};
+use crate::crypto::{verify_integrity_tag, HmacDomain, KdfParams, MasterKey, Subkeys};
 use crate::format::{
-    FormatError,
-    MANIFEST_FOOTER_LEN,
-    VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
+    FormatError, MANIFEST_FOOTER_LEN, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
 };
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
 use crate::root_auth::{
     archive_root_for_revision, data_block_merkle_root_for_revision,
-    root_auth_descriptor_digest_for_revision, signer_identity_digest, ArchiveRootInputs, DataBlockMerkleLeaf,
+    root_auth_descriptor_digest_for_revision, signer_identity_digest, ArchiveRootInputs,
+    DataBlockMerkleLeaf,
 };
 #[cfg(windows)]
 use crate::tar_model::replay_windows_descendant_metadata;
 use crate::wire::{
-    compute_key_wrap_table_digest, BlockRecord,
-    CryptoHeader, CryptoHeaderFixed, ExtensionTlv, KeyWrapTableV1, ManifestFooter,
-    RootAuthFooterV1, VolumeHeader, VolumeTrailer,
+    compute_key_wrap_table_digest, BlockRecord, CryptoHeader, CryptoHeaderFixed, ExtensionTlv,
+    KeyWrapTableV1, ManifestFooter, RootAuthFooterV1, VolumeHeader, VolumeTrailer,
 };
-
 
 #[derive(Debug)]
 pub(crate) struct ParsedSeekableVolume {
@@ -790,7 +783,9 @@ pub(crate) fn parse_seekable_read_at_volume_from_recovered_terminal(
     )
 }
 
-pub(crate) fn parse_seekable_read_at_volume_with_recipient_wrap_resolver_from_recovered_terminal<F>(
+pub(crate) fn parse_seekable_read_at_volume_with_recipient_wrap_resolver_from_recovered_terminal<
+    F,
+>(
     reader: Arc<dyn ArchiveReadAt>,
     observed_len: u64,
     resolver: &mut F,
@@ -1182,7 +1177,10 @@ pub(crate) fn parse_public_no_key_volume(
     })
 }
 
-pub(crate) fn public_crypto_headers_agree(left: &CryptoHeaderFixed, right: &CryptoHeaderFixed) -> bool {
+pub(crate) fn public_crypto_headers_agree(
+    left: &CryptoHeaderFixed,
+    right: &CryptoHeaderFixed,
+) -> bool {
     left.length == right.length
         && left.stripe_width == right.stripe_width
         && left.block_size == right.block_size
@@ -1441,4 +1439,3 @@ pub(crate) fn validate_complete_global_block_coverage(
             .ok_or(FormatError::InvalidArchive("global block index overflow"))?;
     }
 }
-

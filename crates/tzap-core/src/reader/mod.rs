@@ -14,8 +14,8 @@ use crate::format::{
     CRYPTO_HEADER_HMAC_LEN, MASTER_KEY_LEN, VOLUME_HEADER_LEN,
 };
 use crate::metadata::{
-    normalize_lookup_file_path, DirectoryHintShardEntry, DirectoryHintTable,
-    EnvelopeEntry, FileEntry, FrameEntry, IndexRoot, IndexShard, MetadataLimits, ShardEntry,
+    normalize_lookup_file_path, DirectoryHintShardEntry, DirectoryHintTable, EnvelopeEntry,
+    FileEntry, FrameEntry, IndexRoot, IndexShard, MetadataLimits, ShardEntry,
 };
 use crate::non_seekable_reader::{
     StreamedEnvelopeSummary, StreamedFrameSummary, StreamedPayloadSummary,
@@ -38,24 +38,23 @@ use crate::tar_model::{
     TarStreamFilesystemRestoreObserver, TarStreamObserver, TarStreamSummaryValidator,
 };
 use crate::wire::{
-    BlockRecord, CryptoHeader, CryptoHeaderFixed, ManifestFooter,
-    RootAuthFooterV1, VolumeHeader, VolumeTrailer,
+    BlockRecord, CryptoHeader, CryptoHeaderFixed, ManifestFooter, RootAuthFooterV1, VolumeHeader,
+    VolumeTrailer,
 };
 
-
-pub mod volume;
 pub mod cmra;
 pub mod sidecar;
 pub mod validation;
+pub mod volume;
 
 #[cfg(test)]
 mod tests;
 
-pub use volume::public_no_key_verify_volumes_with_options;
-pub(crate) use volume::*;
 pub(crate) use cmra::*;
 pub(crate) use sidecar::*;
 pub(crate) use validation::*;
+pub use volume::public_no_key_verify_volumes_with_options;
+pub(crate) use volume::*;
 pub(crate) const TRAILER_HMAC_COVERED_LEN: usize = 96;
 pub(crate) const MANIFEST_HMAC_COVERED_LEN: usize = 104;
 pub(crate) const SIDECAR_HMAC_COVERED_LEN: usize = 92;
@@ -107,14 +106,22 @@ impl ArchiveReadAt for File {
 }
 
 #[cfg(unix)]
-pub(crate) fn file_read_exact_at(file: &File, offset: u64, buf: &mut [u8]) -> Result<(), FormatError> {
+pub(crate) fn file_read_exact_at(
+    file: &File,
+    offset: u64,
+    buf: &mut [u8],
+) -> Result<(), FormatError> {
     use std::os::unix::fs::FileExt;
 
     file_read_exact_at_with(offset, buf, |chunk, offset| file.read_at(chunk, offset))
 }
 
 #[cfg(windows)]
-pub(crate) fn file_read_exact_at(file: &File, offset: u64, buf: &mut [u8]) -> Result<(), FormatError> {
+pub(crate) fn file_read_exact_at(
+    file: &File,
+    offset: u64,
+    buf: &mut [u8],
+) -> Result<(), FormatError> {
     use std::os::windows::fs::FileExt;
 
     file_read_exact_at_with(offset, buf, |chunk, offset| file.seek_read(chunk, offset))
@@ -143,7 +150,11 @@ where
 }
 
 #[cfg(not(any(unix, windows)))]
-pub(crate) fn file_read_exact_at(file: &File, offset: u64, buf: &mut [u8]) -> Result<(), FormatError> {
+pub(crate) fn file_read_exact_at(
+    file: &File,
+    offset: u64,
+    buf: &mut [u8],
+) -> Result<(), FormatError> {
     let mut file = file
         .try_clone()
         .map_err(|_| FormatError::InvalidArchive("archive read clone failed"))?;
@@ -4186,7 +4197,10 @@ impl TarMemberGroupReader for DecodedTarMemberGroupReader<'_> {
     }
 }
 
-pub(crate) fn frame_by_index(shard: &IndexShard, frame_index: u64) -> Result<&FrameEntry, FormatError> {
+pub(crate) fn frame_by_index(
+    shard: &IndexShard,
+    frame_index: u64,
+) -> Result<&FrameEntry, FormatError> {
     shard
         .frames
         .binary_search_by_key(&frame_index, |entry| entry.frame_index)
@@ -4422,4 +4436,3 @@ pub(crate) fn archive_index_entry_layout(
 pub(crate) fn archive_entry_name(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_owned()
 }
-

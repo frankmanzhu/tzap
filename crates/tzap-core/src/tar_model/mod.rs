@@ -30,26 +30,24 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 use crate::entry_metadata::{
-    decode_percent_name, parse_canonical_pax, parse_primary_metadata, ArchiveTimestamp, AuxiliaryRecord,
-    AuxiliaryStreamValidator, CaptureStatus, MemberMetadata, PaxRecords,
-    PortableMetadataMirror, RestoreClass, RestorePolicy, SparseExtent,
-    SparseStreamValidator, HAS_NATIVE_METADATA, HAS_SPARSE_EXTENTS,
-    MAX_AGGREGATE_PAX_PAYLOAD, MAX_LOCAL_PAX_PAYLOAD,
+    decode_percent_name, parse_canonical_pax, parse_primary_metadata, ArchiveTimestamp,
+    AuxiliaryRecord, AuxiliaryStreamValidator, CaptureStatus, MemberMetadata, PaxRecords,
+    PortableMetadataMirror, RestoreClass, RestorePolicy, SparseExtent, SparseStreamValidator,
+    HAS_NATIVE_METADATA, HAS_SPARSE_EXTENTS, MAX_AGGREGATE_PAX_PAYLOAD, MAX_LOCAL_PAX_PAYLOAD,
 };
 use crate::format::{ExtractError, FormatError};
 use crate::metadata::validate_file_path_bytes;
 
-
-pub mod pax;
 pub mod os_restore;
-pub mod sparse;
+pub mod pax;
 pub mod restore;
+pub mod sparse;
 
 #[cfg(test)]
 mod tests;
 
-pub use pax::*;
 pub(crate) use os_restore::*;
+pub use pax::*;
 pub(crate) use restore::*;
 
 const TAR_BLOCK_LEN: usize = 512;
@@ -341,7 +339,6 @@ pub(crate) fn validate_symlink_target(link_path: &[u8], target: &[u8]) -> Result
     Ok(())
 }
 
-
 pub(super) fn path_components(path: &[u8]) -> Result<Vec<String>, FormatError> {
     validate_file_path_bytes(path, u32::MAX)?;
     let path = std::str::from_utf8(path).map_err(|_| FormatError::UnsafeArchivePath)?;
@@ -442,4 +439,3 @@ pub(super) fn checked_add(lhs: usize, rhs: usize) -> Result<usize, FormatError> 
 pub(super) fn to_usize(value: u64) -> Result<usize, FormatError> {
     usize::try_from(value).map_err(|_| FormatError::InvalidArchive("tar member size overflow"))
 }
-

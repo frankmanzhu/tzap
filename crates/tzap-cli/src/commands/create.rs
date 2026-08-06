@@ -11,23 +11,20 @@ use anyhow::{anyhow, bail, Context, Result};
 #[cfg(windows)]
 use tzap_core::encode_v45_sparse_map;
 use tzap_core::format::FormatError;
-use tzap_core::{
-    write_archive_sources_to_sink,
-    write_archive_sources_to_sink_ordered_parallel,
-    write_archive_sources_to_sink_ordered_parallel_with_recipient_wrap_records,
-    write_sized_raw_member_archive_to_sink_with_kdf_and_root_auth,
-    write_tar_stream_archive_to_sink_with_kdf_and_root_auth, AeadAlgo, ArchiveTimestamp, ArchiveWriteError, ArchiveWriteSink, MasterKey, MemoryArchiveSink, NativeFileMetadata,
-    PortableFileMetadata,
-    RegularFileSource, RootAuthSigningRequest,
-    RootAuthWriterConfig, SourceEntryKind,
-    SparseExtent, StreamingRawWriterSummary, StreamingTarWriterSummary,
-    WriterOptions, WrittenArchiveSummary,
-};
 #[cfg(any(target_os = "macos", windows))]
 use tzap_core::NativeAuxiliaryNameEncoding;
+use tzap_core::{
+    write_archive_sources_to_sink, write_archive_sources_to_sink_ordered_parallel,
+    write_archive_sources_to_sink_ordered_parallel_with_recipient_wrap_records,
+    write_sized_raw_member_archive_to_sink_with_kdf_and_root_auth,
+    write_tar_stream_archive_to_sink_with_kdf_and_root_auth, AeadAlgo, ArchiveTimestamp,
+    ArchiveWriteError, ArchiveWriteSink, MasterKey, MemoryArchiveSink, NativeFileMetadata,
+    PortableFileMetadata, RegularFileSource, RootAuthSigningRequest, RootAuthWriterConfig,
+    SourceEntryKind, SparseExtent, StreamingRawWriterSummary, StreamingTarWriterSummary,
+    WriterOptions, WrittenArchiveSummary,
+};
 use tzap_plugin_signing::ed25519_raw::{
-    self, ED25519_AUTHENTICATOR_ID,
-    ED25519_AUTHENTICATOR_VALUE_LEN,
+    self, ED25519_AUTHENTICATOR_ID, ED25519_AUTHENTICATOR_VALUE_LEN,
 };
 
 use plaintext_spool::{spool_unknown_size_raw_stdin, ExplicitPlaintextSpool};
@@ -71,172 +68,168 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
         paths,
     } = args;
 
-            let create_total_started = Instant::now();
-            let jobs = resolve_jobs(jobs)?;
-            let resolved_volume_loss_tolerance = resolve_create_volume_loss_tolerance(
-                volume_loss_tolerance,
-                volumes,
-                volume_size.as_deref(),
-                tar_stdin || raw_stdin || spool_stdin,
-            );
-            let layout_overrides = CreateLayoutOverrides {
-                chunk_size: chunk_size.as_deref(),
-                envelope_size: envelope_size.as_deref(),
-                block_size: block_size.as_deref(),
+    let create_total_started = Instant::now();
+    let jobs = resolve_jobs(jobs)?;
+    let resolved_volume_loss_tolerance = resolve_create_volume_loss_tolerance(
+        volume_loss_tolerance,
+        volumes,
+        volume_size.as_deref(),
+        tar_stdin || raw_stdin || spool_stdin,
+    );
+    let layout_overrides = CreateLayoutOverrides {
+        chunk_size: chunk_size.as_deref(),
+        envelope_size: envelope_size.as_deref(),
+        block_size: block_size.as_deref(),
+    };
+    let build_writer_options = |total_input_size: Option<u64>| -> Result<WriterOptions> {
+        let mut options = create_writer_options(CreateWriterOptionsArgs {
+            volumes,
+            volume_size: volume_size.as_deref(),
+            volume_loss_tolerance: resolved_volume_loss_tolerance,
+            bit_rot_buffer_pct,
+            compression_level,
+            jobs,
+            layout_overrides,
+            total_input_size,
+        })?;
+        if no_encryption {
+            options.aead_algo = AeadAlgo::None;
+        }
+        Ok(options)
+    };
+    validate_create_key_source(
+        keyfile.as_deref(),
+        recipient_cert.as_deref(),
+        password_stdin,
+        password,
+        no_encryption,
+        insecure_zero_key,
+    )?;
+    if bootstrap_out.is_some() && (volumes.unwrap_or(1) > 1 || volume_size.is_some()) {
+        return Err(FormatError::WriterUnsupported(
+            "--bootstrap-out is currently supported only for single-volume output",
+        )
+        .into());
+    }
+    reject_create_stdout_sentinels(&output, bootstrap_out.as_deref())?;
+    let stdin_mode = validate_create_stdin_mode(CreateStdinArgs {
+        tar_stdin,
+        raw_stdin,
+        stdin_name: stdin_name.as_deref(),
+        stdin_size: stdin_size.as_deref(),
+        spool_stdin,
+        paths: &paths,
+        password_stdin,
+        password,
+        has_dictionary: dictionary.is_some(),
+        volumes,
+        volume_size: volume_size.as_deref(),
+        volume_loss_tolerance,
+    })?;
+    validate_create_recipient_wrap_scope(
+        recipient_cert.as_deref(),
+        stdin_mode,
+        dictionary.is_some(),
+        signing_key.is_some() || signing_cert.is_some(),
+        volumes,
+        volume_size.as_deref(),
+    )?;
+
+    ensure_create_output_paths_can_be_written(
+        &output,
+        volumes,
+        volume_size.is_some(),
+        bootstrap_out.as_deref(),
+        force,
+    )?;
+    if let Some(stdin_mode) = stdin_mode {
+        if dry_run {
+            let dry_run_input_size = match stdin_mode {
+                CreateStdinMode::RawKnownSize => Some(parse_size(
+                    stdin_size.as_deref().expect("validated stdin-size"),
+                )?),
+                CreateStdinMode::Tar
+                | CreateStdinMode::RawSpool
+                | CreateStdinMode::RawUnknownSize => None,
             };
-            let build_writer_options = |total_input_size: Option<u64>| -> Result<WriterOptions> {
-                let mut options = create_writer_options(CreateWriterOptionsArgs {
-                    volumes,
-                    volume_size: volume_size.as_deref(),
-                    volume_loss_tolerance: resolved_volume_loss_tolerance,
-                    bit_rot_buffer_pct,
-                    compression_level,
-                    jobs,
-                    layout_overrides,
-                    total_input_size,
-                })?;
-                if no_encryption {
-                    options.aead_algo = AeadAlgo::None;
-                }
-                Ok(options)
-            };
-            validate_create_key_source(
-                keyfile.as_deref(),
-                recipient_cert.as_deref(),
-                password_stdin,
-                password,
-                no_encryption,
-                insecure_zero_key,
-            )?;
-            if bootstrap_out.is_some() && (volumes.unwrap_or(1) > 1 || volume_size.is_some()) {
-                return Err(FormatError::WriterUnsupported(
-                    "--bootstrap-out is currently supported only for single-volume output",
-                )
-                .into());
-            }
-            reject_create_stdout_sentinels(&output, bootstrap_out.as_deref())?;
-            let stdin_mode = validate_create_stdin_mode(CreateStdinArgs {
-                tar_stdin,
-                raw_stdin,
-                stdin_name: stdin_name.as_deref(),
-                stdin_size: stdin_size.as_deref(),
-                spool_stdin,
-                paths: &paths,
-                password_stdin,
-                password,
-                has_dictionary: dictionary.is_some(),
-                volumes,
-                volume_size: volume_size.as_deref(),
-                volume_loss_tolerance,
-            })?;
-            validate_create_recipient_wrap_scope(
-                recipient_cert.as_deref(),
-                stdin_mode,
-                dictionary.is_some(),
-                signing_key.is_some() || signing_cert.is_some(),
-                volumes,
-                volume_size.as_deref(),
-            )?;
-
-            ensure_create_output_paths_can_be_written(
-                &output,
-                volumes,
-                volume_size.is_some(),
-                bootstrap_out.as_deref(),
-                force,
-            )?;
-            if let Some(stdin_mode) = stdin_mode {
-                if dry_run {
-                    let dry_run_input_size = match stdin_mode {
-                        CreateStdinMode::RawKnownSize => Some(parse_size(
-                            stdin_size.as_deref().expect("validated stdin-size"),
-                        )?),
-                        CreateStdinMode::Tar
-                        | CreateStdinMode::RawSpool
-                        | CreateStdinMode::RawUnknownSize => None,
-                    };
-                    let options = build_writer_options(dry_run_input_size)?;
-                    validate_create_writer_options(&options)?;
-                }
-                if dry_run {
-                    eprintln!("create dry-run summary:");
-                    eprintln!("  files: streaming stdin");
-                    eprintln!("  input bytes: unknown until stdin is consumed");
-                    eprintln!(
-                        "  key mode: {}",
-                        create_key_mode_label(
-                            keyfile.as_deref(),
-                            recipient_cert.as_deref(),
-                            password_stdin,
-                            password,
-                            no_encryption,
-                            insecure_zero_key
-                        )
-                    );
-                    eprintln!(
-                        "  root auth: {}",
-                        create_root_auth_mode_label(
-                            signing_key.as_deref(),
-                            signing_cert.as_deref()
-                        )
-                    );
-                    eprintln!(
-                        "  volume mode: {}",
-                        describe_planned_volume_mode(volumes, volume_size.as_deref())
-                    );
-                    eprintln!("  planned archive paths:");
-                    for path in create_dry_run_output_paths(&output, volumes, volume_size.is_some())
-                    {
-                        eprintln!("    {path}");
-                    }
-                    if let Some(bootstrap_path) = bootstrap_out.as_ref() {
-                        eprintln!("  bootstrap: {}", bootstrap_path);
-                    }
-                    return Ok(());
-                }
-
-                if matches!(stdin_mode, CreateStdinMode::RawUnknownSize) {
-                    return Err(FormatError::WriterUnsupported(
-                        "unknown-size raw stdin without --spool-stdin requires the future raw_stream_v1 profile",
-                    )
-                    .into());
-                }
-
-                let key = load_create_key(
+            let options = build_writer_options(dry_run_input_size)?;
+            validate_create_writer_options(&options)?;
+        }
+        if dry_run {
+            eprintln!("create dry-run summary:");
+            eprintln!("  files: streaming stdin");
+            eprintln!("  input bytes: unknown until stdin is consumed");
+            eprintln!(
+                "  key mode: {}",
+                create_key_mode_label(
                     keyfile.as_deref(),
+                    recipient_cert.as_deref(),
                     password_stdin,
                     password,
                     no_encryption,
-                    insecure_zero_key,
-                    argon2_t_cost,
-                    argon2_m_cost_kib,
-                    argon2_parallelism,
+                    insecure_zero_key
+                )
+            );
+            eprintln!(
+                "  root auth: {}",
+                create_root_auth_mode_label(signing_key.as_deref(), signing_cert.as_deref())
+            );
+            eprintln!(
+                "  volume mode: {}",
+                describe_planned_volume_mode(volumes, volume_size.as_deref())
+            );
+            eprintln!("  planned archive paths:");
+            for path in create_dry_run_output_paths(&output, volumes, volume_size.is_some()) {
+                eprintln!("    {path}");
+            }
+            if let Some(bootstrap_path) = bootstrap_out.as_ref() {
+                eprintln!("  bootstrap: {}", bootstrap_path);
+            }
+            return Ok(());
+        }
+
+        if matches!(stdin_mode, CreateStdinMode::RawUnknownSize) {
+            return Err(FormatError::WriterUnsupported(
+                        "unknown-size raw stdin without --spool-stdin requires the future raw_stream_v1 profile",
+                    )
+                    .into());
+        }
+
+        let key = load_create_key(
+            keyfile.as_deref(),
+            password_stdin,
+            password,
+            no_encryption,
+            insecure_zero_key,
+            argon2_t_cost,
+            argon2_m_cost_kib,
+            argon2_parallelism,
+        )?;
+        let root_auth_profile = load_create_root_auth_profile(
+            signing_key.as_deref(),
+            signing_cert.as_deref(),
+            signing_private_key.as_deref(),
+            &signing_chain,
+            x509_signature_scheme,
+        )?;
+        let root_auth = root_auth_profile
+            .as_ref()
+            .map(CreateRootAuthProfile::root_auth_writer_config)
+            .transpose()?;
+        let core_writer_started = Instant::now();
+        let (bootstrap_sidecar, summary_text, writer_timings) = match stdin_mode {
+            CreateStdinMode::Tar => {
+                let options = build_writer_options(None)?;
+                validate_create_writer_options(&options)?;
+                let (summary, bootstrap_sidecar) = write_tar_stdin_archive_output(
+                    &output,
+                    &key,
+                    options,
+                    root_auth,
+                    root_auth_profile.as_ref(),
+                    force,
                 )?;
-                let root_auth_profile = load_create_root_auth_profile(
-                    signing_key.as_deref(),
-                    signing_cert.as_deref(),
-                    signing_private_key.as_deref(),
-                    &signing_chain,
-                    x509_signature_scheme,
-                )?;
-                let root_auth = root_auth_profile
-                    .as_ref()
-                    .map(CreateRootAuthProfile::root_auth_writer_config)
-                    .transpose()?;
-                let core_writer_started = Instant::now();
-                let (bootstrap_sidecar, summary_text, writer_timings) = match stdin_mode {
-                    CreateStdinMode::Tar => {
-                        let options = build_writer_options(None)?;
-                        validate_create_writer_options(&options)?;
-                        let (summary, bootstrap_sidecar) = write_tar_stdin_archive_output(
-                            &output,
-                            &key,
-                            options,
-                            root_auth,
-                            root_auth_profile.as_ref(),
-                            force,
-                        )?;
-                        let summary_text = format!(
+                let summary_text = format!(
                             "created {} member(s), {} tar bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
                             summary.input_member_count,
                             summary.input_tar_bytes,
@@ -245,25 +238,24 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                             resolved_volume_loss_tolerance,
                             bit_rot_buffer_pct
                         );
-                        (bootstrap_sidecar, summary_text, summary.archive.timings)
-                    }
-                    CreateStdinMode::RawKnownSize => {
-                        let stdin_size =
-                            parse_size(stdin_size.as_deref().expect("validated stdin-size"))?;
-                        let options = build_writer_options(Some(stdin_size))?;
-                        validate_create_writer_options(&options)?;
-                        let (summary, bootstrap_sidecar) = write_raw_stdin_archive_output(
-                            &output,
-                            io::stdin().lock(),
-                            stdin_name.as_deref().expect("validated stdin-name"),
-                            stdin_size,
-                            &key,
-                            options,
-                            root_auth,
-                            root_auth_profile.as_ref(),
-                            force,
-                        )?;
-                        let summary_text = format!(
+                (bootstrap_sidecar, summary_text, summary.archive.timings)
+            }
+            CreateStdinMode::RawKnownSize => {
+                let stdin_size = parse_size(stdin_size.as_deref().expect("validated stdin-size"))?;
+                let options = build_writer_options(Some(stdin_size))?;
+                validate_create_writer_options(&options)?;
+                let (summary, bootstrap_sidecar) = write_raw_stdin_archive_output(
+                    &output,
+                    io::stdin().lock(),
+                    stdin_name.as_deref().expect("validated stdin-name"),
+                    stdin_size,
+                    &key,
+                    options,
+                    root_auth,
+                    root_auth_profile.as_ref(),
+                    force,
+                )?;
+                let summary_text = format!(
                             "created 1 member(s), {} raw bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
                             summary.input_bytes,
                             summary.archive.archive_bytes,
@@ -271,32 +263,32 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                             resolved_volume_loss_tolerance,
                             bit_rot_buffer_pct
                         );
-                        (bootstrap_sidecar, summary_text, summary.archive.timings)
-                    }
-                    CreateStdinMode::RawSpool => {
-                        let stdin = io::stdin();
-                        let mut stdin_lock = stdin.lock();
-                        let spool = spool_unknown_size_raw_stdin(
-                            &mut stdin_lock,
-                            u64::MAX,
-                            ExplicitPlaintextSpool::acknowledge_plaintext_spool(),
-                        )?;
-                        let known_size_source = spool.known_size_source();
-                        let spool_reader = spool.reopen()?;
-                        let options = build_writer_options(Some(known_size_source.size()))?;
-                        validate_create_writer_options(&options)?;
-                        let (summary, bootstrap_sidecar) = write_raw_stdin_archive_output(
-                            &output,
-                            spool_reader,
-                            stdin_name.as_deref().expect("validated stdin-name"),
-                            known_size_source.size(),
-                            &key,
-                            options,
-                            root_auth,
-                            root_auth_profile.as_ref(),
-                            force,
-                        )?;
-                        let summary_text = format!(
+                (bootstrap_sidecar, summary_text, summary.archive.timings)
+            }
+            CreateStdinMode::RawSpool => {
+                let stdin = io::stdin();
+                let mut stdin_lock = stdin.lock();
+                let spool = spool_unknown_size_raw_stdin(
+                    &mut stdin_lock,
+                    u64::MAX,
+                    ExplicitPlaintextSpool::acknowledge_plaintext_spool(),
+                )?;
+                let known_size_source = spool.known_size_source();
+                let spool_reader = spool.reopen()?;
+                let options = build_writer_options(Some(known_size_source.size()))?;
+                validate_create_writer_options(&options)?;
+                let (summary, bootstrap_sidecar) = write_raw_stdin_archive_output(
+                    &output,
+                    spool_reader,
+                    stdin_name.as_deref().expect("validated stdin-name"),
+                    known_size_source.size(),
+                    &key,
+                    options,
+                    root_auth,
+                    root_auth_profile.as_ref(),
+                    force,
+                )?;
+                let summary_text = format!(
                             "created 1 member(s), {} spooled raw bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
                             summary.input_bytes,
                             summary.archive.archive_bytes,
@@ -304,219 +296,124 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                             resolved_volume_loss_tolerance,
                             bit_rot_buffer_pct
                         );
-                        (bootstrap_sidecar, summary_text, summary.archive.timings)
-                    }
-                    CreateStdinMode::RawUnknownSize => unreachable!("rejected before key loading"),
-                };
-                let core_writer = core_writer_started.elapsed();
-                let write_outputs_started = Instant::now();
-                if let Some(path) = bootstrap_out.as_deref() {
-                    if bootstrap_sidecar.is_empty() {
-                        return Err(FormatError::WriterUnsupported(
-                            "bootstrap output is unavailable for this archive shape",
-                        )
-                        .into());
-                    }
-                    write_bootstrap_output_with_archive_rollback(
-                        path,
-                        &bootstrap_sidecar,
-                        &output,
-                        1,
-                        force,
-                    )?;
-                }
-                let write_outputs = write_outputs_started.elapsed();
-                emit_success_summary(quiet, &summary_text)?;
-                if let Some(profile) = root_auth_profile.as_ref() {
-                    emit_success_summary(
-                        quiet,
-                        &format!("  root auth: {} signed", profile.label()),
-                    )?;
-                }
-                if let Some(path) = bootstrap_out.as_ref() {
-                    emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
-                }
-                if timings {
-                    emit_sink_backed_create_timing_report(
-                        Duration::default(),
-                        Duration::default(),
-                        core_writer,
-                        write_outputs,
-                        create_total_started.elapsed(),
-                        writer_timings,
-                    )?;
-                }
-                return Ok(());
+                (bootstrap_sidecar, summary_text, summary.archive.timings)
             }
-            let scan_inputs_started = Instant::now();
-            let input_specs = collect_input_specs(&paths)?;
-            let scan_inputs = scan_inputs_started.elapsed();
-            let bootstrap_output = bootstrap_out.clone();
-            let input_bytes = input_specs_total_size(&input_specs)?;
-            let options = build_writer_options(Some(input_bytes))?;
-            validate_create_writer_options(&options)?;
-
-            if dry_run {
-                eprintln!("create dry-run summary:");
-                eprintln!("  files: {}", input_specs.len());
-                eprintln!("  input bytes: {}", input_bytes);
-                eprintln!(
-                    "  key mode: {}",
-                    create_key_mode_label(
-                        keyfile.as_deref(),
-                        recipient_cert.as_deref(),
-                        password_stdin,
-                        password,
-                        no_encryption,
-                        insecure_zero_key
-                    )
-                );
-                eprintln!(
-                    "  root auth: {}",
-                    create_root_auth_mode_label(signing_key.as_deref(), signing_cert.as_deref())
-                );
-                eprintln!(
-                    "  volume mode: {}",
-                    describe_planned_volume_mode(volumes, volume_size.as_deref())
-                );
-                eprintln!("  planned archive paths:");
-                for path in create_dry_run_output_paths(&output, volumes, volume_size.is_some()) {
-                    eprintln!("    {path}");
-                }
-                if let Some(bootstrap_path) = bootstrap_output {
-                    eprintln!("  bootstrap: {}", bootstrap_path);
-                }
-                return Ok(());
+            CreateStdinMode::RawUnknownSize => unreachable!("rejected before key loading"),
+        };
+        let core_writer = core_writer_started.elapsed();
+        let write_outputs_started = Instant::now();
+        if let Some(path) = bootstrap_out.as_deref() {
+            if bootstrap_sidecar.is_empty() {
+                return Err(FormatError::WriterUnsupported(
+                    "bootstrap output is unavailable for this archive shape",
+                )
+                .into());
             }
+            write_bootstrap_output_with_archive_rollback(
+                path,
+                &bootstrap_sidecar,
+                &output,
+                1,
+                force,
+            )?;
+        }
+        let write_outputs = write_outputs_started.elapsed();
+        emit_success_summary(quiet, &summary_text)?;
+        if let Some(profile) = root_auth_profile.as_ref() {
+            emit_success_summary(quiet, &format!("  root auth: {} signed", profile.label()))?;
+        }
+        if let Some(path) = bootstrap_out.as_ref() {
+            emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
+        }
+        if timings {
+            emit_sink_backed_create_timing_report(
+                Duration::default(),
+                Duration::default(),
+                core_writer,
+                write_outputs,
+                create_total_started.elapsed(),
+                writer_timings,
+            )?;
+        }
+        return Ok(());
+    }
+    let scan_inputs_started = Instant::now();
+    let input_specs = collect_input_specs(&paths)?;
+    let scan_inputs = scan_inputs_started.elapsed();
+    let bootstrap_output = bootstrap_out.clone();
+    let input_bytes = input_specs_total_size(&input_specs)?;
+    let options = build_writer_options(Some(input_bytes))?;
+    validate_create_writer_options(&options)?;
 
-            if let Some(recipient_cert_path) = recipient_cert.as_deref() {
-                let mut recipient_options = options;
-                let master_key = generate_random_master_key()?;
-                let recipient_record = build_recipient_wrap_record(
-                    recipient_cert_path,
-                    &master_key,
-                    &mut recipient_options,
-                )?;
-                let core_writer_started = Instant::now();
-                let (archive, bootstrap_sidecar) =
-                    write_file_inputs_ordered_parallel_recipient_wrap_to_output(
-                        &output,
-                        &input_specs,
-                        &master_key,
-                        recipient_options,
-                        recipient_record,
-                        force,
-                    )
-                    .context("failed to create recipient-wrap archive")?;
-                let core_writer = core_writer_started.elapsed();
-
-                let write_outputs_started = Instant::now();
-                if let Some(path) = bootstrap_out.as_deref() {
-                    if bootstrap_sidecar.is_empty() {
-                        return Err(FormatError::WriterUnsupported(
-                            "bootstrap output is unavailable for this archive shape",
-                        )
-                        .into());
-                    }
-                    write_bootstrap_output_with_archive_rollback(
-                        path,
-                        &bootstrap_sidecar,
-                        &output,
-                        archive.volume_count,
-                        force,
-                    )?;
-                }
-                let write_outputs = write_outputs_started.elapsed();
-                let summary = format!(
-                    "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
-                    input_specs.len(),
-                    input_bytes,
-                    archive.archive_bytes,
-                    archive.volume_count,
-                    resolved_volume_loss_tolerance,
-                    bit_rot_buffer_pct
-                );
-                emit_success_summary(quiet, &summary)?;
-                emit_success_summary(quiet, "  key wrap: recipient certificate")?;
-                if let Some(path) = bootstrap_output {
-                    emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
-                }
-                if timings {
-                    emit_sink_backed_create_timing_report(
-                        scan_inputs,
-                        Duration::default(),
-                        core_writer,
-                        write_outputs,
-                        create_total_started.elapsed(),
-                        archive.timings,
-                    )?;
-                }
-                return Ok(());
-            }
-
-            let key = load_create_key(
+    if dry_run {
+        eprintln!("create dry-run summary:");
+        eprintln!("  files: {}", input_specs.len());
+        eprintln!("  input bytes: {}", input_bytes);
+        eprintln!(
+            "  key mode: {}",
+            create_key_mode_label(
                 keyfile.as_deref(),
+                recipient_cert.as_deref(),
                 password_stdin,
                 password,
                 no_encryption,
-                insecure_zero_key,
-                argon2_t_cost,
-                argon2_m_cost_kib,
-                argon2_parallelism,
-            )?;
-            let dictionary_bytes = dictionary
-                .as_deref()
-                .map(|path| {
-                    fs::read(path).with_context(|| format!("failed to read dictionary {path}"))
-                })
-                .transpose()?;
-            let root_auth_profile = load_create_root_auth_profile(
-                signing_key.as_deref(),
-                signing_cert.as_deref(),
-                signing_private_key.as_deref(),
-                &signing_chain,
-                x509_signature_scheme,
-            )?;
-            let root_auth = root_auth_profile
-                .as_ref()
-                .map(CreateRootAuthProfile::root_auth_writer_config)
-                .transpose()?;
+                insecure_zero_key
+            )
+        );
+        eprintln!(
+            "  root auth: {}",
+            create_root_auth_mode_label(signing_key.as_deref(), signing_cert.as_deref())
+        );
+        eprintln!(
+            "  volume mode: {}",
+            describe_planned_volume_mode(volumes, volume_size.as_deref())
+        );
+        eprintln!("  planned archive paths:");
+        for path in create_dry_run_output_paths(&output, volumes, volume_size.is_some()) {
+            eprintln!("    {path}");
+        }
+        if let Some(bootstrap_path) = bootstrap_output {
+            eprintln!("  bootstrap: {}", bootstrap_path);
+        }
+        return Ok(());
+    }
 
-            if dictionary_bytes.is_none()
-                && options.target_volume_size.is_none()
-                && options.volume_loss_tolerance == 0
-            {
-                let core_writer_started = Instant::now();
-                let (archive, bootstrap_sidecar) = write_file_inputs_ordered_parallel_to_output(
-                    &output,
-                    &input_specs,
-                    &key,
-                    options,
-                    root_auth,
-                    root_auth_profile.as_ref(),
-                    force,
+    if let Some(recipient_cert_path) = recipient_cert.as_deref() {
+        let mut recipient_options = options;
+        let master_key = generate_random_master_key()?;
+        let recipient_record =
+            build_recipient_wrap_record(recipient_cert_path, &master_key, &mut recipient_options)?;
+        let core_writer_started = Instant::now();
+        let (archive, bootstrap_sidecar) =
+            write_file_inputs_ordered_parallel_recipient_wrap_to_output(
+                &output,
+                &input_specs,
+                &master_key,
+                recipient_options,
+                recipient_record,
+                force,
+            )
+            .context("failed to create recipient-wrap archive")?;
+        let core_writer = core_writer_started.elapsed();
+
+        let write_outputs_started = Instant::now();
+        if let Some(path) = bootstrap_out.as_deref() {
+            if bootstrap_sidecar.is_empty() {
+                return Err(FormatError::WriterUnsupported(
+                    "bootstrap output is unavailable for this archive shape",
                 )
-                .context("failed to create archive")?;
-                let core_writer = core_writer_started.elapsed();
-
-                let write_outputs_started = Instant::now();
-                if let Some(path) = bootstrap_out.as_deref() {
-                    if bootstrap_sidecar.is_empty() {
-                        return Err(FormatError::WriterUnsupported(
-                            "bootstrap output is unavailable for this archive shape",
-                        )
-                        .into());
-                    }
-                    write_bootstrap_output_with_archive_rollback(
-                        path,
-                        &bootstrap_sidecar,
-                        &output,
-                        archive.volume_count,
-                        force,
-                    )?;
-                }
-                let write_outputs = write_outputs_started.elapsed();
-                let summary = format!(
+                .into());
+            }
+            write_bootstrap_output_with_archive_rollback(
+                path,
+                &bootstrap_sidecar,
+                &output,
+                archive.volume_count,
+                force,
+            )?;
+        }
+        let write_outputs = write_outputs_started.elapsed();
+        let summary = format!(
                     "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
                     input_specs.len(),
                     input_bytes,
@@ -525,82 +422,165 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                     resolved_volume_loss_tolerance,
                     bit_rot_buffer_pct
                 );
-                emit_success_summary(quiet, &summary)?;
-                if let Some(profile) = root_auth_profile.as_ref() {
-                    emit_success_summary(
-                        quiet,
-                        &format!("  root auth: {} signed", profile.label()),
-                    )?;
-                }
-                if let Some(path) = bootstrap_output {
-                    emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
-                }
-                if timings {
-                    emit_sink_backed_create_timing_report(
-                        scan_inputs,
-                        Duration::default(),
-                        core_writer,
-                        write_outputs,
-                        create_total_started.elapsed(),
-                        archive.timings,
-                    )?;
-                }
-                return Ok(());
-            }
+        emit_success_summary(quiet, &summary)?;
+        emit_success_summary(quiet, "  key wrap: recipient certificate")?;
+        if let Some(path) = bootstrap_output {
+            emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
+        }
+        if timings {
+            emit_sink_backed_create_timing_report(
+                scan_inputs,
+                Duration::default(),
+                core_writer,
+                write_outputs,
+                create_total_started.elapsed(),
+                archive.timings,
+            )?;
+        }
+        return Ok(());
+    }
 
-            let read_inputs = Duration::default();
-            let core_writer_started = Instant::now();
-            let mut archive_sink = MemoryArchiveSink::default();
-            let archive =
-                if let (Some(root_auth), Some(profile)) = (root_auth, root_auth_profile.as_ref()) {
-                    let mut authenticator = |request: &RootAuthSigningRequest| {
-                        root_auth_authenticator_value(profile, request)
-                    };
-                    write_archive_sources_to_sink(
-                        &input_specs,
-                        &key.master_key,
-                        options,
-                        dictionary_bytes.as_deref(),
-                        &key.kdf_params,
-                        Some(root_auth),
-                        Some(&mut authenticator),
-                        &mut archive_sink,
-                    )
-                } else {
-                    write_archive_sources_to_sink(
-                        &input_specs,
-                        &key.master_key,
-                        options,
-                        dictionary_bytes.as_deref(),
-                        &key.kdf_params,
-                        None,
-                        None,
-                        &mut archive_sink,
-                    )
-                }
-                .context("failed to create archive")?;
-            let core_writer = core_writer_started.elapsed();
+    let key = load_create_key(
+        keyfile.as_deref(),
+        password_stdin,
+        password,
+        no_encryption,
+        insecure_zero_key,
+        argon2_t_cost,
+        argon2_m_cost_kib,
+        argon2_parallelism,
+    )?;
+    let dictionary_bytes = dictionary
+        .as_deref()
+        .map(|path| fs::read(path).with_context(|| format!("failed to read dictionary {path}")))
+        .transpose()?;
+    let root_auth_profile = load_create_root_auth_profile(
+        signing_key.as_deref(),
+        signing_cert.as_deref(),
+        signing_private_key.as_deref(),
+        &signing_chain,
+        x509_signature_scheme,
+    )?;
+    let root_auth = root_auth_profile
+        .as_ref()
+        .map(CreateRootAuthProfile::root_auth_writer_config)
+        .transpose()?;
 
-            let output_paths = create_output_paths(&output, archive_sink.volumes.len());
-            if !force {
-                check_archive_paths_free_for_write(&output_paths)?;
-            }
-            if let Some(bootstrap_path) = &bootstrap_output {
-                if !force {
-                    check_output_path_free("bootstrap", Path::new(bootstrap_path))?;
-                }
-            }
+    if dictionary_bytes.is_none()
+        && options.target_volume_size.is_none()
+        && options.volume_loss_tolerance == 0
+    {
+        let core_writer_started = Instant::now();
+        let (archive, bootstrap_sidecar) = write_file_inputs_ordered_parallel_to_output(
+            &output,
+            &input_specs,
+            &key,
+            options,
+            root_auth,
+            root_auth_profile.as_ref(),
+            force,
+        )
+        .context("failed to create archive")?;
+        let core_writer = core_writer_started.elapsed();
 
-            let write_outputs_started = Instant::now();
-            write_archive_outputs_with_optional_bootstrap(
+        let write_outputs_started = Instant::now();
+        if let Some(path) = bootstrap_out.as_deref() {
+            if bootstrap_sidecar.is_empty() {
+                return Err(FormatError::WriterUnsupported(
+                    "bootstrap output is unavailable for this archive shape",
+                )
+                .into());
+            }
+            write_bootstrap_output_with_archive_rollback(
+                path,
+                &bootstrap_sidecar,
                 &output,
-                &archive_sink.volumes,
-                bootstrap_out.as_deref(),
-                &archive_sink.bootstrap_sidecar,
+                archive.volume_count,
                 force,
             )?;
-            let write_outputs = write_outputs_started.elapsed();
-            let summary = format!(
+        }
+        let write_outputs = write_outputs_started.elapsed();
+        let summary = format!(
+                    "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
+                    input_specs.len(),
+                    input_bytes,
+                    archive.archive_bytes,
+                    archive.volume_count,
+                    resolved_volume_loss_tolerance,
+                    bit_rot_buffer_pct
+                );
+        emit_success_summary(quiet, &summary)?;
+        if let Some(profile) = root_auth_profile.as_ref() {
+            emit_success_summary(quiet, &format!("  root auth: {} signed", profile.label()))?;
+        }
+        if let Some(path) = bootstrap_output {
+            emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
+        }
+        if timings {
+            emit_sink_backed_create_timing_report(
+                scan_inputs,
+                Duration::default(),
+                core_writer,
+                write_outputs,
+                create_total_started.elapsed(),
+                archive.timings,
+            )?;
+        }
+        return Ok(());
+    }
+
+    let read_inputs = Duration::default();
+    let core_writer_started = Instant::now();
+    let mut archive_sink = MemoryArchiveSink::default();
+    let archive = if let (Some(root_auth), Some(profile)) = (root_auth, root_auth_profile.as_ref())
+    {
+        let mut authenticator =
+            |request: &RootAuthSigningRequest| root_auth_authenticator_value(profile, request);
+        write_archive_sources_to_sink(
+            &input_specs,
+            &key.master_key,
+            options,
+            dictionary_bytes.as_deref(),
+            &key.kdf_params,
+            Some(root_auth),
+            Some(&mut authenticator),
+            &mut archive_sink,
+        )
+    } else {
+        write_archive_sources_to_sink(
+            &input_specs,
+            &key.master_key,
+            options,
+            dictionary_bytes.as_deref(),
+            &key.kdf_params,
+            None,
+            None,
+            &mut archive_sink,
+        )
+    }
+    .context("failed to create archive")?;
+    let core_writer = core_writer_started.elapsed();
+
+    let output_paths = create_output_paths(&output, archive_sink.volumes.len());
+    if !force {
+        check_archive_paths_free_for_write(&output_paths)?;
+    }
+    if let Some(bootstrap_path) = &bootstrap_output {
+        if !force {
+            check_output_path_free("bootstrap", Path::new(bootstrap_path))?;
+        }
+    }
+
+    let write_outputs_started = Instant::now();
+    write_archive_outputs_with_optional_bootstrap(
+        &output,
+        &archive_sink.volumes,
+        bootstrap_out.as_deref(),
+        &archive_sink.bootstrap_sidecar,
+        force,
+    )?;
+    let write_outputs = write_outputs_started.elapsed();
+    let summary = format!(
                 "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
                 input_specs.len(),
                 input_bytes,
@@ -609,24 +589,24 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                 resolved_volume_loss_tolerance,
                 bit_rot_buffer_pct
             );
-            emit_success_summary(quiet, &summary)?;
-            if let Some(profile) = root_auth_profile.as_ref() {
-                emit_success_summary(quiet, &format!("  root auth: {} signed", profile.label()))?;
-            }
-            if let Some(path) = bootstrap_output {
-                emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
-            }
-            if timings {
-                emit_create_timing_report(
-                    scan_inputs,
-                    read_inputs,
-                    core_writer,
-                    write_outputs,
-                    create_total_started.elapsed(),
-                    archive.timings,
-                )?;
-            }
-            Ok(())
+    emit_success_summary(quiet, &summary)?;
+    if let Some(profile) = root_auth_profile.as_ref() {
+        emit_success_summary(quiet, &format!("  root auth: {} signed", profile.label()))?;
+    }
+    if let Some(path) = bootstrap_output {
+        emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
+    }
+    if timings {
+        emit_create_timing_report(
+            scan_inputs,
+            read_inputs,
+            core_writer,
+            write_outputs,
+            create_total_started.elapsed(),
+            archive.timings,
+        )?;
+    }
+    Ok(())
 }
 
 pub(crate) struct CreateArgs {
@@ -749,7 +729,6 @@ pub(crate) fn default_create_layout(total_input_size: Option<u64>) -> CreateLayo
         },
     }
 }
-
 
 #[derive(Debug)]
 pub(crate) struct InputSpec {
@@ -1009,7 +988,6 @@ impl RegularFileSource for InputSpec {
         )
     }
 }
-
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum CreateStdinMode {
@@ -1677,7 +1655,9 @@ pub(crate) fn write_stdin_archive_output_with_sink<T>(
     Ok((summary, bootstrap_sidecar))
 }
 
-pub(crate) fn create_archive_output_temps(output_paths: &[PathBuf]) -> Result<Vec<tempfile::NamedTempFile>> {
+pub(crate) fn create_archive_output_temps(
+    output_paths: &[PathBuf],
+) -> Result<Vec<tempfile::NamedTempFile>> {
     output_paths
         .iter()
         .map(|output_path| {
@@ -1759,7 +1739,10 @@ pub(crate) fn write_bootstrap_output(path: &str, bytes: &[u8], force: bool) -> R
     write_atomic_output_file("bootstrap output", Path::new(path), bytes, force)
 }
 
-pub(crate) fn reject_create_stdout_sentinels(output: &str, bootstrap_out: Option<&str>) -> Result<()> {
+pub(crate) fn reject_create_stdout_sentinels(
+    output: &str,
+    bootstrap_out: Option<&str>,
+) -> Result<()> {
     if output == "-" {
         return Err(anyhow!(FormatError::WriterUnsupported(
             "--output - is not archive stdout; create output must be a file path",
@@ -1773,7 +1756,9 @@ pub(crate) fn reject_create_stdout_sentinels(output: &str, bootstrap_out: Option
     Ok(())
 }
 
-pub(crate) fn validate_create_stdin_mode(args: CreateStdinArgs<'_>) -> Result<Option<CreateStdinMode>> {
+pub(crate) fn validate_create_stdin_mode(
+    args: CreateStdinArgs<'_>,
+) -> Result<Option<CreateStdinMode>> {
     if args.tar_stdin && args.raw_stdin {
         return Err(anyhow!(FormatError::WriterUnsupported(
             "--tar-stdin and --raw-stdin cannot be used together",
@@ -2102,7 +2087,10 @@ pub(crate) fn create_dry_run_output_paths(
     vec![output.to_owned()]
 }
 
-pub(crate) fn describe_planned_volume_mode(volumes: Option<u32>, volume_size: Option<&str>) -> String {
+pub(crate) fn describe_planned_volume_mode(
+    volumes: Option<u32>,
+    volume_size: Option<&str>,
+) -> String {
     if let Some(volumes) = volumes {
         return format!("{volumes} explicit volume(s) requested");
     }
@@ -2206,7 +2194,10 @@ pub(crate) fn validate_create_recipient_wrap_scope(
     Ok(())
 }
 
-pub(crate) fn create_root_auth_mode_label(signing_key: Option<&str>, signing_cert: Option<&str>) -> String {
+pub(crate) fn create_root_auth_mode_label(
+    signing_key: Option<&str>,
+    signing_cert: Option<&str>,
+) -> String {
     if signing_key.is_some() {
         return "ed25519".to_string();
     }

@@ -9,37 +9,27 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::compression::compress_zstd_frame_with_jobs;
-use crate::crypto::{
-    KdfParams, MasterKey,
-    Subkeys,
-};
-use crate::entry_metadata::{
-    ArchiveTimestamp,
-    RestoreClass, SparseExtent,
-};
+use crate::crypto::{KdfParams, MasterKey, Subkeys};
+use crate::entry_metadata::{ArchiveTimestamp, RestoreClass, SparseExtent};
 use crate::format::{
     AeadAlgo, ArchiveWriteError, BlockKind, FormatError, FORMAT_VERSION,
-    READER_MAX_INDEX_ROOT_FEC_CLASS_SHARDS,
-    VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
+    READER_MAX_INDEX_ROOT_FEC_CLASS_SHARDS, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
 };
-use crate::metadata::{
-    normalize_lookup_file_path,
-    DirectoryHintShardEntry, ShardEntry,
-};
+use crate::metadata::{normalize_lookup_file_path, DirectoryHintShardEntry, ShardEntry};
 use crate::wire::{
     compute_key_wrap_table_digest, BlockRecord, KeyWrapTableV1, RecipientRecordV1, VolumeHeader,
 };
 
-pub mod plan;
-pub mod parallel;
 pub mod envelope;
+pub mod parallel;
+pub mod plan;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use plan::*;
-pub(crate) use parallel::*;
 pub use envelope::*;
+pub(crate) use parallel::*;
+pub(crate) use plan::*;
 
 pub(crate) const DEFAULT_BLOCK_SIZE: u32 = 64 * 1024;
 pub(crate) const DEFAULT_CHUNK_SIZE: u32 = 256 * 1024;
@@ -96,7 +86,10 @@ pub(crate) fn default_jobs() -> usize {
         .unwrap_or(1)
 }
 
-pub(crate) fn volume_format_revision_for_options(_options: &WriterOptions, _kdf_params: &KdfParams) -> u16 {
+pub(crate) fn volume_format_revision_for_options(
+    _options: &WriterOptions,
+    _kdf_params: &KdfParams,
+) -> u16 {
     // Writer is intentionally canonicalized to v45-only output.
     VOLUME_FORMAT_REV_45
 }
@@ -1086,7 +1079,9 @@ pub(crate) fn payload_envelope_needs_flush(
             || !payload_object_can_fit(next_len, options)?))
 }
 
-pub(crate) fn payload_frame_metadata(input: PayloadFrameMetadataInput) -> Result<PayloadFrame, FormatError> {
+pub(crate) fn payload_frame_metadata(
+    input: PayloadFrameMetadataInput,
+) -> Result<PayloadFrame, FormatError> {
     let mut flags = 0u32;
     if input.member_offset == 0 {
         flags |= 0x0000_0001;
@@ -1851,7 +1846,9 @@ pub(crate) fn validate_dictionary_inputs(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn validate_single_pass_writer_options(options: WriterOptions) -> Result<(), FormatError> {
+pub(crate) fn validate_single_pass_writer_options(
+    options: WriterOptions,
+) -> Result<(), FormatError> {
     if options.volume_loss_tolerance != 0 {
         return Err(FormatError::WriterUnsupported(
             "streaming create cannot tolerate volume loss",
@@ -1923,13 +1920,17 @@ pub(crate) fn begin_writer_emission_state<O: ArchiveWriteSink>(
     Ok(state)
 }
 
-pub(crate) fn plan_single_pass_writer_options(options: WriterOptions) -> Result<WriterOptions, FormatError> {
+pub(crate) fn plan_single_pass_writer_options(
+    options: WriterOptions,
+) -> Result<WriterOptions, FormatError> {
     let mut options = plan_writer_options(options)?;
     options.index_root_fec_data_shards = max_single_pass_index_root_data_shards(options)?;
     plan_writer_options(options)
 }
 
-pub(crate) fn max_single_pass_index_root_data_shards(options: WriterOptions) -> Result<u16, FormatError> {
+pub(crate) fn max_single_pass_index_root_data_shards(
+    options: WriterOptions,
+) -> Result<u16, FormatError> {
     let block_size_limit = (u32::MAX as u64 / options.block_size as u64).min(u16::MAX as u64);
     let mut low = MIN_INDEX_ROOT_FEC_DATA_SHARDS as u64;
     let mut high = block_size_limit;
@@ -2222,4 +2223,3 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
         )
     }
 }
-

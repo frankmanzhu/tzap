@@ -1,11 +1,8 @@
 use super::*;
 
-
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use tzap_core::RestorePolicy;
 use tzap_plugin_signing::x509_chain::X509SignatureScheme;
-
-
 
 #[derive(Debug, Parser)]
 #[command(name = "tzap")]
@@ -719,7 +716,6 @@ pub(crate) enum Command {
     },
 }
 
-
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub(crate) enum CliX509SignatureScheme {
     #[value(name = "rsa-pkcs1-sha256")]
@@ -759,4 +755,3 @@ impl CliX509SignatureScheme {
         }
     }
 }
-

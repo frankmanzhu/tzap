@@ -54,7 +54,6 @@ fn main() -> ExitCode {
     }
 }
 
-
 fn run(cli: Cli) -> Result<()> {
     let quiet = cli.quiet;
     match cli.command {
@@ -265,4 +264,3 @@ fn run(cli: Cli) -> Result<()> {
         Command::TrustInfo { json } => emit_trust_info(json).map_err(Into::into),
     }
 }
-

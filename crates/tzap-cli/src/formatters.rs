@@ -5,20 +5,14 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde_json::json;
-use tzap_core::format::{
-    FormatError, FORMAT_VERSION,
-    READER_MAX_SUPPORTED_VOLUME_FORMAT_REV,
-};
+use tzap_core::format::{FormatError, FORMAT_VERSION, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV};
 use tzap_core::reader::{ArchiveEntry, ArchiveIndexEntry};
 use tzap_core::{
-    ArchiveWriteError, ExtractError,
-    MetadataDiagnostic,
-    MetadataVerificationReport,
-    RestorePolicy, TarEntryKind, WriterTimings,
+    ArchiveWriteError, ExtractError, MetadataDiagnostic, MetadataVerificationReport, RestorePolicy,
+    TarEntryKind, WriterTimings,
 };
 
 use crate::commands::UsageError;
-
 
 pub(crate) fn emit_trust_info(json_output: bool) -> io::Result<()> {
     let build_profile = if cfg!(debug_assertions) {
@@ -197,7 +191,10 @@ pub(crate) fn metadata_diagnostic_lines_for_entries(entries: &[ArchiveEntry]) ->
 }
 
 #[cfg(test)]
-pub(crate) fn metadata_diagnostic_lines_for_paths(entries: &[ArchiveEntry], paths: &[String]) -> Vec<String> {
+pub(crate) fn metadata_diagnostic_lines_for_paths(
+    entries: &[ArchiveEntry],
+    paths: &[String],
+) -> Vec<String> {
     paths
         .iter()
         .filter_map(|path| entries.iter().find(|entry| entry.path == *path))
@@ -210,7 +207,10 @@ pub(crate) fn metadata_diagnostic_lines_for_paths(entries: &[ArchiveEntry], path
         .collect()
 }
 
-pub(crate) fn emit_entry_metadata_diagnostics(quiet: bool, entries: &[ArchiveEntry]) -> io::Result<()> {
+pub(crate) fn emit_entry_metadata_diagnostics(
+    quiet: bool,
+    entries: &[ArchiveEntry],
+) -> io::Result<()> {
     if quiet {
         return Ok(());
     }
@@ -394,7 +394,10 @@ pub(crate) fn emit_verify_json_error(
     Ok(())
 }
 
-pub(crate) fn unsupported_revision_error_json(err: &anyhow::Error, action: &'static str) -> serde_json::Value {
+pub(crate) fn unsupported_revision_error_json(
+    err: &anyhow::Error,
+    action: &'static str,
+) -> serde_json::Value {
     for cause in err.chain() {
         if let Some(format) = cause.downcast_ref::<FormatError>() {
             match format {
@@ -696,4 +699,3 @@ pub(crate) fn classify_format_error(err: &FormatError) -> Diagnostic {
         },
     }
 }
-

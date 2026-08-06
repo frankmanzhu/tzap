@@ -5,9 +5,7 @@ use std::io::{self};
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use tzap_core::format::{
-    FormatError, FORMAT_VERSION, VOLUME_FORMAT_REV_45,
-};
+use tzap_core::format::{FormatError, FORMAT_VERSION, VOLUME_FORMAT_REV_45};
 use tzap_core::{
     public_no_key_verify_volumes_with_options, verify_non_seekable_stream_with_bootstrap_sidecar,
     verify_non_seekable_stream_with_options,
@@ -15,15 +13,13 @@ use tzap_core::{
     verify_non_seekable_stream_with_recipient_wrap_resolver_options,
     verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar,
     verify_unencrypted_non_seekable_stream_with_options, AeadAlgo, ArchiveContentVerification,
-    KdfAlgo, OpenedArchive, PublicNoKeyVerification, ReaderOptions, RootAuthVerification, SequentialRootAuthStatus,
+    KdfAlgo, OpenedArchive, PublicNoKeyVerification, ReaderOptions, RootAuthVerification,
+    SequentialRootAuthStatus,
 };
 use tzap_plugin_signing::ed25519_raw::{
     self, Ed25519RootAuthOutcome, Ed25519VerificationMode, ED25519_AUTHENTICATOR_ID,
 };
-use tzap_plugin_signing::x509_chain::{
-    self, X509RootAuthReport, X509_AUTHENTICATOR_ID,
-};
-
+use tzap_plugin_signing::x509_chain::{self, X509RootAuthReport, X509_AUTHENTICATOR_ID};
 
 pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
     let VerifyArgs {
@@ -44,316 +40,91 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
         jobs,
     } = args;
 
-            let reader_options = reader_options(resolve_jobs(jobs)?);
-            let first = archives
-                .first()
-                .ok_or_else(|| anyhow!("at least one archive volume is required"))?;
-            let archive_paths = archives.to_vec();
-            if let Err(err) = validate_fast_verify_options(
-                fast,
-                public_no_key,
-                trusted_public_key.is_some(),
-                !trusted_ca_cert.is_empty(),
-                trusted_system_roots,
-                write_repaired,
-            ) {
+    let reader_options = reader_options(resolve_jobs(jobs)?);
+    let first = archives
+        .first()
+        .ok_or_else(|| anyhow!("at least one archive volume is required"))?;
+    let archive_paths = archives.to_vec();
+    if let Err(err) = validate_fast_verify_options(
+        fast,
+        public_no_key,
+        trusted_public_key.is_some(),
+        !trusted_ca_cert.is_empty(),
+        trusted_system_roots,
+        write_repaired,
+    ) {
+        if json {
+            emit_verify_json_error(&archive_paths, None, None, &err)?;
+        }
+        return Err(err);
+    }
+    if archives.iter().any(|path| path == "-") {
+        if write_repaired {
+            let err = anyhow!(FormatError::ReaderUnsupported(
+                "--write-repaired is not supported for archive stdin",
+            ));
+            if json {
+                emit_verify_json_error(&archive_paths, None, None, &err)?;
+            }
+            return Err(err);
+        }
+        if fast {
+            let err = anyhow!(UsageError(
+                        "--fast requires seekable archive paths; archive stdin uses full non-seekable verification",
+                    ));
+            if json {
+                emit_verify_json_error(&archive_paths, None, None, &err)?;
+            }
+            return Err(err);
+        }
+        if json && archives.len() != 1 {
+            let err = anyhow!(FormatError::ReaderUnsupported(
+                "archive stdin must be the only archive input",
+            ));
+            emit_verify_json_error(&archive_paths, None, None, &err)?;
+            return Err(err);
+        }
+        if first != "-" || archives.len() != 1 {
+            return Err(anyhow!(FormatError::ReaderUnsupported(
+                "archive stdin must be the only archive input",
+            )));
+        }
+        if public_no_key {
+            let err = anyhow!(FormatError::ReaderUnsupported(
+                "public no-key verification is not supported for archive stdin",
+            ));
+            if json {
+                emit_verify_json_error(&archive_paths, None, None, &err)?;
+            }
+            return Err(err);
+        }
+        if trusted_public_key.is_some() || !trusted_ca_cert.is_empty() || trusted_system_roots {
+            let err = anyhow!(FormatError::ReaderUnsupported(
+                "RootAuth external verification is not supported for archive stdin",
+            ));
+            if json {
+                emit_verify_json_error(&archive_paths, None, None, &err)?;
+            }
+            return Err(err);
+        }
+        let bootstrap_bytes = match read_optional_bootstrap_sidecar(bootstrap.as_deref()) {
+            Ok(bootstrap_bytes) => bootstrap_bytes,
+            Err(err) => {
                 if json {
                     emit_verify_json_error(&archive_paths, None, None, &err)?;
                 }
                 return Err(err);
             }
-            if archives.iter().any(|path| path == "-") {
-                if write_repaired {
-                    let err = anyhow!(FormatError::ReaderUnsupported(
-                        "--write-repaired is not supported for archive stdin",
-                    ));
-                    if json {
-                        emit_verify_json_error(&archive_paths, None, None, &err)?;
-                    }
-                    return Err(err);
-                }
-                if fast {
-                    let err = anyhow!(UsageError(
-                        "--fast requires seekable archive paths; archive stdin uses full non-seekable verification",
-                    ));
-                    if json {
-                        emit_verify_json_error(&archive_paths, None, None, &err)?;
-                    }
-                    return Err(err);
-                }
-                if json && archives.len() != 1 {
-                    let err = anyhow!(FormatError::ReaderUnsupported(
-                        "archive stdin must be the only archive input",
-                    ));
-                    emit_verify_json_error(&archive_paths, None, None, &err)?;
-                    return Err(err);
-                }
-                if first != "-" || archives.len() != 1 {
-                    return Err(anyhow!(FormatError::ReaderUnsupported(
-                        "archive stdin must be the only archive input",
-                    )));
-                }
-                if public_no_key {
-                    let err = anyhow!(FormatError::ReaderUnsupported(
-                        "public no-key verification is not supported for archive stdin",
-                    ));
-                    if json {
-                        emit_verify_json_error(&archive_paths, None, None, &err)?;
-                    }
-                    return Err(err);
-                }
-                if trusted_public_key.is_some()
-                    || !trusted_ca_cert.is_empty()
-                    || trusted_system_roots
-                {
-                    let err = anyhow!(FormatError::ReaderUnsupported(
-                        "RootAuth external verification is not supported for archive stdin",
-                    ));
-                    if json {
-                        emit_verify_json_error(&archive_paths, None, None, &err)?;
-                    }
-                    return Err(err);
-                }
-                let bootstrap_bytes = match read_optional_bootstrap_sidecar(bootstrap.as_deref()) {
-                    Ok(bootstrap_bytes) => bootstrap_bytes,
-                    Err(err) => {
-                        if json {
-                            emit_verify_json_error(&archive_paths, None, None, &err)?;
-                        }
-                        return Err(err);
-                    }
-                };
-                let stdin = io::stdin();
-                let result = if let Some(keyfile) = keyfile.as_deref() {
-                    let master_key = match load_archive_stdin_key(
-                        Some(keyfile),
-                        password_stdin,
-                        password,
-                        insecure_zero_key,
-                    ) {
-                        Ok(master_key) => master_key,
-                        Err(err) => {
-                            if json {
-                                emit_verify_json_error(&archive_paths, None, None, &err)?;
-                            }
-                            return Err(err);
-                        }
-                    };
-                    if let Some(bootstrap_bytes) = bootstrap_bytes.as_deref() {
-                        verify_non_seekable_stream_with_bootstrap_sidecar(
-                            stdin.lock(),
-                            bootstrap_bytes,
-                            &master_key,
-                            non_seekable_reader_options(reader_options),
-                        )
-                    } else {
-                        verify_non_seekable_stream_with_options(
-                            stdin.lock(),
-                            &master_key,
-                            non_seekable_reader_options(reader_options),
-                        )
-                    }
-                } else if let Some(recipient_key) = recipient_key.as_deref() {
-                    let lookup = match load_recipient_private_key_lookup(recipient_key) {
-                        Ok(lookup) => lookup,
-                        Err(err) => {
-                            if json {
-                                emit_verify_json_error(&archive_paths, None, None, &err)?;
-                            }
-                            return Err(err);
-                        }
-                    };
-                    let mut stats = RecipientWrapOpenStats::default();
-                    if let Some(bootstrap_bytes) = bootstrap_bytes.as_deref() {
-                        verify_non_seekable_stream_with_recipient_wrap_resolver_and_bootstrap_sidecar(
-                            stdin.lock(),
-                            bootstrap_bytes,
-                            |context| recipient_wrap_candidates_for_record(context, &lookup, &mut stats),
-                            non_seekable_reader_options(reader_options),
-                        )
-                    } else {
-                        verify_non_seekable_stream_with_recipient_wrap_resolver_options(
-                            stdin.lock(),
-                            |context| recipient_wrap_candidates_for_record(context, &lookup, &mut stats),
-                            non_seekable_reader_options(reader_options),
-                        )
-                    }
-                } else {
-                    if let Some(bootstrap_bytes) = bootstrap_bytes.as_deref() {
-                        verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar(
-                            stdin.lock(),
-                            bootstrap_bytes,
-                            non_seekable_reader_options(reader_options),
-                        )
-                    } else {
-                        verify_unencrypted_non_seekable_stream_with_options(
-                            stdin.lock(),
-                            non_seekable_reader_options(reader_options),
-                        )
-                    }
-                }
-                .context("failed to verify non-seekable archive stream");
-                let report = match result {
-                    Ok(report) => report,
-                    Err(err) => {
-                        if json {
-                            emit_verify_json_error(&archive_paths, None, None, &err)?;
-                        }
-                        return Err(err);
-                    }
-                };
-                if json {
-                    println!(
-                        "{}",
-                        serde_json::to_string(&json!({
-                            "ok": true,
-                            "archives": &archive_paths,
-                            "verification_mode": "key-holding-non-seekable-stream",
-                            "status": {
-                                "revision_mode": revision_mode_label(report.volume_format_rev),
-                                "format_version": FORMAT_VERSION,
-                                "volume_format_rev": report.volume_format_rev,
-                                "header_base_integrity": "verified",
-                                "decryption_keywrap": if recipient_key.is_some() {
-                                    "recipientwrap_opened"
-                                } else if keyfile.is_some() {
-                                    "key_holding_decrypted"
-                                } else {
-                                    "plaintext_opened"
-                                },
-                                "root_auth_signer": match report.root_auth {
-                                    SequentialRootAuthStatus::Absent => "absent",
-                                    SequentialRootAuthStatus::WireValidOnly => "wire_valid_only",
-                                },
-                                "trust_policy": "not_requested",
-                                "public_no_key_metadata_only": "not_requested",
-                            },
-                            "volume_count": report.total_volumes,
-                            "file_count": report.file_count,
-                            "tar_total_size": report.tar_total_size,
-                            "metadata": metadata_verification_json(&report.metadata),
-                        }))
-                        .context("failed to encode verify output as JSON")?
-                    );
-                    return Ok(());
-                }
-                emit_success_stdout(
-                    quiet,
-                    &format!(
-                        "{} {} ({} volume(s), {} file(s))",
-                        "-: OK non-seekable stream",
-                        revision_mode_label(report.volume_format_rev),
-                        report.total_volumes,
-                        report.file_count
-                    ),
-                )?;
-                if report.root_auth == SequentialRootAuthStatus::WireValidOnly {
-                    emit_success_stdout(
-                        quiet,
-                        "root-auth: wire-valid-only (signer trust not checked)",
-                    )?;
-                }
-                emit_metadata_verification_stdout(quiet, &report.metadata)?;
-                return Ok(());
-            }
-            if public_no_key {
-                if write_repaired {
-                    let err = anyhow!(FormatError::ReaderUnsupported(
-                        "--write-repaired requires key-holding verification",
-                    ));
-                    if json {
-                        emit_verify_json_error(&archive_paths, None, None, &err)?;
-                    }
-                    return Err(err);
-                }
-                return run_public_no_key_verify(PublicNoKeyVerifyRequest {
-                    archive_paths: &archive_paths,
-                    trusted_public_key: trusted_public_key.as_deref(),
-                    trusted_ca_cert: &trusted_ca_cert,
-                    trusted_system_roots,
-                    password_stdin,
-                    password,
-                    keyfile: keyfile.as_deref(),
-                    recipient_key: recipient_key.as_deref(),
-                    insecure_zero_key,
-                    bootstrap: bootstrap.as_deref(),
-                    reader_options,
-                    quiet,
-                    json,
-                });
-            }
-            if let Err(err) = validate_verify_key_holding_key_source(
-                keyfile.as_deref(),
-                recipient_key.as_deref(),
+        };
+        let stdin = io::stdin();
+        let result = if let Some(keyfile) = keyfile.as_deref() {
+            let master_key = match load_archive_stdin_key(
+                Some(keyfile),
                 password_stdin,
                 password,
                 insecure_zero_key,
             ) {
-                if json {
-                    emit_verify_json_error(&archive_paths, None, None, &err)?;
-                }
-                return Err(err);
-            }
-            if let Err(err) = reject_multi_volume_bootstrap(archives.len(), bootstrap.as_deref()) {
-                if json {
-                    emit_verify_json_error(&archive_paths, None, None, &err)?;
-                }
-                return Err(err);
-            }
-            if write_repaired && bootstrap.is_some() {
-                let err = anyhow!(FormatError::ReaderUnsupported(
-                    "--write-repaired is not supported with --bootstrap",
-                ));
-                if json {
-                    emit_verify_json_error(&archive_paths, None, None, &err)?;
-                }
-                return Err(err);
-            }
-            let selection =
-                match resolve_archive_input_paths(first, &archives[1..], bootstrap.is_none()) {
-                    Ok(selection) => selection,
-                    Err(err) => {
-                        if json {
-                            emit_verify_json_error(&archive_paths, None, None, &err)?;
-                        }
-                        return Err(err);
-                    }
-                };
-            let archive_paths = selection.paths.clone();
-            let opened_selection_result = if let Some(recipient_key) = recipient_key.as_deref() {
-                open_selection_with_recipient_key(
-                    &selection,
-                    recipient_key,
-                    bootstrap.as_deref(),
-                    reader_options,
-                )
-            } else {
-                let master_key = match load_open_key_from_paths(
-                    keyfile.as_deref(),
-                    password_stdin,
-                    password,
-                    insecure_zero_key,
-                    &selection.paths,
-                ) {
-                    Ok(master_key) => master_key,
-                    Err(err) => {
-                        if json {
-                            emit_verify_json_error(&archive_paths, None, None, &err)?;
-                        }
-                        return Err(err);
-                    }
-                };
-                open_selection_maybe_bootstrap_resolved(
-                    &selection,
-                    &master_key,
-                    bootstrap.as_deref(),
-                    reader_options,
-                )
-            };
-            let opened_selection = match opened_selection_result
-                .with_context(|| format!("failed to open archive {first}"))
-            {
-                Ok(opened) => opened,
+                Ok(master_key) => master_key,
                 Err(err) => {
                     if json {
                         emit_verify_json_error(&archive_paths, None, None, &err)?;
@@ -361,179 +132,399 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                     return Err(err);
                 }
             };
-            let archive_paths = opened_selection.paths;
-            let opened = opened_selection.opened;
-            let result = if fast {
-                opened
-                    .verify_content_fast()
-                    .with_context(|| format!("failed to fast-verify archive {first}"))
+            if let Some(bootstrap_bytes) = bootstrap_bytes.as_deref() {
+                verify_non_seekable_stream_with_bootstrap_sidecar(
+                    stdin.lock(),
+                    bootstrap_bytes,
+                    &master_key,
+                    non_seekable_reader_options(reader_options),
+                )
             } else {
-                opened
-                    .verify_content()
-                    .with_context(|| format!("failed to verify archive {first}"))
-            };
-            let volume_count = opened.manifest_footer.total_volumes;
-            let file_count = opened.index_root.header.file_count;
-            match result {
-                Ok(content_verification) => {
-                    let metadata_report = content_verification.metadata_report().cloned();
-                    let root_auth = if fast {
-                        None
-                    } else {
-                        match verify_opened_root_auth(
-                            &opened,
-                            &content_verification,
-                            trusted_public_key.as_deref(),
-                            &trusted_ca_cert,
-                            trusted_system_roots,
-                        )
-                        .with_context(|| format!("failed to verify RootAuth for {first}"))
-                        {
-                            Ok(root_auth) => root_auth,
-                            Err(err) => {
-                                if json {
-                                    emit_verify_json_error(
-                                        &archive_paths,
-                                        Some(volume_count as u64),
-                                        Some(file_count),
-                                        &err,
-                                    )?;
-                                }
-                                return Err(err);
-                            }
-                        }
-                    };
-                    if let Some(report) = &metadata_report {
-                        for entry in &report.entries {
-                            emit_member_metadata_diagnostics(
-                                quiet,
-                                &String::from_utf8_lossy(&entry.path),
-                                &entry.diagnostics,
-                            )?;
-                        }
-                    } else {
-                        let entries = opened.list_files()?;
-                        emit_entry_metadata_diagnostics(quiet, &entries)?;
-                    }
-                    let repaired_outputs = if write_repaired {
-                        match write_repaired_archive_copies(&archive_paths, &opened) {
-                            Ok(outputs) => outputs,
-                            Err(err) => {
-                                if json {
-                                    emit_verify_json_error(
-                                        &archive_paths,
-                                        Some(volume_count as u64),
-                                        Some(file_count),
-                                        &err,
-                                    )?;
-                                }
-                                return Err(err);
-                            }
-                        }
-                    } else {
-                        Vec::new()
-                    };
-                    if json {
-                        let mut payload = json!({
-                            "ok": true,
-                            "archives": &archive_paths,
-                            "verification_mode": if fast { "fast" } else { "key-holding" },
-                            "status": key_holding_status_json(
-                                &opened,
-                                root_auth.as_ref(),
-                                fast,
-                                recipient_key.is_some(),
-                                trusted_public_key.is_some()
-                                    || !trusted_ca_cert.is_empty()
-                                    || trusted_system_roots,
-                            ),
-                            "volume_count": volume_count,
-                            "file_count": file_count,
-                        });
-                        if let Some(root_auth) = &root_auth {
-                            payload["root_auth"] = root_auth_json(root_auth);
-                        } else if fast {
-                            let diagnostics = fast_verify_diagnostic_labels(&opened);
-                            payload["diagnostics"] = json!(diagnostics);
-                            if opened.root_auth_footer.is_some() {
-                                payload["root_auth"] = json!({
-                                    "status": "root_auth_deferred_full_archive_scan_required",
-                                    "diagnostics": ["root_auth_deferred_full_archive_scan_required"],
-                                });
-                            }
-                        }
-                        if let Some(report) = &metadata_report {
-                            payload["metadata"] = metadata_verification_json(report);
-                        }
-                        if write_repaired {
-                            payload["repaired_outputs"] = json!(repaired_outputs
-                                .iter()
-                                .map(|output| json!({
-                                    "path": output.path.clone(),
-                                    "volume_index": output.volume_index,
-                                    "repaired_block_count": output.repaired_block_count,
-                                }))
-                                .collect::<Vec<_>>());
-                        }
-                        println!(
-                            "{}",
-                            serde_json::to_string(&payload)
-                                .context("failed to encode verify output as JSON")?
-                        );
-                        return Ok(());
-                    }
-                    emit_success_stdout(
-                        quiet,
-                        &format!(
-                            "{}: OK{} {} {} ({} volume(s), {} file(s))",
-                            first,
-                            if fast { " fast" } else { "" },
-                            revision_mode_label(opened.volume_header.volume_format_rev),
-                            key_access_status(&opened, recipient_key.is_some()),
-                            volume_count,
-                            file_count
-                        ),
-                    )?;
-                    if fast {
-                        emit_fast_verify_diagnostics_stdout(quiet, &opened)?;
-                    } else if let Some(root_auth) = &root_auth {
-                        emit_root_auth_stdout(quiet, root_auth)?;
-                    }
-                    if let Some(report) = &metadata_report {
-                        emit_metadata_verification_stdout(quiet, report)?;
-                    }
-                    if write_repaired {
-                        if repaired_outputs.is_empty() {
-                            emit_success_stdout(
-                                quiet,
-                                "no repaired output written; no recoverable block damage found",
-                            )?;
-                        } else {
-                            for output in repaired_outputs {
-                                emit_success_stdout(
-                                    quiet,
-                                    &format!(
-                                        "wrote repaired volume copy {} ({} block(s))",
-                                        output.path, output.repaired_block_count
-                                    ),
-                                )?;
-                            }
-                        }
-                    }
-                    Ok(())
-                }
+                verify_non_seekable_stream_with_options(
+                    stdin.lock(),
+                    &master_key,
+                    non_seekable_reader_options(reader_options),
+                )
+            }
+        } else if let Some(recipient_key) = recipient_key.as_deref() {
+            let lookup = match load_recipient_private_key_lookup(recipient_key) {
+                Ok(lookup) => lookup,
                 Err(err) => {
                     if json {
-                        emit_verify_json_error(
-                            &archive_paths,
-                            Some(volume_count as u64),
-                            Some(file_count),
-                            &err,
+                        emit_verify_json_error(&archive_paths, None, None, &err)?;
+                    }
+                    return Err(err);
+                }
+            };
+            let mut stats = RecipientWrapOpenStats::default();
+            if let Some(bootstrap_bytes) = bootstrap_bytes.as_deref() {
+                verify_non_seekable_stream_with_recipient_wrap_resolver_and_bootstrap_sidecar(
+                    stdin.lock(),
+                    bootstrap_bytes,
+                    |context| recipient_wrap_candidates_for_record(context, &lookup, &mut stats),
+                    non_seekable_reader_options(reader_options),
+                )
+            } else {
+                verify_non_seekable_stream_with_recipient_wrap_resolver_options(
+                    stdin.lock(),
+                    |context| recipient_wrap_candidates_for_record(context, &lookup, &mut stats),
+                    non_seekable_reader_options(reader_options),
+                )
+            }
+        } else {
+            if let Some(bootstrap_bytes) = bootstrap_bytes.as_deref() {
+                verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar(
+                    stdin.lock(),
+                    bootstrap_bytes,
+                    non_seekable_reader_options(reader_options),
+                )
+            } else {
+                verify_unencrypted_non_seekable_stream_with_options(
+                    stdin.lock(),
+                    non_seekable_reader_options(reader_options),
+                )
+            }
+        }
+        .context("failed to verify non-seekable archive stream");
+        let report = match result {
+            Ok(report) => report,
+            Err(err) => {
+                if json {
+                    emit_verify_json_error(&archive_paths, None, None, &err)?;
+                }
+                return Err(err);
+            }
+        };
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string(&json!({
+                    "ok": true,
+                    "archives": &archive_paths,
+                    "verification_mode": "key-holding-non-seekable-stream",
+                    "status": {
+                        "revision_mode": revision_mode_label(report.volume_format_rev),
+                        "format_version": FORMAT_VERSION,
+                        "volume_format_rev": report.volume_format_rev,
+                        "header_base_integrity": "verified",
+                        "decryption_keywrap": if recipient_key.is_some() {
+                            "recipientwrap_opened"
+                        } else if keyfile.is_some() {
+                            "key_holding_decrypted"
+                        } else {
+                            "plaintext_opened"
+                        },
+                        "root_auth_signer": match report.root_auth {
+                            SequentialRootAuthStatus::Absent => "absent",
+                            SequentialRootAuthStatus::WireValidOnly => "wire_valid_only",
+                        },
+                        "trust_policy": "not_requested",
+                        "public_no_key_metadata_only": "not_requested",
+                    },
+                    "volume_count": report.total_volumes,
+                    "file_count": report.file_count,
+                    "tar_total_size": report.tar_total_size,
+                    "metadata": metadata_verification_json(&report.metadata),
+                }))
+                .context("failed to encode verify output as JSON")?
+            );
+            return Ok(());
+        }
+        emit_success_stdout(
+            quiet,
+            &format!(
+                "{} {} ({} volume(s), {} file(s))",
+                "-: OK non-seekable stream",
+                revision_mode_label(report.volume_format_rev),
+                report.total_volumes,
+                report.file_count
+            ),
+        )?;
+        if report.root_auth == SequentialRootAuthStatus::WireValidOnly {
+            emit_success_stdout(
+                quiet,
+                "root-auth: wire-valid-only (signer trust not checked)",
+            )?;
+        }
+        emit_metadata_verification_stdout(quiet, &report.metadata)?;
+        return Ok(());
+    }
+    if public_no_key {
+        if write_repaired {
+            let err = anyhow!(FormatError::ReaderUnsupported(
+                "--write-repaired requires key-holding verification",
+            ));
+            if json {
+                emit_verify_json_error(&archive_paths, None, None, &err)?;
+            }
+            return Err(err);
+        }
+        return run_public_no_key_verify(PublicNoKeyVerifyRequest {
+            archive_paths: &archive_paths,
+            trusted_public_key: trusted_public_key.as_deref(),
+            trusted_ca_cert: &trusted_ca_cert,
+            trusted_system_roots,
+            password_stdin,
+            password,
+            keyfile: keyfile.as_deref(),
+            recipient_key: recipient_key.as_deref(),
+            insecure_zero_key,
+            bootstrap: bootstrap.as_deref(),
+            reader_options,
+            quiet,
+            json,
+        });
+    }
+    if let Err(err) = validate_verify_key_holding_key_source(
+        keyfile.as_deref(),
+        recipient_key.as_deref(),
+        password_stdin,
+        password,
+        insecure_zero_key,
+    ) {
+        if json {
+            emit_verify_json_error(&archive_paths, None, None, &err)?;
+        }
+        return Err(err);
+    }
+    if let Err(err) = reject_multi_volume_bootstrap(archives.len(), bootstrap.as_deref()) {
+        if json {
+            emit_verify_json_error(&archive_paths, None, None, &err)?;
+        }
+        return Err(err);
+    }
+    if write_repaired && bootstrap.is_some() {
+        let err = anyhow!(FormatError::ReaderUnsupported(
+            "--write-repaired is not supported with --bootstrap",
+        ));
+        if json {
+            emit_verify_json_error(&archive_paths, None, None, &err)?;
+        }
+        return Err(err);
+    }
+    let selection = match resolve_archive_input_paths(first, &archives[1..], bootstrap.is_none()) {
+        Ok(selection) => selection,
+        Err(err) => {
+            if json {
+                emit_verify_json_error(&archive_paths, None, None, &err)?;
+            }
+            return Err(err);
+        }
+    };
+    let archive_paths = selection.paths.clone();
+    let opened_selection_result = if let Some(recipient_key) = recipient_key.as_deref() {
+        open_selection_with_recipient_key(
+            &selection,
+            recipient_key,
+            bootstrap.as_deref(),
+            reader_options,
+        )
+    } else {
+        let master_key = match load_open_key_from_paths(
+            keyfile.as_deref(),
+            password_stdin,
+            password,
+            insecure_zero_key,
+            &selection.paths,
+        ) {
+            Ok(master_key) => master_key,
+            Err(err) => {
+                if json {
+                    emit_verify_json_error(&archive_paths, None, None, &err)?;
+                }
+                return Err(err);
+            }
+        };
+        open_selection_maybe_bootstrap_resolved(
+            &selection,
+            &master_key,
+            bootstrap.as_deref(),
+            reader_options,
+        )
+    };
+    let opened_selection =
+        match opened_selection_result.with_context(|| format!("failed to open archive {first}")) {
+            Ok(opened) => opened,
+            Err(err) => {
+                if json {
+                    emit_verify_json_error(&archive_paths, None, None, &err)?;
+                }
+                return Err(err);
+            }
+        };
+    let archive_paths = opened_selection.paths;
+    let opened = opened_selection.opened;
+    let result = if fast {
+        opened
+            .verify_content_fast()
+            .with_context(|| format!("failed to fast-verify archive {first}"))
+    } else {
+        opened
+            .verify_content()
+            .with_context(|| format!("failed to verify archive {first}"))
+    };
+    let volume_count = opened.manifest_footer.total_volumes;
+    let file_count = opened.index_root.header.file_count;
+    match result {
+        Ok(content_verification) => {
+            let metadata_report = content_verification.metadata_report().cloned();
+            let root_auth = if fast {
+                None
+            } else {
+                match verify_opened_root_auth(
+                    &opened,
+                    &content_verification,
+                    trusted_public_key.as_deref(),
+                    &trusted_ca_cert,
+                    trusted_system_roots,
+                )
+                .with_context(|| format!("failed to verify RootAuth for {first}"))
+                {
+                    Ok(root_auth) => root_auth,
+                    Err(err) => {
+                        if json {
+                            emit_verify_json_error(
+                                &archive_paths,
+                                Some(volume_count as u64),
+                                Some(file_count),
+                                &err,
+                            )?;
+                        }
+                        return Err(err);
+                    }
+                }
+            };
+            if let Some(report) = &metadata_report {
+                for entry in &report.entries {
+                    emit_member_metadata_diagnostics(
+                        quiet,
+                        &String::from_utf8_lossy(&entry.path),
+                        &entry.diagnostics,
+                    )?;
+                }
+            } else {
+                let entries = opened.list_files()?;
+                emit_entry_metadata_diagnostics(quiet, &entries)?;
+            }
+            let repaired_outputs = if write_repaired {
+                match write_repaired_archive_copies(&archive_paths, &opened) {
+                    Ok(outputs) => outputs,
+                    Err(err) => {
+                        if json {
+                            emit_verify_json_error(
+                                &archive_paths,
+                                Some(volume_count as u64),
+                                Some(file_count),
+                                &err,
+                            )?;
+                        }
+                        return Err(err);
+                    }
+                }
+            } else {
+                Vec::new()
+            };
+            if json {
+                let mut payload = json!({
+                    "ok": true,
+                    "archives": &archive_paths,
+                    "verification_mode": if fast { "fast" } else { "key-holding" },
+                    "status": key_holding_status_json(
+                        &opened,
+                        root_auth.as_ref(),
+                        fast,
+                        recipient_key.is_some(),
+                        trusted_public_key.is_some()
+                            || !trusted_ca_cert.is_empty()
+                            || trusted_system_roots,
+                    ),
+                    "volume_count": volume_count,
+                    "file_count": file_count,
+                });
+                if let Some(root_auth) = &root_auth {
+                    payload["root_auth"] = root_auth_json(root_auth);
+                } else if fast {
+                    let diagnostics = fast_verify_diagnostic_labels(&opened);
+                    payload["diagnostics"] = json!(diagnostics);
+                    if opened.root_auth_footer.is_some() {
+                        payload["root_auth"] = json!({
+                            "status": "root_auth_deferred_full_archive_scan_required",
+                            "diagnostics": ["root_auth_deferred_full_archive_scan_required"],
+                        });
+                    }
+                }
+                if let Some(report) = &metadata_report {
+                    payload["metadata"] = metadata_verification_json(report);
+                }
+                if write_repaired {
+                    payload["repaired_outputs"] = json!(repaired_outputs
+                        .iter()
+                        .map(|output| json!({
+                            "path": output.path.clone(),
+                            "volume_index": output.volume_index,
+                            "repaired_block_count": output.repaired_block_count,
+                        }))
+                        .collect::<Vec<_>>());
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string(&payload)
+                        .context("failed to encode verify output as JSON")?
+                );
+                return Ok(());
+            }
+            emit_success_stdout(
+                quiet,
+                &format!(
+                    "{}: OK{} {} {} ({} volume(s), {} file(s))",
+                    first,
+                    if fast { " fast" } else { "" },
+                    revision_mode_label(opened.volume_header.volume_format_rev),
+                    key_access_status(&opened, recipient_key.is_some()),
+                    volume_count,
+                    file_count
+                ),
+            )?;
+            if fast {
+                emit_fast_verify_diagnostics_stdout(quiet, &opened)?;
+            } else if let Some(root_auth) = &root_auth {
+                emit_root_auth_stdout(quiet, root_auth)?;
+            }
+            if let Some(report) = &metadata_report {
+                emit_metadata_verification_stdout(quiet, report)?;
+            }
+            if write_repaired {
+                if repaired_outputs.is_empty() {
+                    emit_success_stdout(
+                        quiet,
+                        "no repaired output written; no recoverable block damage found",
+                    )?;
+                } else {
+                    for output in repaired_outputs {
+                        emit_success_stdout(
+                            quiet,
+                            &format!(
+                                "wrote repaired volume copy {} ({} block(s))",
+                                output.path, output.repaired_block_count
+                            ),
                         )?;
                     }
-                    Err(err)
                 }
             }
+            Ok(())
+        }
+        Err(err) => {
+            if json {
+                emit_verify_json_error(
+                    &archive_paths,
+                    Some(volume_count as u64),
+                    Some(file_count),
+                    &err,
+                )?;
+            }
+            Err(err)
+        }
+    }
 }
 
 pub(crate) struct VerifyArgs {
@@ -773,7 +764,9 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
     Ok(())
 }
 
-pub(crate) fn load_public_no_key_trust(request: &PublicNoKeyVerifyRequest<'_>) -> Result<PublicNoKeyTrust> {
+pub(crate) fn load_public_no_key_trust(
+    request: &PublicNoKeyVerifyRequest<'_>,
+) -> Result<PublicNoKeyTrust> {
     let wants_ed25519 = request.trusted_public_key.is_some();
     let wants_x509 = !request.trusted_ca_cert.is_empty() || request.trusted_system_roots;
     if wants_ed25519 && wants_x509 {
@@ -997,7 +990,9 @@ pub(crate) fn verified_root_auth_status(root_auth: &VerifiedRootAuth) -> &'stati
     }
 }
 
-pub(crate) fn public_no_key_status_json(root_auth: &VerifiedPublicNoKeyRootAuth) -> serde_json::Value {
+pub(crate) fn public_no_key_status_json(
+    root_auth: &VerifiedPublicNoKeyRootAuth,
+) -> serde_json::Value {
     let verification = public_no_key_verification(root_auth);
     json!({
         "revision_mode": revision_mode_label(verification.volume_format_rev),
@@ -1011,7 +1006,9 @@ pub(crate) fn public_no_key_status_json(root_auth: &VerifiedPublicNoKeyRootAuth)
     })
 }
 
-pub(crate) fn public_no_key_verification(root_auth: &VerifiedPublicNoKeyRootAuth) -> &PublicNoKeyVerification {
+pub(crate) fn public_no_key_verification(
+    root_auth: &VerifiedPublicNoKeyRootAuth,
+) -> &PublicNoKeyVerification {
     match root_auth {
         VerifiedPublicNoKeyRootAuth::Ed25519(verification) => verification,
         VerifiedPublicNoKeyRootAuth::X509 { verification, .. } => verification,
@@ -1188,14 +1185,19 @@ pub(crate) fn fast_verify_diagnostic_labels(opened: &OpenedArchive) -> Vec<&'sta
     diagnostics
 }
 
-pub(crate) fn emit_fast_verify_diagnostics_stdout(quiet: bool, opened: &OpenedArchive) -> io::Result<()> {
+pub(crate) fn emit_fast_verify_diagnostics_stdout(
+    quiet: bool,
+    opened: &OpenedArchive,
+) -> io::Result<()> {
     for diagnostic in fast_verify_diagnostic_labels(opened) {
         emit_success_stdout(quiet, &format!("fast-verify: {diagnostic}"))?;
     }
     Ok(())
 }
 
-pub(crate) fn public_no_key_root_auth_json(root_auth: &VerifiedPublicNoKeyRootAuth) -> serde_json::Value {
+pub(crate) fn public_no_key_root_auth_json(
+    root_auth: &VerifiedPublicNoKeyRootAuth,
+) -> serde_json::Value {
     match root_auth {
         VerifiedPublicNoKeyRootAuth::Ed25519(verification) => {
             let mut payload = json!({
@@ -1264,7 +1266,9 @@ pub(crate) fn public_no_key_status(verification: &PublicNoKeyVerification) -> &'
         .unwrap_or("public_data_block_commitment_verified")
 }
 
-pub(crate) fn public_no_key_diagnostic_labels(verification: &PublicNoKeyVerification) -> Vec<&'static str> {
+pub(crate) fn public_no_key_diagnostic_labels(
+    verification: &PublicNoKeyVerification,
+) -> Vec<&'static str> {
     verification
         .diagnostics
         .iter()

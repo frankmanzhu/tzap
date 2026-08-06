@@ -1,9 +1,8 @@
-use super::*;
 use super::restore::{
-    PreparedDestination, TarMemberStreamHandler, create_new_file_options,
-    read_member_bytes, remove_existing_leaf_if_needed,
+    create_new_file_options, read_member_bytes, remove_existing_leaf_if_needed,
+    PreparedDestination, TarMemberStreamHandler,
 };
-
+use super::*;
 
 #[cfg(target_os = "linux")]
 pub(crate) fn punch_linux_sparse_holes(
@@ -173,7 +172,10 @@ pub(crate) fn create_temp_regular_file(
 }
 
 #[cfg(windows)]
-pub(crate) fn prepare_windows_sparse_file(file: &fs::File, logical_size: u64) -> Result<(), FormatError> {
+pub(crate) fn prepare_windows_sparse_file(
+    file: &fs::File,
+    logical_size: u64,
+) -> Result<(), FormatError> {
     use std::os::windows::io::AsRawHandle;
     use std::ptr;
     use windows_sys::Win32::System::Ioctl::FSCTL_SET_SPARSE;

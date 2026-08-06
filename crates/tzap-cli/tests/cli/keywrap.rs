@@ -93,7 +93,6 @@ fn cli_create_with_interactive_password_requires_matching_confirmation() {
         .stderr(predicate::str::contains("Passphrases do not match"));
 }
 
-
 #[test]
 fn cli_create_list_verify_and_extract_with_keyfile() {
     let temp = tempdir().unwrap();
@@ -887,8 +886,6 @@ fn cli_extract_with_password_prompt_and_stdin_fallback() {
         b"payload\n"
     );
 }
-
-
 
 #[test]
 fn cli_verify_with_password_prompt_and_stdin_fallback() {

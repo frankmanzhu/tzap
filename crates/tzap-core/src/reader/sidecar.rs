@@ -2,22 +2,18 @@ use super::*;
 
 use std::collections::BTreeMap;
 
-
-use crate::crypto::{
-    verify_integrity_tag, HmacDomain, Subkeys,
-};
+use crate::crypto::{verify_integrity_tag, HmacDomain, Subkeys};
 use crate::format::{
-    BlockKind, FormatError,
-    BLOCK_RECORD_FRAMING_LEN, BOOTSTRAP_SIDECAR_HEADER_LEN,
+    BlockKind, FormatError, BLOCK_RECORD_FRAMING_LEN, BOOTSTRAP_SIDECAR_HEADER_LEN,
     MANIFEST_FOOTER_LEN,
 };
 use crate::metadata::IndexRoot;
 #[cfg(windows)]
 use crate::tar_model::replay_windows_descendant_metadata;
 use crate::wire::{
-    BlockRecord, BootstrapSidecarHeader, CryptoHeaderFixed, ManifestFooter, VolumeHeader, VolumeTrailer,
+    BlockRecord, BootstrapSidecarHeader, CryptoHeaderFixed, ManifestFooter, VolumeHeader,
+    VolumeTrailer,
 };
-
 
 pub(crate) fn validate_bootstrap_single_volume_input(
     volume_header: &VolumeHeader,
@@ -502,4 +498,3 @@ pub(crate) fn validate_manifest_footer(
         &footer.manifest_hmac,
     )
 }
-

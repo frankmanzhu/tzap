@@ -11,13 +11,10 @@ use tzap_core::PortablePosixOwner;
 #[cfg(target_os = "macos")]
 use tzap_core::{canonical_base64_encode, encode_percent_name};
 use tzap_core::{
-    ArchiveTimestamp, NativeFileMetadata,
-    PortableFileMetadata, PortableModeOrigin,
-    SparseExtent,
+    ArchiveTimestamp, NativeFileMetadata, PortableFileMetadata, PortableModeOrigin, SparseExtent,
 };
 #[cfg(any(target_os = "macos", windows))]
 use tzap_core::{NativeAuxiliaryMetadata, NativeAuxiliaryNameEncoding, RestoreClass};
-
 
 #[cfg(unix)]
 pub(crate) fn readonly_mode(metadata: &fs::Metadata) -> u32 {
@@ -467,7 +464,10 @@ pub(crate) fn input_identity(metadata: &fs::Metadata) -> io::Result<InputIdentit
     })
 }
 
-pub(crate) fn validate_opened_input_identity(file: &File, expected: InputIdentity) -> io::Result<()> {
+pub(crate) fn validate_opened_input_identity(
+    file: &File,
+    expected: InputIdentity,
+) -> io::Result<()> {
     let actual_metadata = file.metadata()?;
     let actual = input_identity(&actual_metadata)?;
     #[cfg(windows)]
@@ -482,7 +482,10 @@ pub(crate) fn validate_opened_input_identity(file: &File, expected: InputIdentit
     Ok(())
 }
 
-pub(crate) fn input_identity_matches_after_read(expected: InputIdentity, actual: InputIdentity) -> bool {
+pub(crate) fn input_identity_matches_after_read(
+    expected: InputIdentity,
+    actual: InputIdentity,
+) -> bool {
     #[cfg(windows)]
     {
         let mut expected = expected;
@@ -504,7 +507,10 @@ pub(crate) fn input_identity_matches_after_read(expected: InputIdentity, actual:
 }
 
 #[cfg(windows)]
-pub(crate) fn augment_windows_input_identity(identity: &mut InputIdentity, file: &File) -> io::Result<()> {
+pub(crate) fn augment_windows_input_identity(
+    identity: &mut InputIdentity,
+    file: &File,
+) -> io::Result<()> {
     use std::mem::size_of;
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
@@ -543,7 +549,10 @@ pub(crate) fn augment_windows_input_identity(identity: &mut InputIdentity, file:
 }
 
 #[cfg(windows)]
-pub(crate) fn query_windows_allocated_ranges(file: &File, logical_size: u64) -> io::Result<Vec<SparseExtent>> {
+pub(crate) fn query_windows_allocated_ranges(
+    file: &File,
+    logical_size: u64,
+) -> io::Result<Vec<SparseExtent>> {
     use std::mem::size_of;
     use std::os::windows::io::AsRawHandle;
     use std::ptr;
@@ -745,7 +754,9 @@ pub(crate) fn open_macos_symlink(input: &Path) -> io::Result<File> {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn open_macos_resource_fork_for_read(owner: File) -> io::Result<MacosResourceForkSource> {
+pub(crate) fn open_macos_resource_fork_for_read(
+    owner: File,
+) -> io::Result<MacosResourceForkSource> {
     use std::ffi::OsString;
     use std::os::fd::AsRawFd as _;
     use std::os::unix::ffi::OsStringExt as _;
@@ -1146,7 +1157,10 @@ pub(crate) fn archive_timestamp(time: SystemTime) -> io::Result<ArchiveTimestamp
 }
 
 #[cfg(windows)]
-pub(crate) fn reject_unsupported_windows_regular_file(metadata: &fs::Metadata, input: &Path) -> Result<()> {
+pub(crate) fn reject_unsupported_windows_regular_file(
+    metadata: &fs::Metadata,
+    input: &Path,
+) -> Result<()> {
     use std::os::windows::fs::MetadataExt;
 
     let attributes = metadata.file_attributes();
@@ -1177,7 +1191,10 @@ pub(crate) fn unsupported_windows_file_attribute_reason(attributes: u32) -> Opti
     .find_map(|(flag, reason)| (attributes & flag != 0).then_some(reason))
 }
 
-pub(crate) fn portable_input_metadata(identity: InputIdentity, input: &Path) -> Result<PortableFileMetadata> {
+pub(crate) fn portable_input_metadata(
+    identity: InputIdentity,
+    input: &Path,
+) -> Result<PortableFileMetadata> {
     let metadata = fs::symlink_metadata(input)?;
     let created = metadata
         .created()
@@ -2094,7 +2111,10 @@ unsafe extern "system" fn send_windows_raw_efs_callback(
 }
 
 #[cfg(windows)]
-pub(crate) fn validate_windows_input_path_identity(path: &Path, expected: InputIdentity) -> io::Result<()> {
+pub(crate) fn validate_windows_input_path_identity(
+    path: &Path,
+    expected: InputIdentity,
+) -> io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     let mut actual = input_identity(&metadata)?;
     let file = open_windows_metadata_handle(path)?;
@@ -2924,4 +2944,3 @@ pub(crate) fn portable_attributes(metadata: &fs::Metadata) -> Option<u32> {
         None
     }
 }
-

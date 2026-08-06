@@ -1,31 +1,33 @@
-use super::*;
-use super::os_restore::{
-    apply_restored_regular_file_metadata_parts, apply_windows_alternate_streams,
-    macos_flags_require_system, macos_flags_supported, native_auxiliary_restore_supported,
-    native_primary_restore_unsupported, parse_macos_flags, record_metadata_application_failure,
-    RestoredRegularMetadata, source_os_matches_current_host, special_object_restore_supported,
-    system_xattr_name, windows_reparse_metadata_supported, MACOS_KNOWN_SETTABLE_FLAGS,
-};
+#[cfg(test)]
+use super::os_restore::apply_restored_regular_file_metadata;
 #[cfg(unix)]
 use super::os_restore::numeric_ownership_supported;
+#[cfg(target_os = "macos")]
+use super::os_restore::validate_darwin_acl_external;
 #[cfg(windows)]
 use super::os_restore::{
     apply_generic_xattr_auxiliaries, apply_windows_basic_metadata,
     apply_windows_security_descriptor, restore_windows_efs_temp,
 };
-#[cfg(target_os = "macos")]
-use super::os_restore::validate_darwin_acl_external;
 #[cfg(target_os = "linux")]
 use super::os_restore::{
     apply_generic_xattr_auxiliaries_to_path, apply_linux_inode_flags, apply_linux_project_id,
 };
-#[cfg(test)]
-use super::os_restore::apply_restored_regular_file_metadata;
-use super::sparse::{create_temp_regular_file, publish_regular_file, stream_sparse_primary_payload};
+use super::os_restore::{
+    apply_restored_regular_file_metadata_parts, apply_windows_alternate_streams,
+    macos_flags_require_system, macos_flags_supported, native_auxiliary_restore_supported,
+    native_primary_restore_unsupported, parse_macos_flags, record_metadata_application_failure,
+    source_os_matches_current_host, special_object_restore_supported, system_xattr_name,
+    windows_reparse_metadata_supported, RestoredRegularMetadata, MACOS_KNOWN_SETTABLE_FLAGS,
+};
 #[cfg(target_os = "linux")]
 use super::sparse::punch_linux_sparse_holes;
+use super::sparse::{
+    create_temp_regular_file, publish_regular_file, stream_sparse_primary_payload,
+};
 #[cfg(windows)]
 use super::sparse::{prepare_windows_sparse_file, verify_windows_sparse_file};
+use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StreamedTarMemberMetadata {
@@ -293,7 +295,6 @@ pub(super) enum PendingTarEntry {
         sparse: Option<StreamingSparsePrimary>,
     },
 }
-
 
 pub(crate) fn try_tar_member_group_end(
     stream: &[u8],
@@ -1340,7 +1341,6 @@ pub(super) fn plan_restore(
     Ok(diagnostics)
 }
 
-
 struct RegularWriterHandler<'a, W> {
     writer: &'a mut W,
 }
@@ -2239,7 +2239,6 @@ fn stream_auxiliary_payload<R: TarMemberGroupReader, H: TarMemberStreamHandler>(
     }
     Ok(())
 }
-
 
 pub(super) fn tar_member_group_end(stream: &[u8], start: usize) -> Result<usize, FormatError> {
     try_tar_member_group_end(stream, start)?.ok_or(FormatError::InvalidArchive(
@@ -3687,7 +3686,9 @@ fn apply_restored_macos_symlink_metadata(
 ) -> Result<(), FormatError> {
     Ok(())
 }
-pub(crate) fn remove_existing_leaf_if_needed(destination: &PreparedDestination) -> Result<(), FormatError> {
+pub(crate) fn remove_existing_leaf_if_needed(
+    destination: &PreparedDestination,
+) -> Result<(), FormatError> {
     match destination.parent.symlink_metadata(&destination.leaf) {
         Ok(metadata) => {
             if metadata.file_type().is_dir() {

@@ -14,27 +14,22 @@ use openssl::x509::X509;
 use rand::RngCore;
 use tzap_core::format::{
     FormatError, CRYPTO_HEADER_FIXED_LEN, FORMAT_VERSION, READER_MAX_ARGON2ID_M_COST_KIB,
-    READER_MAX_ARGON2ID_PARALLELISM, READER_MAX_ARGON2ID_T_COST, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
+    READER_MAX_ARGON2ID_PARALLELISM, READER_MAX_ARGON2ID_T_COST, VOLUME_FORMAT_REV_45,
+    VOLUME_HEADER_LEN,
 };
 use tzap_core::reader::RecipientWrapRecordContext;
 use tzap_core::wire::{CryptoHeader, CryptoHeaderFixed, VolumeHeader};
 use tzap_core::{
-    open_seekable_archive,
-    open_seekable_archive_volumes_with_recipient_wrap_resolver_options,
-    open_seekable_archive_with_bootstrap_sidecar_options, AeadAlgo,
-    ArchiveRepairPatch,
-    KdfAlgo, KdfParams, MasterKey, NonSeekableReaderOptions, OpenedArchive, ReaderOptions,
-    WriterOptions,
+    open_seekable_archive, open_seekable_archive_volumes_with_recipient_wrap_resolver_options,
+    open_seekable_archive_with_bootstrap_sidecar_options, AeadAlgo, ArchiveRepairPatch, KdfAlgo,
+    KdfParams, MasterKey, NonSeekableReaderOptions, OpenedArchive, ReaderOptions, WriterOptions,
 };
 use tzap_plugin_keywrap::{
     dispatch_key_wrap_record, wrap_master_key_for_recipient,
     ArchiveIdentity as KeyWrapArchiveIdentity, KeyWrapOutcome, KeyWrapSuite, PrivateKeyLookup,
     RecipientRecordInput, RecipientRecordMetadata,
 };
-use tzap_plugin_signing::x509_chain::{
-    self, X509RootAuthSigner,
-};
-
+use tzap_plugin_signing::x509_chain::{self, X509RootAuthSigner};
 
 pub(crate) mod create;
 pub(crate) mod extract;
@@ -50,7 +45,6 @@ pub(crate) use crate::os_input::*;
 pub(crate) use create::*;
 #[cfg(test)]
 pub(crate) use verify::*;
-
 
 pub(crate) fn resolve_jobs(jobs: Option<usize>) -> Result<usize> {
     let jobs = jobs.unwrap_or_else(default_jobs);
@@ -70,8 +64,6 @@ impl std::fmt::Display for UsageError {
 }
 
 impl std::error::Error for UsageError {}
-
-
 
 #[derive(Debug, Clone)]
 pub(crate) struct ArchiveInputSelection {
@@ -374,7 +366,10 @@ pub(crate) fn parse_volume_file_name(file_name: &str) -> Option<VolumePathPatter
     })
 }
 
-pub(crate) fn discover_volume_siblings(primary: &Path, pattern: &VolumePathPattern) -> Result<Vec<String>> {
+pub(crate) fn discover_volume_siblings(
+    primary: &Path,
+    pattern: &VolumePathPattern,
+) -> Result<Vec<String>> {
     let parent = primary.parent().unwrap_or_else(|| Path::new("."));
     let entries = match fs::read_dir(parent) {
         Ok(entries) => entries,
@@ -406,7 +401,10 @@ pub(crate) fn discover_volume_siblings(primary: &Path, pattern: &VolumePathPatte
         .collect())
 }
 
-pub(crate) fn reject_multi_volume_bootstrap(volume_count: usize, bootstrap: Option<&str>) -> Result<()> {
+pub(crate) fn reject_multi_volume_bootstrap(
+    volume_count: usize,
+    bootstrap: Option<&str>,
+) -> Result<()> {
     if volume_count > 1 && bootstrap.is_some() {
         return Err(anyhow!(FormatError::ReaderUnsupported(
             "multi-volume inputs with --bootstrap are not supported; pass volume files without --bootstrap",
@@ -414,7 +412,6 @@ pub(crate) fn reject_multi_volume_bootstrap(volume_count: usize, bootstrap: Opti
     }
     Ok(())
 }
-
 
 pub(crate) struct ArchiveStdinOpenOptions<'a> {
     pub(crate) paths: &'a [String],
@@ -427,7 +424,9 @@ pub(crate) struct ArchiveStdinOpenOptions<'a> {
     pub(crate) insecure_zero_key: bool,
 }
 
-pub(crate) fn reject_archive_stdin_open_options(options: ArchiveStdinOpenOptions<'_>) -> Result<()> {
+pub(crate) fn reject_archive_stdin_open_options(
+    options: ArchiveStdinOpenOptions<'_>,
+) -> Result<()> {
     if !options.volumes.is_empty() {
         return Err(anyhow!(FormatError::ReaderUnsupported(
             "archive stdin must be the only archive input",
@@ -661,7 +660,10 @@ pub(crate) fn recipient_wrap_candidates_for_record(
     }
 }
 
-pub(crate) fn recipient_wrap_open_error(err: FormatError, stats: &RecipientWrapOpenStats) -> anyhow::Error {
+pub(crate) fn recipient_wrap_open_error(
+    err: FormatError,
+    stats: &RecipientWrapOpenStats,
+) -> anyhow::Error {
     if !matches!(err, FormatError::KeyMaterialMismatch) {
         return anyhow!(err);
     }
@@ -846,7 +848,10 @@ pub(crate) fn load_x509_trusted_roots(
     Ok(certificates)
 }
 
-pub(crate) fn load_single_x509_certificate_file(label: &'static str, path: &str) -> Result<Vec<u8>> {
+pub(crate) fn load_single_x509_certificate_file(
+    label: &'static str,
+    path: &str,
+) -> Result<Vec<u8>> {
     let bytes = fs::read(path).with_context(|| format!("failed to read {label} {path}"))?;
     let certificates = x509_chain::certificates_der_from_pem_or_der(&bytes)
         .with_context(|| format!("failed to parse {label} {path}"))?;
@@ -857,7 +862,9 @@ pub(crate) fn load_single_x509_certificate_file(label: &'static str, path: &str)
     }
 }
 
-pub(crate) fn load_recipient_private_key_lookup(path: &str) -> Result<CliRecipientPrivateKeyLookup> {
+pub(crate) fn load_recipient_private_key_lookup(
+    path: &str,
+) -> Result<CliRecipientPrivateKeyLookup> {
     let bytes = fs::read(path).with_context(|| format!("failed to read recipient key {path}"))?;
     if bytes.len() == 32 {
         return Ok(CliRecipientPrivateKeyLookup {
@@ -993,7 +1000,6 @@ pub(crate) fn load_32_byte_key_file(label: &'static str, path: &str) -> Result<[
     Ok(out)
 }
 
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn load_create_key(
     keyfile: Option<&str>,
@@ -1089,7 +1095,10 @@ pub(crate) fn insecure_zero_master_key() -> Result<MasterKey> {
     MasterKey::from_raw_key(&INSECURE_ZERO_KEY).map_err(Into::into)
 }
 
-pub(crate) fn derive_key_from_passphrase(kdf_params: &KdfParams, passphrase: &str) -> Result<MasterKey> {
+pub(crate) fn derive_key_from_passphrase(
+    kdf_params: &KdfParams,
+    passphrase: &str,
+) -> Result<MasterKey> {
     match kdf_params {
         KdfParams::Argon2id { .. } => {
             MasterKey::derive_from_passphrase(kdf_params, passphrase).map_err(Into::into)
@@ -1306,7 +1315,9 @@ pub(crate) fn read_kdf_params_from_any_volume_path(paths: &[String]) -> Result<K
         .context("failed to read KDF parameters from any archive volume")
 }
 
-pub(crate) fn read_archive_protection_from_any_volume_path(paths: &[String]) -> Result<ArchiveProtection> {
+pub(crate) fn read_archive_protection_from_any_volume_path(
+    paths: &[String],
+) -> Result<ArchiveProtection> {
     let mut first_error = None;
     for path in paths {
         match read_archive_protection_from_volume_path(path) {
@@ -1363,7 +1374,6 @@ pub(crate) fn decode_hex_nibble(byte: u8) -> Result<u8> {
         _ => bail!("keyfile contains non-hex characters"),
     }
 }
-
 
 pub(crate) fn default_jobs() -> usize {
     std::thread::available_parallelism()
@@ -1460,7 +1470,12 @@ pub(crate) struct AtomicOutput<'a> {
     pub(crate) path: &'a Path,
     pub(crate) bytes: &'a [u8],
 }
-pub(crate) fn write_atomic_output_file(label: &str, path: &Path, bytes: &[u8], force: bool) -> Result<()> {
+pub(crate) fn write_atomic_output_file(
+    label: &str,
+    path: &Path,
+    bytes: &[u8],
+    force: bool,
+) -> Result<()> {
     write_atomic_output_files(&[AtomicOutput { label, path, bytes }], force)
 }
 pub(crate) fn write_atomic_output_files(outputs: &[AtomicOutput<'_>], force: bool) -> Result<()> {

@@ -7,23 +7,15 @@ use uuid::Uuid;
 use crate::compression::{
     compress_zstd_frame_with_dictionary_and_jobs, compress_zstd_frame_with_jobs,
 };
-use crate::crypto::{
-    KdfParams, MasterKey,
-    Subkeys,
-};
+use crate::crypto::{KdfParams, MasterKey, Subkeys};
 use crate::entry_metadata::SparseExtent;
 use crate::format::{
     ArchiveWriteError, BlockKind, FormatError, BLOCK_RECORD_FRAMING_LEN,
-    CRITICAL_RECOVERY_LOCATOR_LEN, FORMAT_VERSION, MANIFEST_FOOTER_LEN, VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
+    CRITICAL_RECOVERY_LOCATOR_LEN, FORMAT_VERSION, MANIFEST_FOOTER_LEN, VOLUME_HEADER_LEN,
+    VOLUME_TRAILER_LEN,
 };
-use crate::metadata::{
-    normalize_lookup_file_path,
-    DirectoryHintShardEntry, ShardEntry,
-};
-use crate::wire::{
-    CriticalRecoveryLocator, VolumeHeader,
-};
-
+use crate::metadata::{normalize_lookup_file_path, DirectoryHintShardEntry, ShardEntry};
+use crate::wire::{CriticalRecoveryLocator, VolumeHeader};
 
 use super::*;
 
@@ -753,7 +745,11 @@ pub(crate) fn planned_v41_volume_size(
     )
 }
 
-pub(crate) fn striped_block_count(total_block_count: u64, stripe_width: u32, volume_index: u32) -> u64 {
+pub(crate) fn striped_block_count(
+    total_block_count: u64,
+    stripe_width: u32,
+    volume_index: u32,
+) -> u64 {
     let volume_index = volume_index as u64;
     let stripe_width = stripe_width as u64;
     if total_block_count <= volume_index {
@@ -816,7 +812,10 @@ where
     Ok(summary)
 }
 
-pub(crate) fn start_write_phase(progress: Option<&SourceProgressHandle<'_>>, phase: ArchiveWritePhase) {
+pub(crate) fn start_write_phase(
+    progress: Option<&SourceProgressHandle<'_>>,
+    phase: ArchiveWritePhase,
+) {
     if let Some(progress) = progress {
         progress.borrow_mut().start_phase(phase);
     }
@@ -1132,4 +1131,3 @@ pub(crate) fn emit_writer_plan_suffix<O: ArchiveWriteSink>(
         },
     })
 }
-

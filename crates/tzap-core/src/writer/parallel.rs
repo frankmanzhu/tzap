@@ -5,19 +5,11 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::compression::compress_zstd_frame_with_jobs;
-use crate::crypto::{
-    KdfParams, MasterKey,
-    Subkeys,
-};
+use crate::crypto::{KdfParams, MasterKey, Subkeys};
 use crate::entry_metadata::SparseExtent;
-use crate::format::{
-    ArchiveWriteError, BlockKind, FormatError,
-};
-use crate::metadata::{
-    normalize_lookup_file_path, validate_file_path_bytes,
-};
+use crate::format::{ArchiveWriteError, BlockKind, FormatError};
+use crate::metadata::{normalize_lookup_file_path, validate_file_path_bytes};
 use crate::wire::BlockRecord;
-
 
 use super::*;
 
@@ -958,4 +950,3 @@ pub(crate) fn emit_ordered_envelope_result<O: ArchiveWriteSink>(
     }
     Ok(())
 }
-

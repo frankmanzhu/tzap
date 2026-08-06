@@ -15,22 +15,20 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 use crate::entry_metadata::{
-    parse_auxiliary_record, parse_canonical_pax, parse_primary_metadata,
-    parse_sparse_payload, validate_group_metadata, ArchiveTimestamp, AuxiliaryRecord,
-    AuxiliaryStreamValidator, CaptureReportRow, CaptureStatus, MemberMetadata, PaxRecords,
-    PortableMetadataMirror, PrimaryMetadata,
-    SparseStreamValidator, CAPTURE_REPORT_KIND,
-    MAX_AGGREGATE_PAX_PAYLOAD, MAX_LOCAL_PAX_PAYLOAD, REQUIRES_SYSTEM_RESTORE,
+    parse_auxiliary_record, parse_canonical_pax, parse_primary_metadata, parse_sparse_payload,
+    validate_group_metadata, ArchiveTimestamp, AuxiliaryRecord, AuxiliaryStreamValidator,
+    CaptureReportRow, CaptureStatus, MemberMetadata, PaxRecords, PortableMetadataMirror,
+    PrimaryMetadata, SparseStreamValidator, CAPTURE_REPORT_KIND, MAX_AGGREGATE_PAX_PAYLOAD,
+    MAX_LOCAL_PAX_PAYLOAD, REQUIRES_SYSTEM_RESTORE,
 };
 use crate::format::FormatError;
 use crate::metadata::validate_file_path_bytes;
 
-
-use super::*;
 use super::restore::{
-    StreamedTarMemberMetadata, TarStreamMemberSummary, TarStreamSummary, tar_member_group_end,
-    try_tar_member_group_end,
+    tar_member_group_end, try_tar_member_group_end, StreamedTarMemberMetadata,
+    TarStreamMemberSummary, TarStreamSummary,
 };
+use super::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum V45PaxKind {
@@ -1139,7 +1137,10 @@ fn has_capture_omission(
     })
 }
 
-pub(super) fn parse_lower_hex_u32(value: &[u8], structure: &'static str) -> Result<u32, FormatError> {
+pub(super) fn parse_lower_hex_u32(
+    value: &[u8],
+    structure: &'static str,
+) -> Result<u32, FormatError> {
     if value.len() != 8
         || !value
             .iter()
@@ -1174,7 +1175,10 @@ pub(super) fn v45_group_flags(
     Ok((flags, capture_report))
 }
 
-pub(super) fn parse_minimal_decimal_u64(value: &[u8], structure: &'static str) -> Result<u64, FormatError> {
+pub(super) fn parse_minimal_decimal_u64(
+    value: &[u8],
+    structure: &'static str,
+) -> Result<u64, FormatError> {
     if value.is_empty()
         || !value.iter().all(u8::is_ascii_digit)
         || (value.len() > 1 && value[0] == b'0')
@@ -1950,4 +1954,3 @@ pub(super) fn restore_phase_for_kind(kind: TarEntryKind, reparse_placeholder: bo
         TarEntryKind::Hardlink => 3,
     }
 }
-

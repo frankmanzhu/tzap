@@ -22,8 +22,9 @@ use crate::entry_metadata::{
 use crate::fec::encode_parity_gf16;
 use crate::format::{
     root_auth_spec_id_for_revision, AeadAlgo, ArchiveWriteError, BlockKind, CompressionAlgo,
-    FecAlgo, FormatError, KdfAlgo, BLOCK_RECORD_FRAMING_LEN, BOOTSTRAP_SIDECAR_HEADER_LEN, CRYPTO_EXTENSION_HEADER_LEN, CRYPTO_HEADER_FIXED_LEN,
-    CRYPTO_HEADER_HMAC_LEN, FORMAT_VERSION, MANIFEST_FOOTER_LEN, READER_MAX_CMRA_PARITY_PCT, READER_MAX_ROOT_AUTH_AUTHENTICATOR_VALUE_LEN,
+    FecAlgo, FormatError, KdfAlgo, BLOCK_RECORD_FRAMING_LEN, BOOTSTRAP_SIDECAR_HEADER_LEN,
+    CRYPTO_EXTENSION_HEADER_LEN, CRYPTO_HEADER_FIXED_LEN, CRYPTO_HEADER_HMAC_LEN, FORMAT_VERSION,
+    MANIFEST_FOOTER_LEN, READER_MAX_CMRA_PARITY_PCT, READER_MAX_ROOT_AUTH_AUTHENTICATOR_VALUE_LEN,
     READER_MAX_ROOT_AUTH_FOOTER_LEN, READER_MAX_ROOT_AUTH_SIGNER_IDENTITY_LEN,
     VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
 };
@@ -42,9 +43,8 @@ use crate::root_auth::{
     ArchiveRootInputs, CriticalMetadataDigestInputs, FecLayoutObjectRow,
 };
 use crate::wire::{
-    BlockRecord, BootstrapSidecarHeader, CriticalMetadataImage,
-    CriticalMetadataRecoveryHeader, CriticalMetadataRecoveryShard,
-    CryptoHeader, CryptoHeaderFixed, ManifestFooter,
+    BlockRecord, BootstrapSidecarHeader, CriticalMetadataImage, CriticalMetadataRecoveryHeader,
+    CriticalMetadataRecoveryShard, CryptoHeader, CryptoHeaderFixed, ManifestFooter,
     RootAuthFooterV1, SerializedRegion, VolumeTrailer,
 };
 
@@ -449,7 +449,9 @@ pub fn write_empty_archive(master_key: &MasterKey) -> Result<WrittenArchive, For
     write_archive(&[], master_key, WriterOptions::default())
 }
 
-pub(crate) fn plan_writer_options(mut options: WriterOptions) -> Result<WriterOptions, FormatError> {
+pub(crate) fn plan_writer_options(
+    mut options: WriterOptions,
+) -> Result<WriterOptions, FormatError> {
     if options.jobs == 0 {
         return Err(FormatError::WriterUnsupported("jobs must be at least 1"));
     }
@@ -515,7 +517,9 @@ pub(crate) fn plan_writer_options(mut options: WriterOptions) -> Result<WriterOp
     Ok(options)
 }
 
-pub(crate) fn validate_writer_options_match_reader_caps(options: WriterOptions) -> Result<(), FormatError> {
+pub(crate) fn validate_writer_options_match_reader_caps(
+    options: WriterOptions,
+) -> Result<(), FormatError> {
     CryptoHeaderFixed {
         length: CRYPTO_HEADER_FIXED_LEN as u32,
         compression_algo: CompressionAlgo::ZstdFramed,
@@ -1540,7 +1544,10 @@ pub(crate) fn ensure_metadata_object_fits_class(
         .map_err(|_| kind.too_large_error())
 }
 
-pub(crate) fn payload_object_can_fit(payload_len: usize, options: WriterOptions) -> Result<bool, FormatError> {
+pub(crate) fn payload_object_can_fit(
+    payload_len: usize,
+    options: WriterOptions,
+) -> Result<bool, FormatError> {
     encrypted_object_can_fit(
         payload_len,
         options.fec_data_shards,
@@ -1549,7 +1556,10 @@ pub(crate) fn payload_object_can_fit(payload_len: usize, options: WriterOptions)
     )
 }
 
-pub(crate) fn index_object_can_fit(payload_len: usize, options: WriterOptions) -> Result<bool, FormatError> {
+pub(crate) fn index_object_can_fit(
+    payload_len: usize,
+    options: WriterOptions,
+) -> Result<bool, FormatError> {
     encrypted_object_can_fit(
         payload_len,
         options.index_fec_data_shards,
@@ -1870,7 +1880,10 @@ pub(crate) fn validate_planned_extent(
     Ok(())
 }
 
-pub(crate) fn map_metadata_encrypt_error(error: FormatError, kind: MetadataObjectKind) -> FormatError {
+pub(crate) fn map_metadata_encrypt_error(
+    error: FormatError,
+    kind: MetadataObjectKind,
+) -> FormatError {
     match error {
         FormatError::WriterUnsupported("encrypted object exceeds u32 size limit")
         | FormatError::WriterUnsupported("encrypted object exceeds its data shard class maximum")
@@ -2134,7 +2147,9 @@ pub(crate) fn writer_fec_layout_rows_from_extents(
     rows
 }
 
-pub(crate) fn manifest_footer_global_pre_hmac_bytes(manifest_footer: &[u8; MANIFEST_FOOTER_LEN]) -> [u8; 104] {
+pub(crate) fn manifest_footer_global_pre_hmac_bytes(
+    manifest_footer: &[u8; MANIFEST_FOOTER_LEN],
+) -> [u8; 104] {
     let mut bytes = [0u8; 104];
     bytes.copy_from_slice(&manifest_footer[..104]);
     bytes[36..40].fill(0);
@@ -2163,7 +2178,9 @@ pub(crate) fn root_auth_footer_wire_length(
     u32::try_from(len).map_err(|_| FormatError::WriterUnsupported("RootAuthFooterV1 length"))
 }
 
-pub(crate) fn validate_root_auth_writer_config(config: RootAuthWriterConfig<'_>) -> Result<(), FormatError> {
+pub(crate) fn validate_root_auth_writer_config(
+    config: RootAuthWriterConfig<'_>,
+) -> Result<(), FormatError> {
     root_auth_footer_wire_length(
         config.signer_identity.len(),
         config.authenticator_value_length as usize,
@@ -2610,7 +2627,10 @@ pub(crate) fn compute_parity_u16(
     u16::try_from(parity).map_err(|_| FormatError::WriterUnsupported(field))
 }
 
-pub(crate) fn compute_parity(data_block_count: u64, options: WriterOptions) -> Result<u32, FormatError> {
+pub(crate) fn compute_parity(
+    data_block_count: u64,
+    options: WriterOptions,
+) -> Result<u32, FormatError> {
     let min_parity = if options.volume_loss_tolerance > 0 || options.bit_rot_buffer_pct > 0 {
         1u64
     } else {
@@ -2754,7 +2774,8 @@ pub(crate) struct StreamingMemberSection<'a> {
     pub source_eof_checked: bool,
 }
 
-pub(crate) type SectionOpener<'a> = Box<dyn FnOnce() -> Result<Box<dyn Read + 'a>, ArchiveWriteError> + 'a>;
+pub(crate) type SectionOpener<'a> =
+    Box<dyn FnOnce() -> Result<Box<dyn Read + 'a>, ArchiveWriteError> + 'a>;
 
 impl<'a> StreamingMemberSection<'a> {
     pub fn bytes(bytes: Vec<u8>) -> Self {
@@ -2770,7 +2791,11 @@ impl<'a> StreamingMemberSection<'a> {
         }
     }
 
-    pub fn payload(reader: Box<dyn Read + 'a>, size: u64, expected_sha256: Option<[u8; 32]>) -> Self {
+    pub fn payload(
+        reader: Box<dyn Read + 'a>,
+        size: u64,
+        expected_sha256: Option<[u8; 32]>,
+    ) -> Self {
         Self {
             reader: Some(reader),
             opener: None,
@@ -3286,7 +3311,10 @@ pub(crate) fn build_primary_member_layout(
     Ok(PrimaryMemberLayout { auxiliary, primary })
 }
 
-pub(crate) fn sparse_extent_bytes(extents: &[SparseExtent], logical_size: u64) -> Result<u64, FormatError> {
+pub(crate) fn sparse_extent_bytes(
+    extents: &[SparseExtent],
+    logical_size: u64,
+) -> Result<u64, FormatError> {
     if extents.len() > MAX_SPARSE_EXTENTS {
         return Err(FormatError::WriterUnsupported(
             "sparse extent count exceeds revision-45 limit",
@@ -3519,7 +3547,9 @@ pub(crate) struct PrimaryTarIdentity {
     pub gname: Vec<u8>,
 }
 
-pub(crate) fn validate_portable_file_metadata(metadata: &PortableFileMetadata) -> Result<(), FormatError> {
+pub(crate) fn validate_portable_file_metadata(
+    metadata: &PortableFileMetadata,
+) -> Result<(), FormatError> {
     if !is_source_os(&metadata.source_os) {
         return Err(FormatError::WriterUnsupported("invalid metadata source OS"));
     }
@@ -3691,7 +3721,10 @@ pub(crate) fn v45_portable_file_entry_flags(
         }
 }
 
-pub(crate) fn native_metadata_requires_system_restore(native: &NativeFileMetadata, source_os: &str) -> bool {
+pub(crate) fn native_metadata_requires_system_restore(
+    native: &NativeFileMetadata,
+    source_os: &str,
+) -> bool {
     native.primary_pax_records.iter().any(|(key, value)| {
         key.starts_with("TZAP.posix.device-")
             || key == "TZAP.linux.whiteout"
@@ -3911,7 +3944,11 @@ pub(crate) fn to_usize_writer(value: u64, field: &'static str) -> Result<usize, 
     usize::try_from(value).map_err(|_| FormatError::WriterUnsupported(field))
 }
 
-pub(crate) fn checked_usize_add(lhs: usize, rhs: usize, field: &'static str) -> Result<usize, FormatError> {
+pub(crate) fn checked_usize_add(
+    lhs: usize,
+    rhs: usize,
+    field: &'static str,
+) -> Result<usize, FormatError> {
     lhs.checked_add(rhs)
         .ok_or(FormatError::WriterUnsupported(field))
 }
@@ -3920,4 +3957,3 @@ pub(crate) fn checked_u64_add(lhs: u64, rhs: u64, field: &'static str) -> Result
     lhs.checked_add(rhs)
         .ok_or(FormatError::WriterUnsupported(field))
 }
-

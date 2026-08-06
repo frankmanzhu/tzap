@@ -1,30 +1,23 @@
 use super::*;
 
-
-
-use crate::crypto::{
-    verify_integrity_tag, HmacDomain, KdfParams,
-    MasterKey, Subkeys,
-};
+use crate::crypto::{verify_integrity_tag, HmacDomain, KdfParams, MasterKey, Subkeys};
 use crate::fec::repair_data_gf16;
 use crate::format::{
-    FormatError,
-    BLOCK_RECORD_FRAMING_LEN, CRITICAL_METADATA_IMAGE_FIXED_LEN,
+    FormatError, BLOCK_RECORD_FRAMING_LEN, CRITICAL_METADATA_IMAGE_FIXED_LEN,
     CRITICAL_METADATA_RECOVERY_HEADER_LEN, CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN,
     CRITICAL_RECOVERY_LOCATOR_LEN, CRYPTO_HEADER_HMAC_LEN, IMAGE_CRC_LEN, LOCATOR_PAIR_LEN,
     MANIFEST_FOOTER_LEN, READER_MAX_CMRA_PARITY_PCT, READER_MAX_CRYPTO_HEADER_LEN,
-    READER_MAX_KEY_WRAP_TABLE_LEN, READER_MAX_ROOT_AUTH_FOOTER_LEN, SERIALIZED_REGION_HEADER_LEN, VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
+    READER_MAX_KEY_WRAP_TABLE_LEN, READER_MAX_ROOT_AUTH_FOOTER_LEN, SERIALIZED_REGION_HEADER_LEN,
+    VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
 };
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
 #[cfg(windows)]
 use crate::tar_model::replay_windows_descendant_metadata;
 use crate::wire::{
-    compute_key_wrap_table_digest, CriticalMetadataImage,
-    CriticalMetadataRecoveryHeader, CriticalMetadataRecoveryShard, CriticalRecoveryLocator,
-    CryptoHeader, CryptoHeaderFixed, KeyWrapTableV1, ManifestFooter,
-    RootAuthFooterV1, VolumeHeader, VolumeTrailer,
+    compute_key_wrap_table_digest, CriticalMetadataImage, CriticalMetadataRecoveryHeader,
+    CriticalMetadataRecoveryShard, CriticalRecoveryLocator, CryptoHeader, CryptoHeaderFixed,
+    KeyWrapTableV1, ManifestFooter, RootAuthFooterV1, VolumeHeader, VolumeTrailer,
 };
-
 
 #[derive(Debug)]
 pub(crate) struct V41Terminal {
@@ -2051,7 +2044,9 @@ pub(crate) fn validate_critical_metadata_image(
     Ok(())
 }
 
-pub(crate) fn image_block_record_len_from_region(image: &CriticalMetadataImage) -> Result<usize, FormatError> {
+pub(crate) fn image_block_record_len_from_region(
+    image: &CriticalMetadataImage,
+) -> Result<usize, FormatError> {
     let crypto_region = image
         .region(2)
         .ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
@@ -2159,7 +2154,10 @@ pub(crate) fn validate_image_key_wrap_table(
     }
 }
 
-pub(crate) fn sha256_region(image: &CriticalMetadataImage, region_type: u16) -> Result<[u8; 32], FormatError> {
+pub(crate) fn sha256_region(
+    image: &CriticalMetadataImage,
+    region_type: u16,
+) -> Result<[u8; 32], FormatError> {
     Ok(sha256_bytes(
         &image
             .region(region_type)
@@ -2753,4 +2751,3 @@ pub(crate) fn max_critical_recovery_scan(options: ReaderOptions) -> Result<usize
         })?;
     usize::try_from(total).map_err(|_| FormatError::InvalidArchive("scan cap overflow"))
 }
-
