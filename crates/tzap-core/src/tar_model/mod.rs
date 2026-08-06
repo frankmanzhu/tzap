@@ -13,21 +13,10 @@ use crate::entry_metadata::canonical_base64_decode;
 use crate::entry_metadata::parse_timestamp;
 #[cfg(target_os = "linux")]
 use crate::entry_metadata::schily_posix_acl_to_linux_xattr;
-#[cfg(windows)]
-use cap_std::fs::OpenOptionsExt as _;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
-#[cfg(windows)]
-use std::os::windows::io::AsRawHandle;
-#[cfg(windows)]
-use windows_sys::Win32::Storage::FileSystem::{
-    FileBasicInfo, GetFileInformationByHandleEx, SetFileInformationByHandle, DELETE,
-    FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
-    FILE_GENERIC_WRITE, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    FILE_WRITE_ATTRIBUTES,
-};
 
 use crate::entry_metadata::{
     decode_percent_name, parse_canonical_pax, parse_primary_metadata, ArchiveTimestamp,

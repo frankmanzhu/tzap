@@ -5,6 +5,17 @@ use super::sparse::{
 };
 use super::*;
 
+#[cfg(windows)]
+use cap_std::fs::OpenOptionsExt as _;
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    FileBasicInfo, GetFileInformationByHandleEx, SetFileInformationByHandle, DELETE,
+    FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
+    FILE_GENERIC_WRITE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+};
+
 const MACOS_SETTABLE_ORDINARY_FLAGS: u32 = 0x0000_800f;
 const MACOS_SETTABLE_SYSTEM_FLAGS: u32 = 0x0007_0000;
 // UF_IMMUTABLE/UF_APPEND, entitlement-protected UF_DATAVAULT, and every
@@ -227,7 +238,7 @@ pub(crate) fn native_auxiliary_restore_supported(
 }
 
 #[cfg(windows)]
-fn windows_security_restore_privileges_available(security_information: u32) -> bool {
+pub(super) fn windows_security_restore_privileges_available(security_information: u32) -> bool {
     use std::ptr;
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, SetLastError, ERROR_SUCCESS};
     use windows_sys::Win32::Security::{
@@ -276,7 +287,7 @@ fn windows_security_restore_privileges_available(security_information: u32) -> b
 }
 
 #[cfg(not(windows))]
-fn windows_security_restore_privileges_available(_security_information: u32) -> bool {
+pub(super) fn windows_security_restore_privileges_available(_security_information: u32) -> bool {
     false
 }
 
@@ -2662,7 +2673,7 @@ pub(crate) fn apply_windows_security_descriptor(
 }
 
 #[cfg(windows)]
-fn windows_security_descriptors_equivalent(expected: &[u8], actual: &[u8]) -> bool {
+pub(super) fn windows_security_descriptors_equivalent(expected: &[u8], actual: &[u8]) -> bool {
     const DACL_PRESENT: u16 = 0x0004;
     const SACL_PRESENT: u16 = 0x0010;
     const DACL_AUTO_INHERIT_REQ: u16 = 0x0100;

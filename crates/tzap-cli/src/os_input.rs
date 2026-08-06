@@ -1,13 +1,23 @@
 use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(target_os = "macos", windows))]
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, bail, Context, Result};
+#[cfg(windows)]
+use crate::commands::archive_path_to_string;
+#[cfg(windows)]
+use crate::commands::create::InputSpec;
+use anyhow::Result;
+#[cfg(any(target_os = "macos", windows))]
+use anyhow::{anyhow, bail, Context};
 #[cfg(windows)]
 use tzap_core::encode_v45_sparse_map;
 #[cfg(unix)]
 use tzap_core::PortablePosixOwner;
+#[cfg(windows)]
+use tzap_core::SourceEntryKind;
 #[cfg(target_os = "macos")]
 use tzap_core::{canonical_base64_encode, encode_percent_name};
 use tzap_core::{
@@ -70,7 +80,6 @@ pub(crate) struct InputIdentity {
     pub(crate) file_index: u64,
 }
 
-#[derive(Debug)]
 #[cfg(windows)]
 pub(crate) fn add_windows_refs_sparse_layout_omission(native: &mut NativeFileMetadata) {
     const HEADER: &str = "tzap-capture-report-v1\n";
@@ -2168,7 +2177,7 @@ pub(crate) struct WindowsRawEfsReader {
 
 #[cfg(windows)]
 impl WindowsRawEfsReader {
-    fn spawn(path: PathBuf, expected: InputIdentity, size: u64) -> Self {
+    pub(crate) fn spawn(path: PathBuf, expected: InputIdentity, size: u64) -> Self {
         let (sender, receiver) = std::sync::mpsc::sync_channel(2);
         let completion = sender.clone();
         let thread = std::thread::spawn(move || {

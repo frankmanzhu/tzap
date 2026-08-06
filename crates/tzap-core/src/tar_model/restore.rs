@@ -4,6 +4,8 @@ use super::os_restore::apply_restored_regular_file_metadata;
 use super::os_restore::numeric_ownership_supported;
 #[cfg(target_os = "macos")]
 use super::os_restore::validate_darwin_acl_external;
+#[cfg(target_os = "macos")]
+use super::os_restore::MACOS_KNOWN_SETTABLE_FLAGS;
 #[cfg(windows)]
 use super::os_restore::{
     apply_generic_xattr_auxiliaries, apply_windows_basic_metadata,
@@ -18,7 +20,7 @@ use super::os_restore::{
     macos_flags_require_system, macos_flags_supported, native_auxiliary_restore_supported,
     native_primary_restore_unsupported, parse_macos_flags, record_metadata_application_failure,
     source_os_matches_current_host, special_object_restore_supported, system_xattr_name,
-    windows_reparse_metadata_supported, RestoredRegularMetadata, MACOS_KNOWN_SETTABLE_FLAGS,
+    windows_reparse_metadata_supported, RestoredRegularMetadata,
 };
 #[cfg(target_os = "linux")]
 use super::sparse::punch_linux_sparse_holes;
@@ -28,6 +30,18 @@ use super::sparse::{
 #[cfg(windows)]
 use super::sparse::{prepare_windows_sparse_file, verify_windows_sparse_file};
 use super::*;
+
+#[cfg(windows)]
+use cap_std::fs::OpenOptionsExt as _;
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    FileBasicInfo, GetFileInformationByHandleEx, DELETE, FILE_BASIC_INFO,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
+    FILE_GENERIC_WRITE, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_WRITE_ATTRIBUTES,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StreamedTarMemberMetadata {

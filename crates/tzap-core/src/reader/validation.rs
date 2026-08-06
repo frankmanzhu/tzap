@@ -21,8 +21,6 @@ use crate::metadata::{
     IndexRoot, IndexShard, MetadataLimits, ShardEntry,
 };
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
-#[cfg(windows)]
-use crate::tar_model::replay_windows_descendant_metadata;
 use crate::tar_model::{
     validate_tar_stream_total_extraction_size, TarEntryKind, TarStreamTotalExtractionSizeValidator,
 };

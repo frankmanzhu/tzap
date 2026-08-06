@@ -13,8 +13,6 @@ use crate::root_auth::{
     root_auth_descriptor_digest_for_revision, signer_identity_digest, ArchiveRootInputs,
     DataBlockMerkleLeaf,
 };
-#[cfg(windows)]
-use crate::tar_model::replay_windows_descendant_metadata;
 use crate::wire::{
     compute_key_wrap_table_digest, BlockRecord, CryptoHeader, CryptoHeaderFixed, ExtensionTlv,
     KeyWrapTableV1, ManifestFooter, RootAuthFooterV1, VolumeHeader, VolumeTrailer,

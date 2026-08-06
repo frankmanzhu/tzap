@@ -8,8 +8,6 @@ use crate::format::{
     MANIFEST_FOOTER_LEN,
 };
 use crate::metadata::IndexRoot;
-#[cfg(windows)]
-use crate::tar_model::replay_windows_descendant_metadata;
 use crate::wire::{
     BlockRecord, BootstrapSidecarHeader, CryptoHeaderFixed, ManifestFooter, VolumeHeader,
     VolumeTrailer,

@@ -11,8 +11,6 @@ use crate::format::{
     VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
 };
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
-#[cfg(windows)]
-use crate::tar_model::replay_windows_descendant_metadata;
 use crate::wire::{
     compute_key_wrap_table_digest, CriticalMetadataImage, CriticalMetadataRecoveryHeader,
     CriticalMetadataRecoveryShard, CriticalRecoveryLocator, CryptoHeader, CryptoHeaderFixed,

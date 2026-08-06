@@ -1,7 +1,10 @@
-use super::restore::{create_directory, plan_restore, prepare_destination, restore_tar_member};
+#[cfg(unix)]
+use super::restore::create_directory;
+use super::restore::{plan_restore, prepare_destination, restore_tar_member};
 use super::sparse::{create_temp_regular_file, publish_regular_file};
 use super::*;
 use crate::entry_metadata::*;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::collections::BTreeMap;
 use tempfile::tempdir;
 

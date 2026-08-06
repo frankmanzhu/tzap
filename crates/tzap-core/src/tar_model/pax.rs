@@ -1,19 +1,5 @@
 use std::collections::BTreeMap;
 
-#[cfg(target_os = "linux")]
-use crate::entry_metadata::schily_posix_acl_to_linux_xattr;
-#[cfg(windows)]
-use cap_std::fs::OpenOptionsExt as _;
-#[cfg(windows)]
-use std::os::windows::io::AsRawHandle;
-#[cfg(windows)]
-use windows_sys::Win32::Storage::FileSystem::{
-    FileBasicInfo, GetFileInformationByHandleEx, SetFileInformationByHandle, DELETE,
-    FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
-    FILE_GENERIC_WRITE, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    FILE_WRITE_ATTRIBUTES,
-};
-
 use crate::entry_metadata::{
     parse_auxiliary_record, parse_canonical_pax, parse_primary_metadata, parse_sparse_payload,
     validate_group_metadata, ArchiveTimestamp, AuxiliaryRecord, AuxiliaryStreamValidator,
@@ -855,18 +841,18 @@ pub(super) fn validate_v45_primary_cross_fields(
     Ok(())
 }
 
-const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x0000_0010;
+pub(super) const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x0000_0010;
 const FILE_ATTRIBUTE_READONLY: u32 = 0x0000_0001;
 const FILE_ATTRIBUTE_HIDDEN: u32 = 0x0000_0002;
 const FILE_ATTRIBUTE_SYSTEM: u32 = 0x0000_0004;
 const FILE_ATTRIBUTE_ARCHIVE: u32 = 0x0000_0020;
 pub(super) const FILE_ATTRIBUTE_NORMAL: u32 = 0x0000_0080;
 const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x0000_0100;
-const FILE_ATTRIBUTE_SPARSE_FILE: u32 = 0x0000_0200;
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
-const FILE_ATTRIBUTE_COMPRESSED: u32 = 0x0000_0800;
+pub(super) const FILE_ATTRIBUTE_SPARSE_FILE: u32 = 0x0000_0200;
+pub(super) const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+pub(super) const FILE_ATTRIBUTE_COMPRESSED: u32 = 0x0000_0800;
 const FILE_ATTRIBUTE_NOT_CONTENT_INDEXED: u32 = 0x0000_2000;
-const FILE_ATTRIBUTE_ENCRYPTED: u32 = 0x0000_4000;
+pub(super) const FILE_ATTRIBUTE_ENCRYPTED: u32 = 0x0000_4000;
 pub(super) const WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES: u32 = FILE_ATTRIBUTE_READONLY
     | FILE_ATTRIBUTE_HIDDEN
     | FILE_ATTRIBUTE_SYSTEM

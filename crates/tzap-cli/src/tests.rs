@@ -11,21 +11,36 @@ use tzap_core::reader::ArchiveEntry;
 use tzap_core::wire::VolumeHeader;
 #[cfg(all(test, target_os = "macos"))]
 use tzap_core::write_archive;
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
 use tzap_core::PortablePosixOwner;
 #[cfg(test)]
 use tzap_core::{write_archive_with_kdf, RegularFile};
 use tzap_core::{
-    ArchiveTimestamp, KdfParams, MasterKey, MetadataDiagnostic, PortableFileMetadata,
-    PortableModeOrigin, PublicNoKeyVerification, RootAuthSigningRequest, RootAuthWriterConfig,
-    SourceEntryKind, TarEntryKind, WriterOptions,
+    ArchiveTimestamp, KdfParams, MasterKey, MetadataDiagnostic, PublicNoKeyVerification,
+    RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, TarEntryKind, WriterOptions,
 };
 #[cfg(test)]
 use tzap_core::{MetadataDiagnosticStatus, MetadataOperation};
-#[cfg(any(target_os = "macos", windows))]
-use tzap_core::{NativeAuxiliaryMetadata, RestoreClass};
+#[cfg(target_os = "macos")]
+use tzap_core::{NativeAuxiliaryMetadata, PortableFileMetadata, PortableModeOrigin, RestoreClass};
 use tzap_plugin_signing::ed25519_raw::ED25519_AUTHENTICATOR_ID;
 use tzap_plugin_signing::x509_chain::{self};
+
+#[cfg(any(target_os = "linux", windows))]
+use std::fs::File;
+#[cfg(windows)]
+use std::io;
+#[cfg(any(target_os = "linux", windows))]
+use std::io::{Seek, SeekFrom, Write};
+#[cfg(windows)]
+use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use tzap_core::{write_archive_sources_to_sink, RegularFileSource};
+#[cfg(any(target_os = "linux", windows))]
+use tzap_core::{
+    write_archive_sources_to_sink_ordered_parallel, MemoryArchiveSink, RestorePolicy,
+    SafeExtractionOptions,
+};
 
 use super::*;
 use crate::commands::*;
