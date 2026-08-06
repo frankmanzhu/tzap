@@ -638,6 +638,27 @@ fn classify_format_error_covers_corrupt_archive_and_missing_volume() {
 }
 
 #[test]
+fn classify_format_error_pins_dictionary_extent_message_as_corrupt_archive() {
+    // Spec v0.45 §15.2: has_dictionary = 1 with a zero dictionary extent is
+    // non-conformant archive content, so this message must stay in the
+    // corrupt-archive family — never missing-bootstrap (which the spec
+    // reserves for the non-seekable sidecar path).
+    assert_format_diagnostic(
+        &FormatError::InvalidArchive("dictionary extent missing from IndexRoot"),
+        "corrupt-archive",
+        EXIT_CORRUPT_ARCHIVE,
+        "verify archive integrity and source",
+    );
+    // The genuine user-supply case keeps the missing-bootstrap mapping.
+    assert_format_diagnostic(
+        &FormatError::ReaderUnsupported("dictionary bootstrap required"),
+        "missing-bootstrap",
+        EXIT_MISSING_BOOTSTRAP,
+        "use --bootstrap with a matching sidecar",
+    );
+}
+
+#[test]
 fn classify_format_error_covers_corrupt_payload_group() {
     for err in [
         FormatError::HmacMismatch {

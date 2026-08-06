@@ -4,10 +4,14 @@ use crate::crypto::*;
 use crate::entry_metadata::*;
 use crate::format::*;
 use crate::metadata::*;
-use crate::reader::{open_archive, open_archive_with_recipient_wrap_resolver};
-use crate::tar_model::parse_tar_member_group;
+use crate::reader::{
+    add_expected_directory_hint_rows, open_archive, open_archive_with_recipient_wrap_resolver,
+    validate_directory_hint_tables_against_expected,
+};
+use crate::tar_model::{parse_tar_member_group, TarEntryKind};
 use crate::wire::*;
 use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read};
 use std::rc::Rc;
 
@@ -399,6 +403,159 @@ fn writer_builds_directory_hint_rows_for_ancestor_directories() {
     assert_eq!(table.shard_rows_for_entry(a).unwrap(), &[0, 1]);
     let ab = table.lookup_directory_index(b"a/b").unwrap();
     assert_eq!(table.shard_rows_for_entry(ab).unwrap(), &[0]);
+}
+
+#[test]
+fn directory_hint_rows_include_directory_members_own_paths() {
+    // §29 writer rule 14: hints include every FileEntry path whose decoded
+    // primary entry is itself a directory. Leaf/empty directories are not
+    // covered by any descendant's ancestor prefixes, so the writer must insert
+    // their own paths. Regression for the reader rejecting the writer's own
+    // output when hints are emitted (file_count > DIRECTORY_HINT_REQUIRED_FILE_COUNT).
+    let shard_rows = vec![
+        vec![
+            FileRow {
+                path_hash: hash_prefix(b"top.txt"),
+                path: b"top.txt".to_vec(),
+                member_index: 0,
+                member: TarMember {
+                    path: b"top.txt".to_vec(),
+                    entry_kind: SourceEntryKind::Regular,
+                    link_target: None,
+                    tar_member_group_start: 0,
+                    tar_member_group_size: 512,
+                    file_data_size: 0,
+                    sparse_extents: None,
+                    mode: 0o644,
+                    mtime: ArchiveTimestamp::UNIX_EPOCH,
+                    portable_metadata: PortableFileMetadata::default(),
+                },
+            },
+            // Leaf empty directory: its own path is not an ancestor of any member.
+            FileRow {
+                path_hash: hash_prefix(b"a/empty"),
+                path: b"a/empty".to_vec(),
+                member_index: 1,
+                member: TarMember {
+                    path: b"a/empty".to_vec(),
+                    entry_kind: SourceEntryKind::Directory,
+                    link_target: None,
+                    tar_member_group_start: 512,
+                    tar_member_group_size: 512,
+                    file_data_size: 0,
+                    sparse_extents: None,
+                    mode: 0o755,
+                    mtime: ArchiveTimestamp::UNIX_EPOCH,
+                    portable_metadata: PortableFileMetadata::default(),
+                },
+            },
+        ],
+        vec![
+            // Ancestor directory, covered incidentally by its descendant file.
+            FileRow {
+                path_hash: hash_prefix(b"a/b"),
+                path: b"a/b".to_vec(),
+                member_index: 2,
+                member: TarMember {
+                    path: b"a/b".to_vec(),
+                    entry_kind: SourceEntryKind::Directory,
+                    link_target: None,
+                    tar_member_group_start: 1024,
+                    tar_member_group_size: 512,
+                    file_data_size: 0,
+                    sparse_extents: None,
+                    mode: 0o755,
+                    mtime: ArchiveTimestamp::UNIX_EPOCH,
+                    portable_metadata: PortableFileMetadata::default(),
+                },
+            },
+            FileRow {
+                path_hash: hash_prefix(b"a/b/one.txt"),
+                path: b"a/b/one.txt".to_vec(),
+                member_index: 3,
+                member: TarMember {
+                    path: b"a/b/one.txt".to_vec(),
+                    entry_kind: SourceEntryKind::Regular,
+                    link_target: None,
+                    tar_member_group_start: 1536,
+                    tar_member_group_size: 512,
+                    file_data_size: 0,
+                    sparse_extents: None,
+                    mode: 0o644,
+                    mtime: ArchiveTimestamp::UNIX_EPOCH,
+                    portable_metadata: PortableFileMetadata::default(),
+                },
+            },
+            // Deepest member of a directory-only chain: also a leaf directory.
+            FileRow {
+                path_hash: hash_prefix(b"x/y/z"),
+                path: b"x/y/z".to_vec(),
+                member_index: 4,
+                member: TarMember {
+                    path: b"x/y/z".to_vec(),
+                    entry_kind: SourceEntryKind::Directory,
+                    link_target: None,
+                    tar_member_group_start: 2048,
+                    tar_member_group_size: 512,
+                    file_data_size: 0,
+                    sparse_extents: None,
+                    mode: 0o755,
+                    mtime: ArchiveTimestamp::UNIX_EPOCH,
+                    portable_metadata: PortableFileMetadata::default(),
+                },
+            },
+        ],
+    ];
+
+    let options = plan_writer_options(WriterOptions::default()).unwrap();
+    let planned = build_directory_hint_plaintexts(&shard_rows, options).unwrap();
+    let locating = DirectoryHintShardEntry {
+        hint_shard_index: planned[0].hint_shard_index,
+        first_dir_hash: planned[0].first_dir_hash,
+        last_dir_hash: planned[0].last_dir_hash,
+        first_block_index: 0,
+        data_block_count: 1,
+        parity_block_count: 0,
+        encrypted_size: 4096,
+        decompressed_size: planned[0].plaintext.len() as u32,
+        entry_count: planned[0].entry_count,
+    };
+    let table = DirectoryHintTable::parse(
+        &planned[0].plaintext,
+        &locating,
+        2,
+        MetadataLimits::default(),
+    )
+    .unwrap();
+
+    // Leaf directory paths must be locatable rows in the emitted table.
+    let empty = table.lookup_directory_index(b"a/empty").unwrap();
+    assert_eq!(table.shard_rows_for_entry(empty).unwrap(), &[0]);
+    let xyz = table.lookup_directory_index(b"x/y/z").unwrap();
+    assert_eq!(table.shard_rows_for_entry(xyz).unwrap(), &[1]);
+    let top = table.lookup_directory_index(b"").unwrap();
+    assert_eq!(table.shard_rows_for_entry(top).unwrap(), &[0, 1]);
+
+    // The table must satisfy the reader's exact-equality expectation built
+    // from the same members (validate_streamed_payload_summary contract).
+    let mut expected = BTreeMap::<Vec<u8>, BTreeSet<u32>>::new();
+    for (shard_row_index, rows) in shard_rows.iter().enumerate() {
+        for row in rows {
+            let kind = match row.member.entry_kind {
+                SourceEntryKind::Directory | SourceEntryKind::ReparseDirectory => {
+                    TarEntryKind::Directory
+                }
+                _ => TarEntryKind::Regular,
+            };
+            add_expected_directory_hint_rows(
+                &mut expected,
+                shard_row_index as u32,
+                &row.path,
+                kind,
+            );
+        }
+    }
+    validate_directory_hint_tables_against_expected(&[table], &expected).unwrap();
 }
 
 #[test]

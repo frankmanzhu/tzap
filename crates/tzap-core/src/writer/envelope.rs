@@ -1271,7 +1271,7 @@ pub(crate) fn build_directory_hint_plaintexts(
         let shard_row_index = u32::try_from(shard_row_index)
             .map_err(|_| FormatError::WriterUnsupported("directory hint shard row index"))?;
         for row in rows {
-            add_directory_hint_rows(&mut map, shard_row_index, &row.path);
+            add_directory_hint_rows(&mut map, shard_row_index, &row.path, row.member.entry_kind);
         }
     }
 
@@ -1317,6 +1317,7 @@ pub(crate) fn add_directory_hint_rows(
     map: &mut BTreeMap<Vec<u8>, BTreeSet<u32>>,
     shard_row_index: u32,
     path: &[u8],
+    entry_kind: SourceEntryKind,
 ) {
     map.entry(Vec::new()).or_default().insert(shard_row_index);
     let mut cursor = 0usize;
@@ -1328,6 +1329,19 @@ pub(crate) fn add_directory_hint_rows(
                 .insert(shard_row_index);
         }
         cursor = slash + 1;
+    }
+    // §29 writer rule 14: hints include every FileEntry path whose decoded
+    // primary entry is itself a directory — including leaf directories that no
+    // descendant's ancestor prefixes cover. Must mirror the reader's
+    // `add_expected_directory_hint_rows` (kind == Directory), which validates
+    // this table for exact equality.
+    if matches!(
+        entry_kind,
+        SourceEntryKind::Directory | SourceEntryKind::ReparseDirectory
+    ) {
+        map.entry(path.to_vec())
+            .or_default()
+            .insert(shard_row_index);
     }
 }
 

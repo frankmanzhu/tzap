@@ -1031,7 +1031,13 @@ pub(crate) fn dictionary_extent_from_index_root(
         || index_root.header.dictionary_encrypted_size == 0
         || index_root.header.dictionary_decompressed_size == 0
     {
-        return Err(FormatError::InvalidArchive("dictionary bootstrap required"));
+        // Spec v0.45 §15.2: has_dictionary = 1 requires all dictionary extent
+        // fields non-zero; a zero extent is non-conformant archive content,
+        // not a missing user-supplied input. The spec reserves "dictionary
+        // bootstrap required" for the non-seekable sidecar path.
+        return Err(FormatError::InvalidArchive(
+            "dictionary extent missing from IndexRoot",
+        ));
     }
     Ok(ObjectExtent {
         first_block_index: index_root.header.dictionary_first_block,
