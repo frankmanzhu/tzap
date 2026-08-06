@@ -18,7 +18,8 @@ pub use serde_json::Value;
 pub use tempfile::tempdir;
 pub use tzap_core::format::{
     BlockKind, BLOCK_RECORD_FRAMING_LEN, BOOTSTRAP_SIDECAR_HEADER_LEN, FORMAT_VERSION,
-    VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
+    READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
+    VOLUME_TRAILER_LEN,
 };
 pub use tzap_core::wire::{
     BlockRecord, BootstrapSidecarHeader, CriticalRecoveryLocator, CryptoHeader, VolumeHeader,

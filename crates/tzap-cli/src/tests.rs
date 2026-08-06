@@ -3,9 +3,10 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use anyhow::anyhow;
 use openssl::x509::X509;
+use tzap_core::entry_metadata::CaptureStatus;
 use tzap_core::format::{
-    FormatError, FORMAT_VERSION, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45,
-    VOLUME_HEADER_LEN,
+    ArchiveWriteError, CompressionAlgo, ExtractError, FecAlgo, FormatError, FORMAT_VERSION,
+    READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
 };
 use tzap_core::reader::ArchiveEntry;
 use tzap_core::wire::VolumeHeader;
@@ -16,7 +17,8 @@ use tzap_core::PortablePosixOwner;
 #[cfg(test)]
 use tzap_core::{write_archive_with_kdf, RegularFile};
 use tzap_core::{
-    ArchiveTimestamp, KdfParams, MasterKey, MetadataDiagnostic, PublicNoKeyVerification,
+    ArchiveTimestamp, EntryMetadataVerification, KdfParams, MasterKey, MetadataDiagnostic,
+    MetadataVerificationReport, PublicNoKeyVerification, RestorePolicy, RestorePolicyCapability,
     RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, TarEntryKind, WriterOptions,
 };
 #[cfg(test)]
@@ -38,8 +40,7 @@ use std::path::{Path, PathBuf};
 use tzap_core::{write_archive_sources_to_sink, RegularFileSource};
 #[cfg(any(target_os = "linux", windows))]
 use tzap_core::{
-    write_archive_sources_to_sink_ordered_parallel, MemoryArchiveSink, RestorePolicy,
-    SafeExtractionOptions,
+    write_archive_sources_to_sink_ordered_parallel, MemoryArchiveSink, SafeExtractionOptions,
 };
 
 use super::*;
@@ -516,6 +517,345 @@ fn missing_volume_errors_keep_stable_diagnostic() {
     );
 }
 
+fn assert_format_diagnostic(err: &FormatError, label: &str, exit_code: u8, action: &str) {
+    let diagnostic = classify_format_error(err);
+    assert_eq!(diagnostic.label, label);
+    assert_eq!(diagnostic.exit_code, exit_code);
+    assert_eq!(diagnostic.action, action);
+}
+
+#[test]
+fn classify_format_error_covers_unsupported_revision_group() {
+    for err in [
+        FormatError::UnsupportedFormatVersion(2),
+        FormatError::UnsupportedVolumeFormatRevision {
+            format_version: 1,
+            volume_format_rev: VOLUME_FORMAT_REV_45 + 1,
+            reader_max_supported_revision: READER_MAX_SUPPORTED_VOLUME_FORMAT_REV,
+        },
+        FormatError::UnknownCompressionAlgo(7),
+        FormatError::UnknownAeadAlgo(7),
+        FormatError::UnknownFecAlgo(7),
+        FormatError::UnknownKdfAlgo(7),
+        FormatError::UnsupportedCompression(CompressionAlgo::ZstdFramed),
+        FormatError::UnsupportedFec(FecAlgo::Wirehair),
+        FormatError::UnsupportedBootstrapSidecarVersion(3),
+    ] {
+        assert_format_diagnostic(
+            &err,
+            "unsupported-revision",
+            EXIT_UNSUPPORTED_REVISION,
+            "upgrade tzap or use a reader that supports this archive revision",
+        );
+    }
+}
+
+#[test]
+fn classify_format_error_covers_corrupt_header_structures() {
+    for err in [
+        FormatError::BadMagic {
+            structure: "VolumeTrailer",
+        },
+        FormatError::BadMagic {
+            structure: "ManifestFooter",
+        },
+    ] {
+        assert_format_diagnostic(
+            &err,
+            "corrupt-header",
+            EXIT_CORRUPT_ARCHIVE,
+            "verify the archive header/trailer bytes and source file path",
+        );
+    }
+    for err in [
+        FormatError::BadCrc {
+            structure: "VolumeHeader",
+        },
+        FormatError::BadCrc {
+            structure: "VolumeTrailer",
+        },
+        FormatError::BadCrc {
+            structure: "ManifestFooter",
+        },
+        FormatError::InvalidMetadata {
+            structure: "VolumeHeader",
+            reason: "bad field",
+        },
+        FormatError::InvalidMetadata {
+            structure: "ManifestFooter",
+            reason: "bad field",
+        },
+    ] {
+        assert_format_diagnostic(
+            &err,
+            "corrupt-header",
+            EXIT_CORRUPT_ARCHIVE,
+            "inspect archive metadata and source file path",
+        );
+    }
+}
+
+#[test]
+fn classify_format_error_covers_wrong_key_group() {
+    for err in [
+        FormatError::HmacMismatch {
+            structure: "CryptoHeader",
+        },
+        FormatError::KeyMaterialMismatch,
+        FormatError::InvalidRawMasterKeyLength,
+    ] {
+        assert_format_diagnostic(
+            &err,
+            "wrong-key",
+            EXIT_WRONG_KEY,
+            "confirm the archive key source (passphrase/raw key/recipient key)",
+        );
+    }
+}
+
+#[test]
+fn classify_format_error_covers_corrupt_archive_and_missing_volume() {
+    assert_format_diagnostic(
+        &FormatError::IntegrityDigestMismatch {
+            structure: "ManifestFooter",
+        },
+        "corrupt-archive",
+        EXIT_CORRUPT_ARCHIVE,
+        "verify the archive bytes and source file path",
+    );
+    for err in [
+        FormatError::FecTooFewAvailableShards,
+        FormatError::InvalidArchive("complete volume set has missing global blocks"),
+        FormatError::InvalidArchive("missing volume count exceeds volume_loss_tolerance"),
+    ] {
+        assert_format_diagnostic(
+            &err,
+            "missing-volume",
+            EXIT_CORRUPT_ARCHIVE,
+            "add the missing archive volume(s) or confirm volume-loss tolerance",
+        );
+    }
+}
+
+#[test]
+fn classify_format_error_covers_corrupt_payload_group() {
+    for err in [
+        FormatError::HmacMismatch {
+            structure: "PayloadBlock",
+        },
+        FormatError::AeadFailure,
+    ] {
+        assert_format_diagnostic(
+            &err,
+            "corrupt-payload",
+            EXIT_CORRUPT_ARCHIVE,
+            "verify archive payload integrity",
+        );
+    }
+    assert_format_diagnostic(
+        &FormatError::BadCrc {
+            structure: "PayloadBlock",
+        },
+        "corrupt-payload",
+        EXIT_CORRUPT_ARCHIVE,
+        "verify payload integrity",
+    );
+    for structure in ["IndexRoot", "FrameEntry", "EnvelopeEntry"] {
+        assert_format_diagnostic(
+            &FormatError::InvalidMetadata {
+                structure,
+                reason: "bad table",
+            },
+            "corrupt-payload",
+            EXIT_CORRUPT_ARCHIVE,
+            "inspect archive metadata tables and payload",
+        );
+    }
+}
+
+#[test]
+fn classify_format_error_covers_invalid_arguments() {
+    let message = "argon2 T-cost exceeds reader cap";
+    assert_format_diagnostic(
+        &FormatError::InvalidKdfParams(message),
+        "invalid-arguments",
+        EXIT_USAGE,
+        message,
+    );
+    assert_format_diagnostic(
+        &FormatError::ReaderResourceLimitExceeded {
+            field: "entry-count",
+            cap: 100,
+            actual: 101,
+        },
+        "invalid-arguments",
+        EXIT_USAGE,
+        "check argon2 flags (--argon2-t-cost, --argon2-m-cost-kib, --argon2-parallelism)",
+    );
+}
+
+#[test]
+fn classify_format_error_covers_unsafe_path() {
+    assert_format_diagnostic(
+        &FormatError::UnsafeArchivePath,
+        "unsafe-path",
+        EXIT_UNSAFE_PATH,
+        "archive contains unsafe paths; extract paths should be reviewed first",
+    );
+    assert_format_diagnostic(
+        &FormatError::UnsafeOverwrite,
+        "unsafe-path",
+        EXIT_UNSAFE_PATH,
+        "add --overwrite if overwriting existing files is intended",
+    );
+}
+
+#[test]
+fn classify_format_error_covers_unsupported_feature_fallback() {
+    for err in [
+        FormatError::ReaderUnsupported("unrelated reader limitation"),
+        FormatError::WriterUnsupported("unrelated writer limitation"),
+    ] {
+        assert_format_diagnostic(
+            &err,
+            "unsupported-feature",
+            EXIT_UNSUPPORTED_FEATURE,
+            "use a supported archive shape or upgrade tzap",
+        );
+    }
+}
+
+#[test]
+fn classify_format_error_wildcard_is_corrupt_archive() {
+    for err in [
+        FormatError::UnknownBlockKind(9),
+        FormatError::InvalidArchive("some other archive reason"),
+    ] {
+        assert_format_diagnostic(
+            &err,
+            "corrupt-archive",
+            EXIT_CORRUPT_ARCHIVE,
+            "verify archive integrity and source",
+        );
+    }
+}
+
+#[test]
+fn classify_error_maps_wrapped_core_errors_and_fallbacks() {
+    let usage = anyhow!(UsageError("bad argument"));
+    let diagnostic = classify_error(&usage);
+    assert_eq!(diagnostic.label, "invalid-arguments");
+    assert_eq!(diagnostic.exit_code, EXIT_USAGE);
+
+    let contextual_usage = anyhow!("invalid size '10Q': unsupported suffix 'Q'")
+        .context(UsageError("invalid volume-size"));
+    let diagnostic = classify_error(&contextual_usage);
+    assert_eq!(diagnostic.label, "invalid-arguments");
+    assert_eq!(diagnostic.exit_code, EXIT_USAGE);
+
+    let write_format = anyhow!(ArchiveWriteError::Format(FormatError::UnsafeArchivePath));
+    let diagnostic = classify_error(&write_format);
+    assert_eq!(diagnostic.label, "unsafe-path");
+    assert_eq!(diagnostic.exit_code, EXIT_UNSAFE_PATH);
+
+    let write_io = anyhow!(ArchiveWriteError::Io(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "missing archive"
+    )));
+    let diagnostic = classify_error(&write_io);
+    assert_eq!(diagnostic.label, "io-error");
+    assert_eq!(diagnostic.exit_code, EXIT_IO);
+    assert_eq!(diagnostic.action, "check file paths and permissions");
+
+    let extract_format = anyhow!(ExtractError::Format(FormatError::UnsupportedFormatVersion(
+        2
+    )));
+    let diagnostic = classify_error(&extract_format);
+    assert_eq!(diagnostic.label, "unsupported-revision");
+    assert_eq!(diagnostic.exit_code, EXIT_UNSUPPORTED_REVISION);
+
+    let extract_output = anyhow!(ExtractError::Output(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "denied"
+    )));
+    let diagnostic = classify_error(&extract_output);
+    assert_eq!(diagnostic.label, "io-error");
+    assert_eq!(diagnostic.exit_code, EXIT_IO);
+
+    let chained_format = anyhow!(FormatError::BadMagic {
+        structure: "VolumeHeader",
+    })
+    .context("reading archive");
+    let diagnostic = classify_error(&chained_format);
+    assert_eq!(diagnostic.label, "corrupt-header");
+    assert_eq!(diagnostic.exit_code, EXIT_CORRUPT_ARCHIVE);
+
+    let generic = anyhow!("boom");
+    let diagnostic = classify_error(&generic);
+    assert_eq!(diagnostic.label, "error");
+    assert_eq!(diagnostic.exit_code, EXIT_GENERIC);
+    assert_eq!(diagnostic.action, "");
+}
+
+#[test]
+fn classify_io_error_covers_kinds_and_actions() {
+    for kind in [
+        std::io::ErrorKind::PermissionDenied,
+        std::io::ErrorKind::NotFound,
+        std::io::ErrorKind::AlreadyExists,
+    ] {
+        let diagnostic = classify_io_error(&std::io::Error::new(kind, "io"));
+        assert_eq!(diagnostic.label, "io-error");
+        assert_eq!(diagnostic.exit_code, EXIT_IO);
+        assert_eq!(diagnostic.action, "check file paths and permissions");
+    }
+    for kind in [std::io::ErrorKind::Other, std::io::ErrorKind::BrokenPipe] {
+        let diagnostic = classify_io_error(&std::io::Error::new(kind, "io"));
+        assert_eq!(diagnostic.label, "io-error");
+        assert_eq!(diagnostic.exit_code, EXIT_IO);
+        assert_eq!(diagnostic.action, "check filesystem state");
+    }
+}
+
+#[test]
+fn unsupported_revision_error_json_covers_all_branches() {
+    let version_err = anyhow!(FormatError::UnsupportedFormatVersion(2));
+    let payload = unsupported_revision_error_json(
+        &version_err,
+        "upgrade tzap or use a reader that supports this archive revision",
+    );
+    assert_eq!(payload["label"], "unsupported-revision");
+    assert_eq!(payload["observed"]["format_version"], serde_json::json!(2));
+    assert_eq!(
+        payload["supported"]["format_version"],
+        serde_json::json!(FORMAT_VERSION)
+    );
+    assert_eq!(
+        payload["supported"]["max_volume_format_rev"],
+        serde_json::json!(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
+    );
+
+    let no_format_cause = anyhow!("plain io failure");
+    let payload = unsupported_revision_error_json(
+        &no_format_cause,
+        "upgrade tzap or use a reader that supports this archive revision",
+    );
+    assert_eq!(payload["label"], "unsupported-revision");
+    assert!(payload.get("observed").unwrap().is_null());
+    assert_eq!(
+        payload["supported"]["format_version"],
+        serde_json::json!(FORMAT_VERSION)
+    );
+    assert_eq!(
+        payload["supported"]["max_volume_format_rev"],
+        serde_json::json!(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
+    );
+    assert_eq!(
+        payload["action"],
+        "upgrade tzap or use a reader that supports this archive revision"
+    );
+}
+
 #[test]
 fn metadata_diagnostic_lines_use_stable_cli_warning_prefix() {
     let line = metadata_diagnostic_line(
@@ -610,6 +950,317 @@ fn selected_metadata_diagnostic_lines_filter_to_requested_paths() {
             ]
         );
     assert_eq!(metadata_diagnostic_lines_for_entries(&entries).len(), 2);
+}
+
+#[test]
+fn metadata_diagnostic_line_includes_optional_suffixes() {
+    // All three optional suffixes present: restore policy/phase, native error, staged/committed.
+    let all_some = metadata_diagnostic_line(
+        "a/b",
+        &MetadataDiagnostic {
+            path: b"a/b".to_vec(),
+            profile: "pax-posix-2001".into(),
+            metadata_class: "acl".into(),
+            operation: MetadataOperation::Restore,
+            status: MetadataDiagnosticStatus::Failed,
+            message: "restore failed".into(),
+            restore_policy: Some(RestorePolicy::System),
+            restore_phase: Some(2),
+            native_host_error: Some("EACCES: permission denied".into()),
+            bytes_staged: Some(128),
+            bytes_committed: Some(96),
+        },
+    );
+    assert_eq!(
+        all_some,
+        "tzap: degraded-metadata: a/b: pax-posix-2001: acl: Restore/Failed: restore failed \
+         [policy=System phase=2] [native-error=EACCES: permission denied] [staged=128 committed=96]"
+    );
+
+    // Suffixes are independent: policy/phase and staged/committed without a native error.
+    let no_native_error = metadata_diagnostic_line(
+        "c",
+        &MetadataDiagnostic {
+            path: b"c".to_vec(),
+            profile: "gnu-sparse".into(),
+            metadata_class: "sparse-layout".into(),
+            operation: MetadataOperation::Capture,
+            status: MetadataDiagnosticStatus::Partial,
+            message: "partial capture".into(),
+            restore_policy: Some(RestorePolicy::Portable),
+            restore_phase: Some(1),
+            native_host_error: None,
+            bytes_staged: Some(4),
+            bytes_committed: Some(4),
+        },
+    );
+    assert_eq!(
+        no_native_error,
+        "tzap: degraded-metadata: c: gnu-sparse: sparse-layout: Capture/Partial: partial capture \
+         [policy=Portable phase=1] [staged=4 committed=4]"
+    );
+
+    // Native error alone, no restore phase (pairs are emitted only when both halves are Some).
+    let error_only = metadata_diagnostic_line(
+        "d",
+        &MetadataDiagnostic {
+            path: b"d".to_vec(),
+            profile: "pax-posix-2001".into(),
+            metadata_class: "xattr".into(),
+            operation: MetadataOperation::Verify,
+            status: MetadataDiagnosticStatus::Skipped,
+            message: "skipped".into(),
+            restore_policy: Some(RestorePolicy::SameOs),
+            restore_phase: None,
+            native_host_error: Some("ENOENT".into()),
+            bytes_staged: None,
+            bytes_committed: None,
+        },
+    );
+    assert_eq!(
+        error_only,
+        "tzap: degraded-metadata: d: pax-posix-2001: xattr: Verify/Skipped: skipped \
+         [native-error=ENOENT]"
+    );
+}
+
+fn test_entry_verification(
+    path: &str,
+    capture_status: CaptureStatus,
+    policy_capabilities: Vec<RestorePolicyCapability>,
+    diagnostics: Vec<MetadataDiagnostic>,
+) -> EntryMetadataVerification {
+    EntryMetadataVerification {
+        path: path.as_bytes().to_vec(),
+        capture_status,
+        required_profiles: vec!["pax-posix-2001".to_string()],
+        optional_profiles: vec!["gnu-sparse".to_string()],
+        auxiliary_kinds: vec!["xattr".to_string()],
+        policy_capabilities,
+        full_fidelity_possible: false,
+        diagnostics,
+    }
+}
+
+#[test]
+fn metadata_verification_json_reports_diagnostics_and_policies() {
+    let report = MetadataVerificationReport {
+        all_capture_complete: false,
+        full_fidelity_possible: false,
+        profiles_present: vec!["pax-posix-2001".to_string()],
+        auxiliary_kinds_present: vec!["xattr".to_string()],
+        entries: vec![test_entry_verification(
+            "in/archive",
+            CaptureStatus::Partial,
+            vec![
+                RestorePolicyCapability {
+                    policy: RestorePolicy::Content,
+                    policy_complete: true,
+                    degraded_restore_available: false,
+                    reason: Some("no content metadata captured"),
+                },
+                RestorePolicyCapability {
+                    policy: RestorePolicy::System,
+                    policy_complete: false,
+                    degraded_restore_available: true,
+                    reason: Some("native metadata partially restored"),
+                },
+            ],
+            vec![MetadataDiagnostic {
+                path: b"in/archive".to_vec(),
+                profile: "pax-posix-2001".into(),
+                metadata_class: "acl".into(),
+                operation: MetadataOperation::Capture,
+                status: MetadataDiagnosticStatus::Partial,
+                message: "some ACL entries not capturable".into(),
+                restore_policy: Some(RestorePolicy::System),
+                restore_phase: Some(1),
+                native_host_error: Some("EINVAL".into()),
+                bytes_staged: Some(16),
+                bytes_committed: Some(8),
+            }],
+        )],
+    };
+
+    let payload = metadata_verification_json(&report);
+
+    assert_eq!(payload["capture_complete"], serde_json::json!(false));
+    assert_eq!(payload["full_fidelity_possible"], serde_json::json!(false));
+    assert_eq!(
+        payload["profiles_present"],
+        serde_json::json!(["pax-posix-2001"])
+    );
+    assert_eq!(
+        payload["auxiliary_kinds_present"],
+        serde_json::json!(["xattr"])
+    );
+
+    let entry = &payload["entries"][0];
+    assert_eq!(entry["path"], serde_json::json!("in/archive"));
+    assert_eq!(entry["capture_status"], serde_json::json!("partial"));
+    assert_eq!(
+        entry["required_profiles"],
+        serde_json::json!(["pax-posix-2001"])
+    );
+    assert_eq!(
+        entry["optional_profiles"],
+        serde_json::json!(["gnu-sparse"])
+    );
+    assert_eq!(entry["auxiliary_kinds"], serde_json::json!(["xattr"]));
+    assert_eq!(entry["full_fidelity_possible"], serde_json::json!(false));
+
+    let capabilities = &entry["policy_capabilities"];
+    assert_eq!(capabilities[0]["policy"], serde_json::json!("content"));
+    assert_eq!(capabilities[0]["policy_complete"], serde_json::json!(true));
+    assert_eq!(
+        capabilities[0]["degraded_restore_available"],
+        serde_json::json!(false)
+    );
+    assert_eq!(
+        capabilities[0]["reason"],
+        serde_json::json!("no content metadata captured")
+    );
+    assert_eq!(capabilities[1]["policy"], serde_json::json!("system"));
+    assert_eq!(capabilities[1]["policy_complete"], serde_json::json!(false));
+    assert_eq!(
+        capabilities[1]["degraded_restore_available"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        capabilities[1]["reason"],
+        serde_json::json!("native metadata partially restored")
+    );
+
+    let diagnostic = &entry["diagnostics"][0];
+    assert_eq!(diagnostic["path"], serde_json::json!("in/archive"));
+    assert_eq!(diagnostic["profile"], serde_json::json!("pax-posix-2001"));
+    assert_eq!(diagnostic["metadata_class"], serde_json::json!("acl"));
+    assert_eq!(diagnostic["operation"], serde_json::json!("capture"));
+    assert_eq!(diagnostic["status"], serde_json::json!("partial"));
+    assert_eq!(
+        diagnostic["reason"],
+        serde_json::json!("some ACL entries not capturable")
+    );
+    assert_eq!(diagnostic["restore_policy"], serde_json::json!("system"));
+    assert_eq!(diagnostic["restore_phase"], serde_json::json!(1));
+    assert_eq!(diagnostic["native_host_error"], serde_json::json!("EINVAL"));
+    assert_eq!(diagnostic["bytes_staged"], serde_json::json!(16));
+    assert_eq!(diagnostic["bytes_committed"], serde_json::json!(8));
+}
+
+#[test]
+fn metadata_verification_stdout_lines_cover_partial_and_policy_counts() {
+    let report = MetadataVerificationReport {
+        all_capture_complete: false,
+        full_fidelity_possible: false,
+        profiles_present: vec!["pax-posix-2001".to_string(), "gnu-sparse".to_string()],
+        auxiliary_kinds_present: vec!["xattr".to_string()],
+        entries: vec![
+            test_entry_verification(
+                "a",
+                CaptureStatus::Complete,
+                vec![
+                    RestorePolicyCapability {
+                        policy: RestorePolicy::Content,
+                        policy_complete: true,
+                        degraded_restore_available: false,
+                        reason: None,
+                    },
+                    RestorePolicyCapability {
+                        policy: RestorePolicy::Portable,
+                        policy_complete: true,
+                        degraded_restore_available: false,
+                        reason: None,
+                    },
+                ],
+                vec![],
+            ),
+            test_entry_verification(
+                "b",
+                CaptureStatus::Partial,
+                vec![RestorePolicyCapability {
+                    policy: RestorePolicy::System,
+                    policy_complete: true,
+                    degraded_restore_available: true,
+                    reason: Some("degraded"),
+                }],
+                vec![],
+            ),
+        ],
+    };
+
+    let lines = metadata_verification_stdout_lines(&report);
+    assert_eq!(
+        lines,
+        vec![
+            "metadata: capture=partial full-fidelity=not-possible profiles=[pax-posix-2001,gnu-sparse] auxiliary-kinds=[xattr]",
+            "metadata-policy content: 1/2 entries policy-complete",
+            "metadata-policy portable: 1/2 entries policy-complete",
+            "metadata-policy same-os: 0/2 entries policy-complete",
+            "metadata-policy system: 1/2 entries policy-complete",
+        ]
+    );
+
+    // Fully complete report flips the summary flags.
+    let complete = MetadataVerificationReport {
+        all_capture_complete: true,
+        full_fidelity_possible: true,
+        profiles_present: vec![],
+        auxiliary_kinds_present: vec![],
+        entries: vec![test_entry_verification(
+            "a",
+            CaptureStatus::Complete,
+            vec![RestorePolicyCapability {
+                policy: RestorePolicy::Portable,
+                policy_complete: true,
+                degraded_restore_available: false,
+                reason: None,
+            }],
+            vec![],
+        )],
+    };
+    let lines = metadata_verification_stdout_lines(&complete);
+    assert_eq!(
+        lines[0],
+        "metadata: capture=complete full-fidelity=possible profiles=[] auxiliary-kinds=[]"
+    );
+    assert_eq!(
+        lines[1],
+        "metadata-policy content: 0/1 entries policy-complete"
+    );
+    assert_eq!(
+        lines[2],
+        "metadata-policy portable: 1/1 entries policy-complete"
+    );
+    assert_eq!(lines.len(), 5);
+}
+
+#[test]
+fn archive_entry_kind_label_covers_all_kinds() {
+    assert_eq!(archive_entry_kind_label(TarEntryKind::Regular), "file");
+    assert_eq!(
+        archive_entry_kind_label(TarEntryKind::Directory),
+        "directory"
+    );
+    assert_eq!(archive_entry_kind_label(TarEntryKind::Symlink), "symlink");
+    assert_eq!(archive_entry_kind_label(TarEntryKind::Hardlink), "hardlink");
+    assert_eq!(
+        archive_entry_kind_label(TarEntryKind::CharacterDevice),
+        "character-device"
+    );
+    assert_eq!(
+        archive_entry_kind_label(TarEntryKind::BlockDevice),
+        "block-device"
+    );
+    assert_eq!(archive_entry_kind_label(TarEntryKind::Fifo), "fifo");
+}
+
+#[test]
+fn format_duration_three_decimal_seconds() {
+    assert_eq!(format_duration(Duration::ZERO), "0.000s");
+    assert_eq!(format_duration(Duration::from_secs_f64(1.5)), "1.500s");
+    assert_eq!(format_duration(Duration::from_secs_f64(1.23456)), "1.235s");
+    assert_eq!(format_duration(Duration::from_nanos(42)), "0.000s");
 }
 
 #[cfg(target_os = "linux")]

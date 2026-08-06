@@ -55,7 +55,7 @@ pub(crate) fn resolve_jobs(jobs: Option<usize>) -> Result<usize> {
 }
 
 #[derive(Debug)]
-pub(crate) struct UsageError(&'static str);
+pub(crate) struct UsageError(pub(crate) &'static str);
 
 impl std::fmt::Display for UsageError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

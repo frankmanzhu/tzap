@@ -265,28 +265,24 @@ pub(crate) fn metadata_verification_json(report: &MetadataVerificationReport) ->
     })
 }
 
-pub(crate) fn emit_metadata_verification_stdout(
-    quiet: bool,
+pub(crate) fn metadata_verification_stdout_lines(
     report: &MetadataVerificationReport,
-) -> io::Result<()> {
-    emit_success_stdout(
-        quiet,
-        &format!(
-            "metadata: capture={} full-fidelity={} profiles=[{}] auxiliary-kinds=[{}]",
-            if report.all_capture_complete {
-                "complete"
-            } else {
-                "partial"
-            },
-            if report.full_fidelity_possible {
-                "possible"
-            } else {
-                "not-possible"
-            },
-            report.profiles_present.join(","),
-            report.auxiliary_kinds_present.join(","),
-        ),
-    )?;
+) -> Vec<String> {
+    let mut lines = vec![format!(
+        "metadata: capture={} full-fidelity={} profiles=[{}] auxiliary-kinds=[{}]",
+        if report.all_capture_complete {
+            "complete"
+        } else {
+            "partial"
+        },
+        if report.full_fidelity_possible {
+            "possible"
+        } else {
+            "not-possible"
+        },
+        report.profiles_present.join(","),
+        report.auxiliary_kinds_present.join(","),
+    )];
     for policy in [
         RestorePolicy::Content,
         RestorePolicy::Portable,
@@ -303,14 +299,24 @@ pub(crate) fn emit_metadata_verification_stdout(
                     .any(|capability| capability.policy == policy && capability.policy_complete)
             })
             .count();
-        emit_success_stdout(
-            quiet,
-            &format!(
-                "metadata-policy {}: {complete}/{} entries policy-complete",
-                restore_policy_label(policy),
-                report.entries.len()
-            ),
-        )?;
+        lines.push(format!(
+            "metadata-policy {}: {complete}/{} entries policy-complete",
+            restore_policy_label(policy),
+            report.entries.len()
+        ));
+    }
+    lines
+}
+
+pub(crate) fn emit_metadata_verification_stdout(
+    quiet: bool,
+    report: &MetadataVerificationReport,
+) -> io::Result<()> {
+    if quiet {
+        return Ok(());
+    }
+    for line in metadata_verification_stdout_lines(report) {
+        println!("{line}");
     }
     Ok(())
 }
@@ -524,7 +530,7 @@ pub(crate) fn classify_error(err: &anyhow::Error) -> Diagnostic {
     }
 }
 
-fn classify_io_error(err: &io::Error) -> Diagnostic {
+pub(crate) fn classify_io_error(err: &io::Error) -> Diagnostic {
     match err.kind() {
         io::ErrorKind::PermissionDenied
         | io::ErrorKind::NotFound

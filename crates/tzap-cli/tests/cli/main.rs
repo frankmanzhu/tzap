@@ -2115,6 +2115,62 @@ fn cli_list_with_long_output_includes_kind_mode_mtime() {
         .stdout(predicate::str::ends_with("payload.bin\n"));
 }
 
+#[test]
+fn cli_list_long_reports_stable_kind_labels() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let input_root = temp.path().join("tree");
+    let archive = temp.path().join("tree.tzap");
+
+    fs::create_dir_all(input_root.join("subdir")).unwrap();
+    fs::write(input_root.join("data.txt"), b"payload\n").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("data.txt", input_root.join("link.txt")).unwrap();
+    fs::write(&keyfile, KEY_HEX).unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "create",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "-o",
+            archive.to_str().unwrap(),
+            input_root.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "list",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "--long",
+            archive.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines = String::from_utf8(output).unwrap();
+    assert!(
+        lines.lines().any(|line| line.contains("\tfile\t")),
+        "expected a 'file' kind line:\n{lines}"
+    );
+    assert!(
+        lines.lines().any(|line| line.contains("\tdirectory\t")),
+        "expected a 'directory' kind line:\n{lines}"
+    );
+    #[cfg(unix)]
+    assert!(
+        lines.lines().any(|line| line.contains("\tsymlink\t")),
+        "expected a 'symlink' kind line:\n{lines}"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn cli_list_with_long_output_preserves_unix_mode_bits() {

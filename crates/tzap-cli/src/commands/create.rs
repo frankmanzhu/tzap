@@ -682,7 +682,7 @@ pub(crate) fn create_writer_options(args: CreateWriterOptionsArgs<'_>) -> Result
         stripe_width: args.volumes.unwrap_or(1),
         target_volume_size: args
             .volume_size
-            .map(|value| parse_size(value).with_context(|| format!("invalid volume-size: {value}")))
+            .map(|value| parse_size(value).with_context(|| UsageError("invalid volume-size")))
             .transpose()?,
         volume_loss_tolerance: args.volume_loss_tolerance,
         bit_rot_buffer_pct: args.bit_rot_buffer_pct,
@@ -701,13 +701,16 @@ pub(crate) fn resolve_create_layout(
 ) -> Result<CreateLayout> {
     let mut layout = default_create_layout(total_input_size);
     if let Some(value) = overrides.block_size {
-        layout.block_size = parse_size_u32(value, "block-size")?;
+        layout.block_size = parse_size_u32(value, "block-size")
+            .with_context(|| UsageError("invalid block-size"))?;
     }
     if let Some(value) = overrides.envelope_size {
-        layout.envelope_target_size = parse_size_u32(value, "envelope-size")?;
+        layout.envelope_target_size = parse_size_u32(value, "envelope-size")
+            .with_context(|| UsageError("invalid envelope-size"))?;
     }
     if let Some(value) = overrides.chunk_size {
-        layout.chunk_size = parse_size_u32(value, "chunk-size")?;
+        layout.chunk_size = parse_size_u32(value, "chunk-size")
+            .with_context(|| UsageError("invalid chunk-size"))?;
         if overrides.envelope_size.is_none() && layout.chunk_size > layout.envelope_target_size {
             layout.envelope_target_size = layout.chunk_size;
         }

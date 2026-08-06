@@ -2698,7 +2698,8 @@ fn cli_create_rejects_size_overflow() {
             input.to_str().unwrap(),
         ])
         .assert()
-        .code(1)
+        .code(2)
+        .stderr(predicate::str::contains("invalid-arguments"))
         .stderr(predicate::str::contains("size overflow"));
 }
 

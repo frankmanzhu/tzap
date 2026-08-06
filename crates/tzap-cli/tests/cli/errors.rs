@@ -310,9 +310,161 @@ fn cli_reports_invalid_size_suffix_with_bad_value_in_message() {
             input.to_str().unwrap(),
         ])
         .assert()
-        .code(1)
+        .code(2)
+        .stderr(predicate::str::contains("invalid-arguments"))
         .stderr(predicate::str::contains(
             "invalid size '10Q': unsupported suffix 'Q'",
         ))
         .stderr(predicate::str::contains("supported: K/KB/KiB"));
+}
+
+#[test]
+fn cli_reports_invalid_layout_size_flags_with_usage_exit_code() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let input = temp.path().join("hello.txt");
+    let output = temp.path().join("sample.tzap");
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    fs::write(&input, b"hello\n").unwrap();
+
+    for flag in ["--block-size", "--envelope-size", "--chunk-size"] {
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args([
+                "create",
+                "--keyfile",
+                keyfile.to_str().unwrap(),
+                flag,
+                "10Q",
+                "-o",
+                output.to_str().unwrap(),
+                input.to_str().unwrap(),
+            ])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("invalid-arguments"))
+            .stderr(predicate::str::contains(
+                "invalid size '10Q': unsupported suffix 'Q'",
+            ));
+    }
+}
+
+#[test]
+fn cli_reports_missing_bootstrap_with_stable_category_and_exit_code() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let dictionary = temp.path().join("sample.dict");
+    let input = temp.path().join("hello.txt");
+    let archive = temp.path().join("sample.tzap");
+
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    fs::write(&dictionary, b"non-empty zstd dictionary bytes").unwrap();
+    fs::write(&input, b"hello\n").unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "create",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "--dictionary",
+            dictionary.to_str().unwrap(),
+            "-o",
+            archive.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // A dictionary archive carries a bootstrap sidecar: sequential (stdin)
+    // verification cannot reconstruct it, so the reader must refuse.
+    let archive_bytes = fs::read(&archive).unwrap();
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .current_dir(temp.path())
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), "-"])
+        .write_stdin(archive_bytes)
+        .assert()
+        .code(14)
+        .stderr(predicate::str::contains("missing-bootstrap"))
+        .stderr(predicate::str::contains("--bootstrap"));
+}
+
+#[test]
+fn cli_verify_json_failure_reports_unsupported_revision_shape() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let input = temp.path().join("hello.txt");
+    let archive = temp.path().join("sample.tzap");
+
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    fs::write(&input, b"hello from tzap\n").unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "create",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "--bit-rot-buffer-pct",
+            "0",
+            "-o",
+            archive.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let mut bytes = fs::read(&archive).unwrap();
+    let mut header = VolumeHeader::parse(&bytes[..VOLUME_HEADER_LEN]).unwrap();
+    header.volume_format_rev = 35;
+    bytes[..VOLUME_HEADER_LEN].copy_from_slice(&header.to_bytes());
+    fs::write(&archive, bytes).unwrap();
+
+    let output = Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "verify",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "--json",
+            archive.to_str().unwrap(),
+        ])
+        .assert()
+        .code(12)
+        .get_output()
+        .stdout
+        .clone();
+    let value: Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(value.get("ok").unwrap().as_bool().unwrap(), false);
+    let error = value.get("error").unwrap();
+    assert_eq!(
+        error.get("label").unwrap().as_str().unwrap(),
+        "unsupported-revision"
+    );
+    assert_eq!(
+        error
+            .get("observed")
+            .unwrap()
+            .get("volume_format_rev")
+            .unwrap()
+            .as_u64()
+            .unwrap(),
+        35
+    );
+    assert_eq!(
+        error
+            .get("supported")
+            .unwrap()
+            .get("max_volume_format_rev")
+            .unwrap()
+            .as_u64()
+            .unwrap(),
+        u64::from(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
+    );
+    assert!(
+        error.get("action").unwrap().as_str().unwrap().len() > 0,
+        "unsupported-revision JSON must carry an action"
+    );
 }
