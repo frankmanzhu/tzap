@@ -438,7 +438,7 @@ fn public_docs_keep_boundaries_out_of_readme_marketing() {
     let boundaries = read_workspace_file("public-docs/tzap-operational-boundaries.md");
     let writer = read_workspace_file("crates/tzap-core/src/writer/mod.rs");
     let reader = read_workspace_file("crates/tzap-core/src/reader/mod.rs");
-    let cli = read_workspace_file("crates/tzap-cli/src/main.rs");
+    let create = read_workspace_file("crates/tzap-cli/src/commands/create.rs");
 
     assert!(boundaries.contains("Large regular-file input sets are supported"));
     assert!(boundaries.contains("Create outputs are archive files, not stdout"));
@@ -451,8 +451,8 @@ fn public_docs_keep_boundaries_out_of_readme_marketing() {
     assert!(boundaries.contains("lower-level core writer also exposes a sink API"));
     assert!(writer.contains("sink writer when archive bytes should be delivered incrementally"));
     assert!(reader.contains("not a live provisional-output API"));
-    assert!(cli.contains("--output - is not archive stdout"));
-    assert!(cli.contains("--bootstrap-out - is not sidecar stdout"));
+    assert!(create.contains("--output - is not archive stdout"));
+    assert!(create.contains("--bootstrap-out - is not sidecar stdout"));
 
     assert!(reference
         .contains("`--bootstrap-out`: sidecar output path for single-volume archives only"));
