@@ -1201,7 +1201,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1224,7 +1225,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            true, false,
+            true,
+            false,
         )
         .unwrap();
         assert_eq!(
@@ -1310,13 +1312,9 @@ mod tests {
             root_key.as_ref(),
             Nid::X9_62_PRIME256V1,
         );
-        let ec_signer = X509RootAuthSigner::new(
-            ec_leaf_cert.to_der().unwrap(),
-            ec_leaf_key,
-            Vec::new(),
-            1,
-        )
-        .unwrap();
+        let ec_signer =
+            X509RootAuthSigner::new(ec_leaf_cert.to_der().unwrap(), ec_leaf_key, Vec::new(), 1)
+                .unwrap();
         let ec_footer =
             signed_footer_for_request(&ec_signer, &ec_leaf_cert, &request, VOLUME_FORMAT_REV);
         let signature_len = read_u32(&ec_footer.authenticator_value, 48).unwrap() as usize;
@@ -1364,16 +1362,16 @@ mod tests {
             session_id: [2; 16],
             archive_root: [3; 32],
         };
-        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV);
-        footer.authenticator_value[6..8].copy_from_slice(&SIG_SCHEME_ECDSA_SHA256_DER.to_le_bytes());
+        let mut footer =
+            signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV);
+        footer.authenticator_value[6..8]
+            .copy_from_slice(&SIG_SCHEME_ECDSA_SHA256_DER.to_le_bytes());
         let roots = vec![root_cert.to_der().unwrap()];
         let err = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false)
             .unwrap_err();
         assert!(matches!(
             err,
-            X509RootAuthError::Invalid(
-                "X.509 signature scheme/key mismatch"
-            )
+            X509RootAuthError::Invalid("X.509 signature scheme/key mismatch")
         ));
     }
 
@@ -1382,8 +1380,11 @@ mod tests {
         // §14.9: chain validation uses the verifier's current time, so a leaf
         // that has already expired fails even when signed_at is in the past.
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) =
-            test_expired_leaf_cert("Acme Expired Signing", root_cert.as_ref(), root_key.as_ref());
+        let (leaf_cert, leaf_key) = test_expired_leaf_cert(
+            "Acme Expired Signing",
+            root_cert.as_ref(),
+            root_key.as_ref(),
+        );
         let signer =
             X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
@@ -1396,7 +1397,9 @@ mod tests {
         let roots = vec![root_cert.to_der().unwrap()];
         let err = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false)
             .unwrap_err();
-        assert!(matches!(err, X509RootAuthError::UntrustedChain(message) if message.contains("certificate has expired")));
+        assert!(
+            matches!(err, X509RootAuthError::UntrustedChain(message) if message.contains("certificate has expired"))
+        );
     }
 
     #[test]
@@ -1419,8 +1422,8 @@ mod tests {
         };
         let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV);
         let roots = vec![root_cert.to_der().unwrap()];
-        let report = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false)
-            .unwrap();
+        let report =
+            verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false).unwrap();
         assert_eq!(report.key_usage_policy, "archive_signature_minimal");
         assert_eq!(report.eku_policy, "none");
     }
@@ -1449,7 +1452,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
 
@@ -1474,7 +1478,8 @@ mod tests {
         };
         let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
 
-        let err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        let err =
+            verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::MissingTrustPolicy));
     }
@@ -1504,7 +1509,8 @@ mod tests {
             [AUTHENTICATOR_FIXED_LEN..AUTHENTICATOR_FIXED_LEN + signature_capacity]
             .fill(0);
 
-        let err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        let err =
+            verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::Invalid(_)));
         assert!(err.to_string().contains("signature length"));
@@ -1544,7 +1550,8 @@ mod tests {
         value[16..48].copy_from_slice(&digest);
         footer.authenticator_value = value;
 
-        let err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        let err =
+            verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::Invalid(_)));
         assert!(err.to_string().contains("chain certificate"));
@@ -1570,7 +1577,8 @@ mod tests {
             signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
         footer.authenticator_value[0] ^= 0xFF;
 
-        let err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        let err =
+            verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::Invalid(_)));
     }
@@ -1616,7 +1624,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1666,7 +1675,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
 
@@ -1729,7 +1739,8 @@ mod tests {
                 &footer,
                 &request.archive_root,
                 &[root_cert.to_der().unwrap()],
-                false, false,
+                false,
+                false,
             )
             .unwrap();
         }
@@ -1765,7 +1776,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
 
@@ -1802,7 +1814,8 @@ mod tests {
             &nonminimal_footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
         assert!(err.to_string().contains("canonical DER") || err.to_string().contains("valid DER"));
@@ -1815,7 +1828,8 @@ mod tests {
             &trailing_footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
         assert!(err.to_string().contains("canonical DER") || err.to_string().contains("valid DER"));
@@ -1872,7 +1886,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1903,7 +1918,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[leaf_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1936,7 +1952,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[leaf_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
         assert!(err
@@ -1955,7 +1972,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[leaf_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
         assert!(err.to_string().contains("saltLength=32"));
@@ -2078,7 +2096,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap();
 
@@ -2096,7 +2115,8 @@ mod tests {
             &wrong_spec_footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
 
@@ -2145,7 +2165,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[wrong_root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
 
@@ -2214,7 +2235,8 @@ mod tests {
             &footer,
             &request.archive_root,
             &[root_cert.to_der().unwrap()],
-            false, false,
+            false,
+            false,
         )
         .unwrap_err();
 

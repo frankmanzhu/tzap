@@ -6808,7 +6808,8 @@ fn sidecar_hmac_boundaries_enforced_physical_terminal_flips_tolerated() {
 }
 
 #[test]
-fn physical_footer_and_trailer_volume_index_mutations_tolerated_under_recovered_terminal_authority() {
+fn physical_footer_and_trailer_volume_index_mutations_tolerated_under_recovered_terminal_authority()
+{
     // The physical footer/trailer copies are not the terminal authority: the
     // seekable open path verifies the CMRA-recovered terminal (§30.12 steps
     // 6-7), whose HMAC-verified copies are authoritative even when physical

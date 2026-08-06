@@ -235,7 +235,8 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
             CreateStdinMode::Tar => {
                 let options = build_writer_options(None)?;
                 validate_create_writer_options(&options)?;
-                let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
+                let fec_fragment =
+                    create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
                 let (summary, bootstrap_sidecar) = write_tar_stdin_archive_output(
                     &output,
                     &key,
@@ -259,7 +260,8 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                 let stdin_size = parse_size(stdin_size.as_deref().expect("validated stdin-size"))?;
                 let options = build_writer_options(Some(stdin_size))?;
                 validate_create_writer_options(&options)?;
-                let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
+                let fec_fragment =
+                    create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
                 let (summary, bootstrap_sidecar) = write_raw_stdin_archive_output(
                     &output,
                     io::stdin().lock(),
@@ -293,7 +295,8 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                 let spool_reader = spool.reopen()?;
                 let options = build_writer_options(Some(known_size_source.size()))?;
                 validate_create_writer_options(&options)?;
-                let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
+                let fec_fragment =
+                    create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
                 let (summary, bootstrap_sidecar) = write_raw_stdin_archive_output(
                     &output,
                     spool_reader,
@@ -601,14 +604,18 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
     )?;
     let write_outputs = write_outputs_started.elapsed();
     let summary = format!(
-                "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), {}, bit-rot buffer {}%",
-                input_specs.len(),
-                input_bytes,
-                archive_sink.volumes.iter().map(|volume| volume.len() as u64).sum::<u64>(),
-                archive_sink.volumes.len(),
-                fec_fragment,
-                bit_rot_buffer_pct
-            );
+        "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), {}, bit-rot buffer {}%",
+        input_specs.len(),
+        input_bytes,
+        archive_sink
+            .volumes
+            .iter()
+            .map(|volume| volume.len() as u64)
+            .sum::<u64>(),
+        archive_sink.volumes.len(),
+        fec_fragment,
+        bit_rot_buffer_pct
+    );
     emit_success_summary(quiet, &summary)?;
     if let Some(profile) = root_auth_profile.as_ref() {
         emit_success_summary(quiet, &format!("  root auth: {} signed", profile.label()))?;

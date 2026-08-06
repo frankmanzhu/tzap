@@ -774,7 +774,10 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
     for diagnostic in public_no_key_diagnostic_labels_for_root_auth(&root_auth) {
         emit_success_stdout(request.quiet, &format!("public-no-key: {diagnostic}"))?;
     }
-    emit_success_stdout(request.quiet, &format!("public-no-key outcome: {PUBLIC_NO_KEY_OUTCOME_NOTE}"))?;
+    emit_success_stdout(
+        request.quiet,
+        &format!("public-no-key outcome: {PUBLIC_NO_KEY_OUTCOME_NOTE}"),
+    )?;
     Ok(())
 }
 

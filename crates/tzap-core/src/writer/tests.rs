@@ -2992,7 +2992,10 @@ fn crypto_header_extension_area_emits_only_terminator() {
     let extension_start = CRYPTO_HEADER_FIXED_LEN + kdf_payload.len();
     let extension = &header[extension_start..extension_start + CRYPTO_EXTENSION_HEADER_LEN];
     assert_eq!(extension, &[0u8; CRYPTO_EXTENSION_HEADER_LEN]);
-    assert_eq!(header.len(), extension_start + CRYPTO_EXTENSION_HEADER_LEN + CRYPTO_HEADER_HMAC_LEN);
+    assert_eq!(
+        header.len(),
+        extension_start + CRYPTO_EXTENSION_HEADER_LEN + CRYPTO_HEADER_HMAC_LEN
+    );
 
     let extensions = scan_crypto_extension_tlvs(extension).unwrap();
     assert!(extensions.is_empty());
@@ -3044,7 +3047,9 @@ fn seekable_dictionary_extent_requires_non_zero_extent_fields() {
         shards: Vec::new(),
         directory_hint_shards: Vec::new(),
     };
-    let err = crate::reader::validation::dictionary_extent_from_index_root(&index_root)
-        .unwrap_err();
-    assert!(matches!(err, FormatError::InvalidArchive(message) if message == "dictionary extent missing from IndexRoot"));
+    let err =
+        crate::reader::validation::dictionary_extent_from_index_root(&index_root).unwrap_err();
+    assert!(
+        matches!(err, FormatError::InvalidArchive(message) if message == "dictionary extent missing from IndexRoot")
+    );
 }
