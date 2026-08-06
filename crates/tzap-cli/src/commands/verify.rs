@@ -5,8 +5,6 @@ use std::io::{self};
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-#[cfg(windows)]
-use tzap_core::encode_v45_sparse_map;
 use tzap_core::format::{
     FormatError, FORMAT_VERSION, VOLUME_FORMAT_REV_45,
 };

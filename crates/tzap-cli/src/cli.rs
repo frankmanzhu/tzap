@@ -2,8 +2,6 @@ use super::*;
 
 
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
-#[cfg(windows)]
-use tzap_core::encode_v45_sparse_map;
 use tzap_core::RestorePolicy;
 use tzap_plugin_signing::x509_chain::X509SignatureScheme;
 

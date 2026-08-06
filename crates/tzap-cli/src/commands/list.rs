@@ -4,8 +4,6 @@ use std::io::{self};
 
 use anyhow::{Context, Result};
 use serde_json::json;
-#[cfg(windows)]
-use tzap_core::encode_v45_sparse_map;
 use tzap_core::{
     list_non_seekable_stream, list_non_seekable_stream_with_bootstrap_sidecar,
     list_non_seekable_stream_with_recipient_wrap_resolver,

@@ -5,18 +5,19 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde_json::json;
-#[cfg(windows)]
-use tzap_core::encode_v45_sparse_map;
 use tzap_core::format::{
     FormatError, FORMAT_VERSION,
     READER_MAX_SUPPORTED_VOLUME_FORMAT_REV,
 };
 use tzap_core::reader::{ArchiveEntry, ArchiveIndexEntry};
 use tzap_core::{
+    ArchiveWriteError, ExtractError,
     MetadataDiagnostic,
     MetadataVerificationReport,
     RestorePolicy, TarEntryKind, WriterTimings,
 };
+
+use crate::commands::UsageError;
 
 
 pub(crate) fn emit_trust_info(json_output: bool) -> io::Result<()> {
@@ -441,5 +442,258 @@ pub(crate) fn unsupported_revision_error_json(err: &anyhow::Error, action: &'sta
         },
         "action": action,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Error classification: stable CLI labels, exit codes, and user actions.
+// ---------------------------------------------------------------------------
+
+pub(crate) const EXIT_USAGE: u8 = 2;
+pub(crate) const EXIT_IO: u8 = 3;
+pub(crate) const EXIT_WRONG_KEY: u8 = 10;
+pub(crate) const EXIT_CORRUPT_ARCHIVE: u8 = 11;
+pub(crate) const EXIT_UNSUPPORTED_REVISION: u8 = 12;
+pub(crate) const EXIT_UNSAFE_PATH: u8 = 13;
+pub(crate) const EXIT_MISSING_BOOTSTRAP: u8 = 14;
+pub(crate) const EXIT_UNSUPPORTED_FEATURE: u8 = 16;
+pub(crate) const EXIT_GENERIC: u8 = 1;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Diagnostic {
+    pub(crate) label: &'static str,
+    pub(crate) exit_code: u8,
+    pub(crate) action: &'static str,
+}
+
+pub(crate) fn encode_hex(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = std::fmt::Write::write_fmt(&mut output, format_args!("{:02x}", byte));
+    }
+    output
+}
+
+pub(crate) fn classify_error(err: &anyhow::Error) -> Diagnostic {
+    // anyhow's `with_context` wraps the original error in a ContextError; the
+    // chain only exposes that wrapper and its source as `&dyn Error`, so a
+    // downcast on a chain element cannot reach the UsageError stored as the
+    // context value. `anyhow::Error::downcast_ref` special-cases the context
+    // wrapper, so checking the outer error first is what actually finds
+    // UsageErrors attached with `with_context` (e.g. invalid stdin-size).
+    if err.downcast_ref::<UsageError>().is_some() {
+        return Diagnostic {
+            label: "invalid-arguments",
+            exit_code: EXIT_USAGE,
+            action: "check command arguments",
+        };
+    }
+    for cause in err.chain() {
+        if cause.downcast_ref::<UsageError>().is_some() {
+            return Diagnostic {
+                label: "invalid-arguments",
+                exit_code: EXIT_USAGE,
+                action: "check command arguments",
+            };
+        }
+        if let Some(write_error) = cause.downcast_ref::<ArchiveWriteError>() {
+            return match write_error {
+                ArchiveWriteError::Format(format) => classify_format_error(format),
+                ArchiveWriteError::Io(io_error) => classify_io_error(io_error),
+            };
+        }
+        if let Some(extract_error) = cause.downcast_ref::<ExtractError>() {
+            return match extract_error {
+                ExtractError::Format(format) => classify_format_error(format),
+                ExtractError::Output(io_error) => classify_io_error(io_error),
+            };
+        }
+        if let Some(format) = cause.downcast_ref::<FormatError>() {
+            return classify_format_error(format);
+        }
+        if let Some(io_error) = cause.downcast_ref::<io::Error>() {
+            return classify_io_error(io_error);
+        }
+    }
+    Diagnostic {
+        label: "error",
+        exit_code: EXIT_GENERIC,
+        action: "",
+    }
+}
+
+fn classify_io_error(err: &io::Error) -> Diagnostic {
+    match err.kind() {
+        io::ErrorKind::PermissionDenied
+        | io::ErrorKind::NotFound
+        | io::ErrorKind::AlreadyExists => Diagnostic {
+            label: "io-error",
+            exit_code: EXIT_IO,
+            action: "check file paths and permissions",
+        },
+        _ => Diagnostic {
+            label: "io-error",
+            exit_code: EXIT_IO,
+            action: "check filesystem state",
+        },
+    }
+}
+
+pub(crate) fn classify_format_error(err: &FormatError) -> Diagnostic {
+    match err {
+        FormatError::UnsupportedFormatVersion(_)
+        | FormatError::UnsupportedVolumeFormatRevision { .. }
+        | FormatError::UnknownCompressionAlgo(_)
+        | FormatError::UnknownAeadAlgo(_)
+        | FormatError::UnknownFecAlgo(_)
+        | FormatError::UnknownKdfAlgo(_)
+        | FormatError::UnsupportedCompression(_)
+        | FormatError::UnsupportedFec(_)
+        | FormatError::UnsupportedBootstrapSidecarVersion(_) => Diagnostic {
+            label: "unsupported-revision",
+            exit_code: EXIT_UNSUPPORTED_REVISION,
+            action: "upgrade tzap or use a reader that supports this archive revision",
+        },
+        FormatError::BadMagic {
+            structure: "VolumeHeader",
+        }
+        | FormatError::BadMagic {
+            structure: "VolumeTrailer",
+        }
+        | FormatError::BadMagic {
+            structure: "ManifestFooter",
+        } => Diagnostic {
+            label: "corrupt-header",
+            exit_code: EXIT_CORRUPT_ARCHIVE,
+            action: "verify the archive header/trailer bytes and source file path",
+        },
+        FormatError::HmacMismatch {
+            structure: "CryptoHeader",
+        }
+        | FormatError::KeyMaterialMismatch
+        | FormatError::InvalidRawMasterKeyLength => Diagnostic {
+            label: "wrong-key",
+            exit_code: EXIT_WRONG_KEY,
+            action: "confirm the archive key source (passphrase/raw key/recipient key)",
+        },
+        FormatError::IntegrityDigestMismatch { .. } => Diagnostic {
+            label: "corrupt-archive",
+            exit_code: EXIT_CORRUPT_ARCHIVE,
+            action: "verify the archive bytes and source file path",
+        },
+        FormatError::FecTooFewAvailableShards => Diagnostic {
+            label: "missing-volume",
+            exit_code: EXIT_CORRUPT_ARCHIVE,
+            action: "add the missing archive volume(s) or confirm volume-loss tolerance",
+        },
+        FormatError::InvalidArchive(message)
+            if *message == "complete volume set has missing global blocks" =>
+        {
+            Diagnostic {
+                label: "missing-volume",
+                exit_code: EXIT_CORRUPT_ARCHIVE,
+                action: "add the missing archive volume(s) or confirm volume-loss tolerance",
+            }
+        }
+        FormatError::InvalidArchive(message)
+            if *message == "missing volume count exceeds volume_loss_tolerance" =>
+        {
+            Diagnostic {
+                label: "missing-volume",
+                exit_code: EXIT_CORRUPT_ARCHIVE,
+                action: "add the missing archive volume(s) or confirm volume-loss tolerance",
+            }
+        }
+        FormatError::HmacMismatch { .. } | FormatError::AeadFailure => Diagnostic {
+            label: "corrupt-payload",
+            exit_code: EXIT_CORRUPT_ARCHIVE,
+            action: "verify archive payload integrity",
+        },
+        FormatError::BadCrc {
+            structure: "VolumeHeader",
+        }
+        | FormatError::BadCrc {
+            structure: "VolumeTrailer",
+        }
+        | FormatError::BadCrc {
+            structure: "ManifestFooter",
+        }
+        | FormatError::InvalidMetadata {
+            structure: "ManifestFooter",
+            ..
+        }
+        | FormatError::InvalidMetadata {
+            structure: "VolumeHeader",
+            ..
+        } => Diagnostic {
+            label: "corrupt-header",
+            exit_code: EXIT_CORRUPT_ARCHIVE,
+            action: "inspect archive metadata and source file path",
+        },
+        FormatError::BadCrc { structure: _ } => Diagnostic {
+            label: "corrupt-payload",
+            exit_code: EXIT_CORRUPT_ARCHIVE,
+            action: "verify payload integrity",
+        },
+        FormatError::InvalidKdfParams(message) => Diagnostic {
+            label: "invalid-arguments",
+            exit_code: EXIT_USAGE,
+            action: message,
+        },
+        FormatError::InvalidMetadata { structure, .. } => Diagnostic {
+            label: if *structure == "IndexRoot"
+                || *structure == "FrameEntry"
+                || *structure == "EnvelopeEntry"
+            {
+                "corrupt-payload"
+            } else {
+                "corrupt-header"
+            },
+            exit_code: EXIT_CORRUPT_ARCHIVE,
+            action: if *structure == "IndexRoot"
+                || *structure == "FrameEntry"
+                || *structure == "EnvelopeEntry"
+            {
+                "inspect archive metadata tables and payload"
+            } else {
+                "inspect archive header metadata"
+            },
+        },
+        FormatError::ReaderResourceLimitExceeded { .. } => Diagnostic {
+            label: "invalid-arguments",
+            exit_code: EXIT_USAGE,
+            action:
+                "check argon2 flags (--argon2-t-cost, --argon2-m-cost-kib, --argon2-parallelism)",
+        },
+        FormatError::UnsafeArchivePath => Diagnostic {
+            label: "unsafe-path",
+            exit_code: EXIT_UNSAFE_PATH,
+            action: "archive contains unsafe paths; extract paths should be reviewed first",
+        },
+        FormatError::UnsafeOverwrite => Diagnostic {
+            label: "unsafe-path",
+            exit_code: EXIT_UNSAFE_PATH,
+            action: "add --overwrite if overwriting existing files is intended",
+        },
+        FormatError::ReaderUnsupported(message) | FormatError::WriterUnsupported(message)
+            if message.contains("bootstrap sidecar")
+                || message.contains("dictionary bootstrap required") =>
+        {
+            Diagnostic {
+                label: "missing-bootstrap",
+                exit_code: EXIT_MISSING_BOOTSTRAP,
+                action: "use --bootstrap with a matching sidecar",
+            }
+        }
+        FormatError::ReaderUnsupported(_) | FormatError::WriterUnsupported(_) => Diagnostic {
+            label: "unsupported-feature",
+            exit_code: EXIT_UNSUPPORTED_FEATURE,
+            action: "use a supported archive shape or upgrade tzap",
+        },
+        _ => Diagnostic {
+            label: "corrupt-archive",
+            exit_code: EXIT_CORRUPT_ARCHIVE,
+            action: "verify archive integrity and source",
+        },
+    }
 }
 

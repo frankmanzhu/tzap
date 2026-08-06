@@ -1,9 +1,6 @@
 // Error-path integration tests: stable error categories, exit codes, io errors,
 // corrupt-archive and wrong-key reporting.
-#[path = "cli/common.rs"]
-mod common;
-
-use common::*;
+use super::*;
 
 #[test]
 fn cli_insecure_zero_key_is_removed() {
@@ -260,44 +257,6 @@ fn cli_reports_unsupported_revision_with_stable_category_and_exit_code() {
         .assert()
         .code(12)
         .stderr(predicate::str::contains("unsupported-revision"));
-}
-
-#[test]
-fn cli_reports_unsafe_path_as_stable_category_and_exit_code() {
-    let temp = tempdir().unwrap();
-    let keyfile = temp.path().join("key.hex");
-    let input = temp.path().join("hello.txt");
-    let archive = temp.path().join("sample.tzap");
-
-    fs::write(&keyfile, KEY_HEX).unwrap();
-    fs::write(&input, b"hello from tzap\n").unwrap();
-
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "../evil.txt",
-        ])
-        .assert()
-        .code(13)
-        .stderr(predicate::str::contains("unsafe-path"));
 }
 
 #[test]

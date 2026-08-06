@@ -3,8 +3,6 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use anyhow::anyhow;
 use openssl::x509::X509;
-#[cfg(windows)]
-use tzap_core::encode_v45_sparse_map;
 use tzap_core::format::{
     FormatError, FORMAT_VERSION,
     READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,

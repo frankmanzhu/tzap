@@ -1,7 +1,5 @@
 // Shared helpers and fixtures for the tzap CLI integration tests.
-// Compiled into both the `tests/cli/main.rs` binary and the `tests/cli_errors.rs` binary;
-// not every helper is used by every binary, hence the dead-code allowance.
-#![allow(dead_code, unused_imports)]
+// Compiled once, as a module of the `tests/cli/main.rs` test binary.
 
 pub use std::collections::BTreeSet;
 pub use std::fs;
@@ -217,7 +215,7 @@ pub fn windows_process_is_elevated() -> bool {
 }
 
 #[derive(Clone)]
-pub struct PayloadRecordLocation {
+struct PayloadRecordLocation {
     volume_index: usize,
     payload_offset: usize,
     block_size: usize,
@@ -266,7 +264,7 @@ pub fn tar_header(path: &[u8], kind: u8, size: u64) -> [u8; 512] {
     header
 }
 
-pub fn write_tar_octal(field: &mut [u8], value: u64) {
+fn write_tar_octal(field: &mut [u8], value: u64) {
     let digits = format!("{value:o}");
     field.fill(0);
     let start = field.len() - 1 - digits.len();
@@ -274,14 +272,14 @@ pub fn write_tar_octal(field: &mut [u8], value: u64) {
     field[start..start + digits.len()].copy_from_slice(digits.as_bytes());
 }
 
-pub fn write_tar_checksum(field: &mut [u8], value: u64) {
+fn write_tar_checksum(field: &mut [u8], value: u64) {
     let digits = format!("{value:06o}");
     field[0..6].copy_from_slice(digits.as_bytes());
     field[6] = 0;
     field[7] = b' ';
 }
 
-pub fn padding_to_512(len: usize) -> usize {
+fn padding_to_512(len: usize) -> usize {
     let remainder = len % 512;
     if remainder == 0 {
         0
@@ -290,7 +288,7 @@ pub fn padding_to_512(len: usize) -> usize {
     }
 }
 
-pub fn payload_data_record_locations(volume_index: usize, volume: &[u8]) -> Vec<PayloadRecordLocation> {
+fn payload_data_record_locations(volume_index: usize, volume: &[u8]) -> Vec<PayloadRecordLocation> {
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
@@ -622,7 +620,7 @@ pub fn test_x25519_recipient_cert() -> (X509, Vec<u8>) {
     (builder.build(), subject_key.raw_private_key().unwrap())
 }
 
-pub fn random_serial_number() -> openssl::asn1::Asn1Integer {
+fn random_serial_number() -> openssl::asn1::Asn1Integer {
     let mut serial = BigNum::new().unwrap();
     serial.rand(159, MsbOption::MAYBE_ZERO, false).unwrap();
     serial.to_asn1_integer().unwrap()

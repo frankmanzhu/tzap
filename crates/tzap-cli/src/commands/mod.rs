@@ -12,8 +12,6 @@ use memmap2::Mmap;
 use openssl::pkey::PKey;
 use openssl::x509::X509;
 use rand::RngCore;
-#[cfg(windows)]
-use tzap_core::encode_v45_sparse_map;
 use tzap_core::format::{
     FormatError, CRYPTO_HEADER_FIXED_LEN, FORMAT_VERSION, READER_MAX_ARGON2ID_M_COST_KIB,
     READER_MAX_ARGON2ID_PARALLELISM, READER_MAX_ARGON2ID_T_COST, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
@@ -48,9 +46,9 @@ pub(crate) use crate::cli::*;
 pub(crate) use crate::formatters::*;
 pub(crate) use crate::os_input::*;
 
-#[allow(unused_imports)]
+#[cfg(test)]
 pub(crate) use create::*;
-#[allow(unused_imports)]
+#[cfg(test)]
 pub(crate) use verify::*;
 
 

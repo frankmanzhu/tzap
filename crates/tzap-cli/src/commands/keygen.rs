@@ -6,9 +6,6 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use ed25519_dalek::SigningKey;
 use rand::RngCore;
-#[cfg(windows)]
-use tzap_core::encode_v45_sparse_map;
-
 
 pub(crate) fn run_keygen(quiet: bool, args: KeygenArgs) -> Result<()> {
     let KeygenArgs {

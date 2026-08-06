@@ -3,7 +3,7 @@
 This document summarizes the 6-phase modularization of the tzap workspace,
 the resulting module structure, and the verification metrics collected after
 each phase. The work was driven by
-`implementation-docs/tzap-v45-code-modularization-implementation-plan.md`.
+`tzap-v45-code-modularization-implementation-plan.md`.
 
 ## Mandate
 

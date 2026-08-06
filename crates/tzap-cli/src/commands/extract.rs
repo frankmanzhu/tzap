@@ -5,8 +5,6 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
-#[cfg(windows)]
-use tzap_core::encode_v45_sparse_map;
 use tzap_core::format::FormatError;
 use tzap_core::reader::ArchiveIndexEntry;
 use tzap_core::{

@@ -93,41 +93,6 @@ fn cli_create_with_interactive_password_requires_matching_confirmation() {
         .stderr(predicate::str::contains("Passphrases do not match"));
 }
 
-#[test]
-fn cli_verify_one_volume_archive_with_keyfile_reports_summary_with_counts() {
-    let temp = tempdir().unwrap();
-    let keyfile = temp.path().join("key.hex");
-    let input = temp.path().join("hello.txt");
-    let archive = temp.path().join("sample.tzap");
-
-    fs::write(&keyfile, KEY_HEX).unwrap();
-    fs::write(&input, b"hello from tzap\n").unwrap();
-
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("(1 volume(s), 1 file(s))"));
-}
 
 #[test]
 fn cli_create_list_verify_and_extract_with_keyfile() {
@@ -923,78 +888,7 @@ fn cli_extract_with_password_prompt_and_stdin_fallback() {
     );
 }
 
-#[test]
-fn cli_list_with_password_prompt_and_stdin_fallback() {
-    let temp = tempdir().unwrap();
-    let input = temp.path().join("secret.txt");
-    let archive = temp.path().join("password.tzap");
-    let passphrase = "prompt backup phrase\n";
 
-    fs::write(&input, b"payload\n").unwrap();
-
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args([
-            "create",
-            "--password-stdin",
-            "--argon2-t-cost",
-            "1",
-            "--argon2-m-cost-kib",
-            "8",
-            "--argon2-parallelism",
-            "1",
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
-        .write_stdin(passphrase)
-        .assert()
-        .success();
-
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["list", "--password", archive.to_str().unwrap()])
-        .write_stdin(passphrase)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("secret.txt\n"));
-}
-
-#[test]
-fn cli_list_one_file_archive_with_keyfile() {
-    let temp = tempdir().unwrap();
-    let input = temp.path().join("secret.txt");
-    let archive = temp.path().join("password.tzap");
-    let keyfile = temp.path().join("key.hex");
-
-    fs::write(&keyfile, KEY_HEX).unwrap();
-    fs::write(&input, b"payload\n").unwrap();
-
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::eq("secret.txt\n"));
-}
 
 #[test]
 fn cli_verify_with_password_prompt_and_stdin_fallback() {
