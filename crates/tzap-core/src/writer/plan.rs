@@ -27,13 +27,13 @@ use crate::wire::{
 
 use super::*;
 
-pub struct TimedWriterPlan {
+pub(crate) struct TimedWriterPlan {
     pub plan: WriterPlan,
     pub timings: WriterTimings,
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_writer_plan<S: RegularFileSource>(
+pub(crate) fn build_writer_plan<S: RegularFileSource>(
     files: &[S],
     master_key: &MasterKey,
     options: WriterOptions,
@@ -74,7 +74,7 @@ pub fn build_writer_plan<S: RegularFileSource>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_writer_plan_from_payload(
+pub(crate) fn build_writer_plan_from_payload(
     payload: PayloadPlanning,
     mut next_block_index: u64,
     master_key: &MasterKey,
@@ -273,7 +273,7 @@ pub fn build_writer_plan_from_payload(
     })
 }
 
-pub fn plan_payload_stream<S: RegularFileSource>(
+pub(crate) fn plan_payload_stream<S: RegularFileSource>(
     files: &[S],
     options: WriterOptions,
     dictionary: Option<&[u8]>,
@@ -513,7 +513,7 @@ where
     Ok(summary)
 }
 
-pub struct PayloadFramePlanState<'a> {
+pub(crate) struct PayloadFramePlanState<'a> {
     pub envelope: &'a mut PayloadEnvelopeBuilder,
     pub payload_objects: &'a mut Vec<PayloadObject>,
     pub payload_block_count: &'a mut u64,
@@ -523,7 +523,7 @@ pub struct PayloadFramePlanState<'a> {
     pub options: WriterOptions,
 }
 
-pub struct PayloadFramePlanInput<'a> {
+pub(crate) struct PayloadFramePlanInput<'a> {
     pub frame: &'a [u8],
     pub decompressed_size: usize,
     pub member_index: usize,
@@ -532,7 +532,7 @@ pub struct PayloadFramePlanInput<'a> {
     pub member_group_size: u64,
 }
 
-pub fn append_payload_frame_to_plan(
+pub(crate) fn append_payload_frame_to_plan(
     state: PayloadFramePlanState<'_>,
     input: PayloadFramePlanInput<'_>,
 ) -> Result<(), FormatError> {
@@ -575,7 +575,7 @@ pub fn append_payload_frame_to_plan(
     Ok(())
 }
 
-pub fn flush_payload_envelope_plan(
+pub(crate) fn flush_payload_envelope_plan(
     envelope: &mut PayloadEnvelopeBuilder,
     payload_objects: &mut Vec<PayloadObject>,
     payload_block_count: &mut u64,
@@ -606,7 +606,7 @@ pub fn flush_payload_envelope_plan(
     Ok(())
 }
 
-pub fn required_stripe_width_for_plan(
+pub(crate) fn required_stripe_width_for_plan(
     plan: &WriterPlan,
     master_key: &MasterKey,
     target_volume_size: u64,
@@ -659,7 +659,7 @@ pub fn required_stripe_width_for_plan(
     u32::try_from(required).map_err(|_| FormatError::WriterUnsupported("volume count"))
 }
 
-pub fn planned_v41_volume_size(
+pub(crate) fn planned_v41_volume_size(
     plan: &WriterPlan,
     subkeys: &Subkeys,
     volume_index: u32,
@@ -753,7 +753,7 @@ pub fn planned_v41_volume_size(
     )
 }
 
-pub fn striped_block_count(total_block_count: u64, stripe_width: u32, volume_index: u32) -> u64 {
+pub(crate) fn striped_block_count(total_block_count: u64, stripe_width: u32, volume_index: u32) -> u64 {
     let volume_index = volume_index as u64;
     let stripe_width = stripe_width as u64;
     if total_block_count <= volume_index {
@@ -764,7 +764,7 @@ pub fn striped_block_count(total_block_count: u64, stripe_width: u32, volume_ind
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn emit_writer_plan<S, O>(
+pub(crate) fn emit_writer_plan<S, O>(
     files: &[S],
     master_key: &MasterKey,
     dictionary: Option<&[u8]>,
@@ -816,13 +816,13 @@ where
     Ok(summary)
 }
 
-pub fn start_write_phase(progress: Option<&SourceProgressHandle<'_>>, phase: ArchiveWritePhase) {
+pub(crate) fn start_write_phase(progress: Option<&SourceProgressHandle<'_>>, phase: ArchiveWritePhase) {
     if let Some(progress) = progress {
         progress.borrow_mut().start_phase(phase);
     }
 }
 
-pub fn emit_writer_plan_suffix<O: ArchiveWriteSink>(
+pub(crate) fn emit_writer_plan_suffix<O: ArchiveWriteSink>(
     subkeys: &Subkeys,
     root_auth: Option<RootAuthWriterConfig<'_>>,
     authenticator: Option<&mut RootAuthAuthenticator<'_>>,

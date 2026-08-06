@@ -37,29 +37,29 @@ pub mod envelope;
 #[cfg(test)]
 mod tests;
 
-pub use plan::*;
-pub use parallel::*;
+pub(crate) use plan::*;
+pub(crate) use parallel::*;
 pub use envelope::*;
 
-pub const DEFAULT_BLOCK_SIZE: u32 = 64 * 1024;
-pub const DEFAULT_CHUNK_SIZE: u32 = 256 * 1024;
-pub const DEFAULT_ENVELOPE_TARGET_SIZE: u32 = 1024 * 1024;
-pub const DEFAULT_FEC_DATA_SHARDS: u16 = 224;
-pub const DEFAULT_FEC_PARITY_SHARDS: u16 = 1;
-pub const DEFAULT_INDEX_FEC_DATA_SHARDS: u16 = 16;
-pub const DEFAULT_INDEX_FEC_PARITY_SHARDS: u16 = 1;
-pub const MIN_INDEX_ROOT_FEC_DATA_SHARDS: u16 = 16;
-pub const DEFAULT_INDEX_ROOT_FEC_DATA_SHARDS: u16 = MIN_INDEX_ROOT_FEC_DATA_SHARDS;
-pub const DEFAULT_INDEX_ROOT_FEC_PARITY_SHARDS: u16 = 1;
-pub const DEFAULT_STRIPE_WIDTH: u32 = 8;
-pub const DEFAULT_VOLUME_LOSS_TOLERANCE: u8 = 1;
-pub const DEFAULT_BIT_ROT_BUFFER_PCT: u8 = 5;
-pub const DEFAULT_FILES_PER_INDEX_SHARD: usize = 10_000;
-pub const DIRECTORY_HINT_REQUIRED_FILE_COUNT: usize = 100_000;
-pub const MAX_FILES_PER_INDEX_SHARD: usize = 1_000_000;
-pub const MAX_HASH_PREFIX_RUN_FILES: usize = 50_000;
-pub const DEFAULT_DIRECTORY_HINT_ENTRIES_PER_SHARD: usize = 10_000;
-pub const CMRA_SHARD_SIZE: usize = 512;
+pub(crate) const DEFAULT_BLOCK_SIZE: u32 = 64 * 1024;
+pub(crate) const DEFAULT_CHUNK_SIZE: u32 = 256 * 1024;
+pub(crate) const DEFAULT_ENVELOPE_TARGET_SIZE: u32 = 1024 * 1024;
+pub(crate) const DEFAULT_FEC_DATA_SHARDS: u16 = 224;
+pub(crate) const DEFAULT_FEC_PARITY_SHARDS: u16 = 1;
+pub(crate) const DEFAULT_INDEX_FEC_DATA_SHARDS: u16 = 16;
+pub(crate) const DEFAULT_INDEX_FEC_PARITY_SHARDS: u16 = 1;
+pub(crate) const MIN_INDEX_ROOT_FEC_DATA_SHARDS: u16 = 16;
+pub(crate) const DEFAULT_INDEX_ROOT_FEC_DATA_SHARDS: u16 = MIN_INDEX_ROOT_FEC_DATA_SHARDS;
+pub(crate) const DEFAULT_INDEX_ROOT_FEC_PARITY_SHARDS: u16 = 1;
+pub(crate) const DEFAULT_STRIPE_WIDTH: u32 = 8;
+pub(crate) const DEFAULT_VOLUME_LOSS_TOLERANCE: u8 = 1;
+pub(crate) const DEFAULT_BIT_ROT_BUFFER_PCT: u8 = 5;
+pub(crate) const DEFAULT_FILES_PER_INDEX_SHARD: usize = 10_000;
+pub(crate) const DIRECTORY_HINT_REQUIRED_FILE_COUNT: usize = 100_000;
+pub(crate) const MAX_FILES_PER_INDEX_SHARD: usize = 1_000_000;
+pub(crate) const MAX_HASH_PREFIX_RUN_FILES: usize = 50_000;
+pub(crate) const DEFAULT_DIRECTORY_HINT_ENTRIES_PER_SHARD: usize = 10_000;
+pub(crate) const CMRA_SHARD_SIZE: usize = 512;
 
 #[derive(Clone, Default)]
 pub enum KeyWrapRecordSource {
@@ -90,18 +90,18 @@ impl KeyWrapRecordSource {
     }
 }
 
-pub fn default_jobs() -> usize {
+pub(crate) fn default_jobs() -> usize {
     std::thread::available_parallelism()
         .map(|jobs| jobs.get())
         .unwrap_or(1)
 }
 
-pub fn volume_format_revision_for_options(_options: &WriterOptions, _kdf_params: &KdfParams) -> u16 {
+pub(crate) fn volume_format_revision_for_options(_options: &WriterOptions, _kdf_params: &KdfParams) -> u16 {
     // Writer is intentionally canonicalized to v45-only output.
     VOLUME_FORMAT_REV_45
 }
 
-pub fn resolve_key_wrap_artifacts(
+pub(crate) fn resolve_key_wrap_artifacts(
     kdf_params: &KdfParams,
     archive_uuid: &[u8; 16],
     session_id: &[u8; 16],
@@ -191,7 +191,7 @@ pub fn resolve_key_wrap_artifacts(
     }
 }
 
-pub fn recipient_wrap_kdf_params_for_record_count(
+pub(crate) fn recipient_wrap_kdf_params_for_record_count(
     record_count: usize,
 ) -> Result<KdfParams, FormatError> {
     Ok(KdfParams::RecipientWrap {
@@ -205,7 +205,7 @@ pub fn recipient_wrap_kdf_params_for_record_count(
     })
 }
 
-pub fn stabilized_key_wrap_record_source(
+pub(crate) fn stabilized_key_wrap_record_source(
     kdf_params: &KdfParams,
     key_wrap_records: Option<&KeyWrapRecordSource>,
 ) -> Result<Option<KeyWrapRecordSource>, FormatError> {
@@ -225,7 +225,7 @@ pub fn stabilized_key_wrap_record_source(
     Ok(Some(KeyWrapRecordSource::fixed(records)))
 }
 
-pub fn should_emit_directory_hints(file_count: usize) -> bool {
+pub(crate) fn should_emit_directory_hints(file_count: usize) -> bool {
     file_count > DIRECTORY_HINT_REQUIRED_FILE_COUNT
 }
 
@@ -340,11 +340,11 @@ pub struct NativeAuxiliaryMetadata {
     pub logical_size: u64,
     pub payload: Vec<u8>,
     pub meta: BTreeMap<String, Vec<u8>>,
-    pub streamed_payload: Option<StreamedAuxiliaryPayload>,
+    pub(crate) streamed_payload: Option<StreamedAuxiliaryPayload>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StreamedAuxiliaryPayload {
+pub(crate) struct StreamedAuxiliaryPayload {
     pub stored_size: u64,
     pub sha256: [u8; 32],
     pub sparse_extents: Option<Vec<SparseExtent>>,
@@ -645,7 +645,7 @@ pub trait ArchiveWriteProgressSink {
     fn source_bytes_read(&mut self, phase: ArchiveWritePhase, archive_path: &str, bytes: u64);
 }
 
-pub struct SourceProgressState<'a> {
+pub(crate) struct SourceProgressState<'a> {
     sink: &'a mut dyn ArchiveWriteProgressSink,
     active_phase: Option<ArchiveWritePhase>,
     phase_reported_by_path: BTreeMap<String, u64>,
@@ -685,7 +685,7 @@ impl<'a> SourceProgressState<'a> {
     }
 }
 
-pub struct ProgressRegularFileSource<'a, S> {
+pub(crate) struct ProgressRegularFileSource<'a, S> {
     pub inner: &'a S,
     pub source_bytes: u64,
     pub state: Rc<RefCell<SourceProgressState<'a>>>,
@@ -743,7 +743,7 @@ impl<S: RegularFileSource> RegularFileSource for ProgressRegularFileSource<'_, S
     }
 }
 
-pub struct SourceProgressReader<'a> {
+pub(crate) struct SourceProgressReader<'a> {
     pub inner: Box<dyn Read + 'a>,
     pub archive_path: String,
     pub source_bytes: u64,
@@ -762,7 +762,7 @@ impl Read for SourceProgressReader<'_> {
 
 pub(crate) type SourceProgressHandle<'a> = Rc<RefCell<SourceProgressState<'a>>>;
 
-pub fn progress_sources<'a, S: RegularFileSource>(
+pub(crate) fn progress_sources<'a, S: RegularFileSource>(
     files: &'a [S],
     sink: &'a mut dyn ArchiveWriteProgressSink,
 ) -> (
@@ -877,7 +877,7 @@ pub struct WrittenArchive {
 }
 
 #[derive(Debug, Clone)]
-pub struct TarMember {
+pub(crate) struct TarMember {
     pub path: Vec<u8>,
     pub entry_kind: SourceEntryKind,
     pub link_target: Option<Vec<u8>>,
@@ -891,7 +891,7 @@ pub struct TarMember {
 }
 
 #[derive(Debug, Clone)]
-pub struct PayloadFrame {
+pub(crate) struct PayloadFrame {
     pub frame_index: u64,
     pub envelope_index: u64,
     pub member_index: usize,
@@ -903,7 +903,7 @@ pub struct PayloadFrame {
 }
 
 #[derive(Debug, Clone)]
-pub struct FileRow {
+pub(crate) struct FileRow {
     pub path_hash: [u8; 8],
     pub path: Vec<u8>,
     pub member_index: usize,
@@ -911,7 +911,7 @@ pub struct FileRow {
 }
 
 #[derive(Debug, Clone)]
-pub struct PlannedIndexShard {
+pub(crate) struct PlannedIndexShard {
     pub shard_index: u64,
     pub plaintext: Vec<u8>,
     pub file_count: u32,
@@ -920,7 +920,7 @@ pub struct PlannedIndexShard {
 }
 
 #[derive(Debug, Clone)]
-pub struct PlannedDirectoryHintShard {
+pub(crate) struct PlannedDirectoryHintShard {
     pub hint_shard_index: u64,
     pub plaintext: Vec<u8>,
     pub entry_count: u64,
@@ -930,20 +930,20 @@ pub struct PlannedDirectoryHintShard {
 
 #[derive(Debug, Clone)]
 #[cfg(test)]
-pub struct PayloadEnvelope {
+pub(crate) struct PayloadEnvelope {
     pub envelope_index: u64,
     pub plaintext: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
-pub struct PayloadObject {
+pub(crate) struct PayloadObject {
     pub envelope_index: u64,
     pub plaintext_size: u32,
     pub object: ObjectExtent,
 }
 
 #[derive(Debug, Clone)]
-pub struct EncryptedObject {
+pub(crate) struct EncryptedObject {
     pub first_block_index: u64,
     pub data_block_count: u32,
     pub parity_block_count: u32,
@@ -952,7 +952,7 @@ pub struct EncryptedObject {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ObjectExtent {
+pub(crate) struct ObjectExtent {
     pub first_block_index: u64,
     pub data_block_count: u32,
     pub parity_block_count: u32,
@@ -960,14 +960,14 @@ pub struct ObjectExtent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PlannedEncryptedObject {
+pub(crate) struct PlannedEncryptedObject {
     pub data_block_count: u32,
     pub parity_block_count: u32,
     pub encrypted_size: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MetadataObjectKind {
+pub(crate) enum MetadataObjectKind {
     IndexRoot,
     Dictionary,
 }
@@ -1012,13 +1012,13 @@ impl From<&EncryptedObject> for ObjectExtent {
 }
 
 #[derive(Debug, Clone)]
-pub struct PlannedDirectoryHintObject {
+pub(crate) struct PlannedDirectoryHintObject {
     pub hint_shard_index: u64,
     pub compressed: Vec<u8>,
     pub extent: ObjectExtent,
 }
 
-pub struct WriterPlan {
+pub(crate) struct WriterPlan {
     pub options: WriterOptions,
     pub archive_uuid: [u8; 16],
     pub session_id: [u8; 16],
@@ -1042,13 +1042,13 @@ pub struct WriterPlan {
     pub total_block_count: u64,
 }
 
-pub struct PlannedIndexShardObject {
+pub(crate) struct PlannedIndexShardObject {
     pub shard_index: u64,
     pub compressed: Vec<u8>,
     pub extent: ObjectExtent,
 }
 
-pub struct PayloadPlanning {
+pub(crate) struct PayloadPlanning {
     pub tar_members: Vec<TarMember>,
     pub frames: Vec<PayloadFrame>,
     pub payload_objects: Vec<PayloadObject>,
@@ -1057,13 +1057,13 @@ pub struct PayloadPlanning {
     pub content_sha256: [u8; 32],
 }
 
-pub struct PayloadEnvelopeBuilder {
+pub(crate) struct PayloadEnvelopeBuilder {
     pub envelope_index: u64,
     pub plaintext: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PayloadFrameMetadataInput {
+pub(crate) struct PayloadFrameMetadataInput {
     pub frame_index: u64,
     pub envelope_index: u64,
     pub member_index: usize,
@@ -1075,7 +1075,7 @@ pub struct PayloadFrameMetadataInput {
     pub member_group_size: u64,
 }
 
-pub fn payload_envelope_needs_flush(
+pub(crate) fn payload_envelope_needs_flush(
     envelope: &PayloadEnvelopeBuilder,
     frame_len: usize,
     options: WriterOptions,
@@ -1086,7 +1086,7 @@ pub fn payload_envelope_needs_flush(
             || !payload_object_can_fit(next_len, options)?))
 }
 
-pub fn payload_frame_metadata(input: PayloadFrameMetadataInput) -> Result<PayloadFrame, FormatError> {
+pub(crate) fn payload_frame_metadata(input: PayloadFrameMetadataInput) -> Result<PayloadFrame, FormatError> {
     let mut flags = 0u32;
     if input.member_offset == 0 {
         flags |= 0x0000_0001;
@@ -1127,7 +1127,7 @@ pub(crate) struct StreamingRegularMember {
     pub portable_metadata: PortableFileMetadata,
 }
 
-pub struct WriterEmissionState {
+pub(crate) struct WriterEmissionState {
     pub volume_headers: Vec<[u8; VOLUME_HEADER_LEN]>,
     pub bytes_written: Vec<u64>,
     pub record_counts: Vec<u64>,
@@ -1689,7 +1689,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn write_archive_inner(
+pub(crate) fn write_archive_inner(
     files: &[RegularFile<'_>],
     master_key: &MasterKey,
     options: WriterOptions,
@@ -1727,7 +1727,7 @@ pub fn write_archive_inner(
     })
 }
 
-pub fn format_error_from_archive_write_error(error: ArchiveWriteError) -> FormatError {
+pub(crate) fn format_error_from_archive_write_error(error: ArchiveWriteError) -> FormatError {
     match error {
         ArchiveWriteError::Format(error) => error,
         ArchiveWriteError::Io(_) => {
@@ -1736,7 +1736,7 @@ pub fn format_error_from_archive_write_error(error: ArchiveWriteError) -> Format
     }
 }
 
-pub fn writer_subkeys(
+pub(crate) fn writer_subkeys(
     master_key: &MasterKey,
     aead_algo: AeadAlgo,
     archive_uuid: &[u8; 16],
@@ -1750,7 +1750,7 @@ pub fn writer_subkeys(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn write_archive_stream_inner<S, O>(
+pub(crate) fn write_archive_stream_inner<S, O>(
     files: &[S],
     master_key: &MasterKey,
     options: WriterOptions,
@@ -1826,7 +1826,7 @@ where
     }
 }
 
-pub fn validate_dictionary_inputs(
+pub(crate) fn validate_dictionary_inputs(
     files_are_empty: bool,
     dictionary: Option<&[u8]>,
 ) -> Result<(), FormatError> {
@@ -1851,7 +1851,7 @@ pub fn validate_dictionary_inputs(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn validate_single_pass_writer_options(options: WriterOptions) -> Result<(), FormatError> {
+pub(crate) fn validate_single_pass_writer_options(options: WriterOptions) -> Result<(), FormatError> {
     if options.volume_loss_tolerance != 0 {
         return Err(FormatError::WriterUnsupported(
             "streaming create cannot tolerate volume loss",
@@ -1866,7 +1866,7 @@ pub fn validate_single_pass_writer_options(options: WriterOptions) -> Result<(),
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn begin_writer_emission_state<O: ArchiveWriteSink>(
+pub(crate) fn begin_writer_emission_state<O: ArchiveWriteSink>(
     sink: &mut O,
     options: WriterOptions,
     crypto_header: &[u8],
@@ -1923,13 +1923,13 @@ pub fn begin_writer_emission_state<O: ArchiveWriteSink>(
     Ok(state)
 }
 
-pub fn plan_single_pass_writer_options(options: WriterOptions) -> Result<WriterOptions, FormatError> {
+pub(crate) fn plan_single_pass_writer_options(options: WriterOptions) -> Result<WriterOptions, FormatError> {
     let mut options = plan_writer_options(options)?;
     options.index_root_fec_data_shards = max_single_pass_index_root_data_shards(options)?;
     plan_writer_options(options)
 }
 
-pub fn max_single_pass_index_root_data_shards(options: WriterOptions) -> Result<u16, FormatError> {
+pub(crate) fn max_single_pass_index_root_data_shards(options: WriterOptions) -> Result<u16, FormatError> {
     let block_size_limit = (u32::MAX as u64 / options.block_size as u64).min(u16::MAX as u64);
     let mut low = MIN_INDEX_ROOT_FEC_DATA_SHARDS as u64;
     let mut high = block_size_limit;

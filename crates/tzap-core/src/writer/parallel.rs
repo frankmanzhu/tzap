@@ -21,7 +21,7 @@ use crate::wire::BlockRecord;
 
 use super::*;
 
-pub struct OrderedFrameJob {
+pub(crate) struct OrderedFrameJob {
     pub frame_index: u64,
     pub member_index: usize,
     pub member_start: u64,
@@ -30,7 +30,7 @@ pub struct OrderedFrameJob {
     pub plaintext: Vec<u8>,
 }
 
-pub struct OrderedFrameResult {
+pub(crate) struct OrderedFrameResult {
     pub frame_index: u64,
     pub member_index: usize,
     pub member_start: u64,
@@ -40,29 +40,29 @@ pub struct OrderedFrameResult {
     pub frame: Vec<u8>,
 }
 
-pub struct OrderedEnvelopeJob {
+pub(crate) struct OrderedEnvelopeJob {
     pub envelope_index: u64,
     pub plaintext: Vec<u8>,
     pub extent: ObjectExtent,
     pub collect_data_leaf_hashes: bool,
 }
 
-pub struct OrderedEnvelopeResult {
+pub(crate) struct OrderedEnvelopeResult {
     pub envelope_index: u64,
     pub records: OrderedEnvelopeRecords,
 }
 
-pub enum OrderedEnvelopeRecords {
+pub(crate) enum OrderedEnvelopeRecords {
     Materialized(Vec<BlockRecord>),
     Serialized(Vec<SerializedBlockRecord>),
 }
 
-pub struct SerializedBlockRecord {
+pub(crate) struct SerializedBlockRecord {
     pub block_index: u64,
     pub bytes: Vec<u8>,
 }
 
-pub struct OrderedParallelState {
+pub(crate) struct OrderedParallelState {
     pub tar_members: Vec<TarMember>,
     pub frames: Vec<PayloadFrame>,
     pub payload_objects: Vec<PayloadObject>,
@@ -104,7 +104,7 @@ impl OrderedParallelState {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn write_ordered_parallel_archive_to_sink<S, O>(
+pub(crate) fn write_ordered_parallel_archive_to_sink<S, O>(
     files: &[S],
     master_key: &MasterKey,
     options: WriterOptions,
@@ -554,7 +554,7 @@ impl<O: ArchiveWriteSink> OrderedParallelArchiveWriter<'_, O> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn send_ordered_frame_job<O: ArchiveWriteSink>(
+pub(crate) fn send_ordered_frame_job<O: ArchiveWriteSink>(
     mut job: OrderedFrameJob,
     frame_job_tx: &std::sync::mpsc::SyncSender<OrderedFrameJob>,
     frame_result_rx: &std::sync::mpsc::Receiver<Result<OrderedFrameResult, ArchiveWriteError>>,
@@ -602,7 +602,7 @@ pub fn send_ordered_frame_job<O: ArchiveWriteSink>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn drain_ordered_frame_results<O: ArchiveWriteSink>(
+pub(crate) fn drain_ordered_frame_results<O: ArchiveWriteSink>(
     frame_result_rx: &std::sync::mpsc::Receiver<Result<OrderedFrameResult, ArchiveWriteError>>,
     envelope_job_tx: &std::sync::mpsc::SyncSender<OrderedEnvelopeJob>,
     envelope_result_rx: &std::sync::mpsc::Receiver<
@@ -627,7 +627,7 @@ pub fn drain_ordered_frame_results<O: ArchiveWriteSink>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn receive_ordered_frame_result<O: ArchiveWriteSink>(
+pub(crate) fn receive_ordered_frame_result<O: ArchiveWriteSink>(
     frame_result_rx: &std::sync::mpsc::Receiver<Result<OrderedFrameResult, ArchiveWriteError>>,
     envelope_job_tx: &std::sync::mpsc::SyncSender<OrderedEnvelopeJob>,
     envelope_result_rx: &std::sync::mpsc::Receiver<
@@ -677,7 +677,7 @@ pub fn receive_ordered_frame_result<O: ArchiveWriteSink>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn append_ordered_frame_result<O: ArchiveWriteSink>(
+pub(crate) fn append_ordered_frame_result<O: ArchiveWriteSink>(
     result: OrderedFrameResult,
     envelope_job_tx: &std::sync::mpsc::SyncSender<OrderedEnvelopeJob>,
     envelope_result_rx: &std::sync::mpsc::Receiver<
@@ -732,7 +732,7 @@ pub fn append_ordered_frame_result<O: ArchiveWriteSink>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn flush_ordered_parallel_envelope<O: ArchiveWriteSink>(
+pub(crate) fn flush_ordered_parallel_envelope<O: ArchiveWriteSink>(
     envelope_job_tx: &std::sync::mpsc::SyncSender<OrderedEnvelopeJob>,
     envelope_result_rx: &std::sync::mpsc::Receiver<
         Result<OrderedEnvelopeResult, ArchiveWriteError>,
@@ -805,7 +805,7 @@ pub fn flush_ordered_parallel_envelope<O: ArchiveWriteSink>(
     }
 }
 
-pub fn drain_ordered_envelope_results<O: ArchiveWriteSink>(
+pub(crate) fn drain_ordered_envelope_results<O: ArchiveWriteSink>(
     envelope_result_rx: &std::sync::mpsc::Receiver<
         Result<OrderedEnvelopeResult, ArchiveWriteError>,
     >,
@@ -825,7 +825,7 @@ pub fn drain_ordered_envelope_results<O: ArchiveWriteSink>(
     Ok(())
 }
 
-pub fn receive_ordered_envelope_result<O: ArchiveWriteSink>(
+pub(crate) fn receive_ordered_envelope_result<O: ArchiveWriteSink>(
     envelope_result_rx: &std::sync::mpsc::Receiver<
         Result<OrderedEnvelopeResult, ArchiveWriteError>,
     >,
@@ -863,7 +863,7 @@ pub fn receive_ordered_envelope_result<O: ArchiveWriteSink>(
     Ok(true)
 }
 
-pub fn build_ordered_frame_result(
+pub(crate) fn build_ordered_frame_result(
     job: OrderedFrameJob,
     options: WriterOptions,
 ) -> Result<OrderedFrameResult, ArchiveWriteError> {
@@ -879,7 +879,7 @@ pub fn build_ordered_frame_result(
     })
 }
 
-pub fn build_ordered_envelope_result(
+pub(crate) fn build_ordered_envelope_result(
     job: OrderedEnvelopeJob,
     subkeys: &Subkeys,
     options: WriterOptions,
@@ -924,7 +924,7 @@ pub fn build_ordered_envelope_result(
     })
 }
 
-pub fn emit_ordered_envelope_result<O: ArchiveWriteSink>(
+pub(crate) fn emit_ordered_envelope_result<O: ArchiveWriteSink>(
     result: OrderedEnvelopeResult,
     sink: &mut O,
     options: WriterOptions,

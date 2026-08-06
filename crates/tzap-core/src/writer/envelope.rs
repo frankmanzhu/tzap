@@ -55,7 +55,7 @@ pub(crate) const MIN_BLOCK_SIZE: u32 = 4096;
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
-pub fn emit_encrypted_object<O: ArchiveWriteSink>(
+pub(crate) fn emit_encrypted_object<O: ArchiveWriteSink>(
     payload: &[u8],
     key: &[u8; 32],
     nonce_seed: &[u8; 32],
@@ -113,7 +113,7 @@ pub fn emit_encrypted_object<O: ArchiveWriteSink>(
     Ok(object)
 }
 
-pub fn emit_block_record<O: ArchiveWriteSink>(
+pub(crate) fn emit_block_record<O: ArchiveWriteSink>(
     sink: &mut O,
     options: WriterOptions,
     bytes_written: &mut [u64],
@@ -150,7 +150,7 @@ pub fn emit_block_record<O: ArchiveWriteSink>(
     Ok(())
 }
 
-pub fn emit_serialized_block_record<O: ArchiveWriteSink>(
+pub(crate) fn emit_serialized_block_record<O: ArchiveWriteSink>(
     sink: &mut O,
     options: WriterOptions,
     bytes_written: &mut [u64],
@@ -170,7 +170,7 @@ pub fn emit_serialized_block_record<O: ArchiveWriteSink>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn emit_payload_stream<S, O>(
+pub(crate) fn emit_payload_stream<S, O>(
     files: &[S],
     dictionary: Option<&[u8]>,
     subkeys: &Subkeys,
@@ -324,7 +324,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn append_payload_frame_to_emit<O: ArchiveWriteSink>(
+pub(crate) fn append_payload_frame_to_emit<O: ArchiveWriteSink>(
     envelope: &mut PayloadEnvelopeBuilder,
     frame: &[u8],
     decompressed_size: usize,
@@ -394,7 +394,7 @@ pub fn append_payload_frame_to_emit<O: ArchiveWriteSink>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn flush_payload_envelope_emit<O: ArchiveWriteSink>(
+pub(crate) fn flush_payload_envelope_emit<O: ArchiveWriteSink>(
     envelope: &mut PayloadEnvelopeBuilder,
     subkeys: &Subkeys,
     plan: &WriterPlan,
@@ -449,7 +449,7 @@ pub fn write_empty_archive(master_key: &MasterKey) -> Result<WrittenArchive, For
     write_archive(&[], master_key, WriterOptions::default())
 }
 
-pub fn plan_writer_options(mut options: WriterOptions) -> Result<WriterOptions, FormatError> {
+pub(crate) fn plan_writer_options(mut options: WriterOptions) -> Result<WriterOptions, FormatError> {
     if options.jobs == 0 {
         return Err(FormatError::WriterUnsupported("jobs must be at least 1"));
     }
@@ -515,7 +515,7 @@ pub fn plan_writer_options(mut options: WriterOptions) -> Result<WriterOptions, 
     Ok(options)
 }
 
-pub fn validate_writer_options_match_reader_caps(options: WriterOptions) -> Result<(), FormatError> {
+pub(crate) fn validate_writer_options_match_reader_caps(options: WriterOptions) -> Result<(), FormatError> {
     CryptoHeaderFixed {
         length: CRYPTO_HEADER_FIXED_LEN as u32,
         compression_algo: CompressionAlgo::ZstdFramed,
@@ -545,7 +545,7 @@ pub fn validate_writer_options_match_reader_caps(options: WriterOptions) -> Resu
     .validate_supported_profile()
 }
 
-pub fn build_crypto_header(
+pub(crate) fn build_crypto_header(
     options: WriterOptions,
     volume_format_rev: u16,
     has_dictionary: bool,
@@ -619,7 +619,7 @@ pub fn build_crypto_header(
     Ok(bytes)
 }
 
-pub fn serialize_kdf_params(params: &KdfParams) -> Result<Vec<u8>, FormatError> {
+pub(crate) fn serialize_kdf_params(params: &KdfParams) -> Result<Vec<u8>, FormatError> {
     let mut bytes = Vec::new();
     match params {
         KdfParams::None => {
@@ -684,7 +684,7 @@ pub fn serialize_kdf_params(params: &KdfParams) -> Result<Vec<u8>, FormatError> 
 }
 
 #[cfg(test)]
-pub fn build_tar_stream<S: RegularFileSource>(
+pub(crate) fn build_tar_stream<S: RegularFileSource>(
     files: &[S],
     max_path_length: u32,
 ) -> Result<(Vec<u8>, Vec<TarMember>), FormatError> {
@@ -744,7 +744,7 @@ pub fn build_tar_stream<S: RegularFileSource>(
 }
 
 #[cfg(test)]
-pub fn build_payload_envelopes(
+pub(crate) fn build_payload_envelopes(
     tar_stream: &[u8],
     members: &[TarMember],
     options: WriterOptions,
@@ -852,7 +852,7 @@ pub fn build_payload_envelopes(
     Ok((envelopes, frames))
 }
 
-pub fn sorted_file_rows(members: &[TarMember]) -> Vec<FileRow> {
+pub(crate) fn sorted_file_rows(members: &[TarMember]) -> Vec<FileRow> {
     let mut rows = members
         .iter()
         .enumerate()
@@ -878,7 +878,7 @@ pub fn sorted_file_rows(members: &[TarMember]) -> Vec<FileRow> {
     rows
 }
 
-pub fn partition_file_rows(rows: Vec<FileRow>) -> Result<Vec<Vec<FileRow>>, FormatError> {
+pub(crate) fn partition_file_rows(rows: Vec<FileRow>) -> Result<Vec<Vec<FileRow>>, FormatError> {
     let mut shards = Vec::new();
     let mut start = 0usize;
     while start < rows.len() {
@@ -917,7 +917,7 @@ pub fn partition_file_rows(rows: Vec<FileRow>) -> Result<Vec<Vec<FileRow>>, Form
     Ok(shards)
 }
 
-pub fn build_index_shard_plaintexts(
+pub(crate) fn build_index_shard_plaintexts(
     shard_rows: &[Vec<FileRow>],
     frames: &[PayloadFrame],
     payloads: &[PayloadObject],
@@ -930,7 +930,7 @@ pub fn build_index_shard_plaintexts(
     Ok(planned)
 }
 
-pub fn append_index_shards_for_rows(
+pub(crate) fn append_index_shards_for_rows(
     planned: &mut Vec<PlannedIndexShard>,
     rows: &[FileRow],
     frames: &[PayloadFrame],
@@ -956,7 +956,7 @@ pub fn append_index_shards_for_rows(
     append_index_shards_for_rows(planned, &rows[split_at..], frames, payloads, options)
 }
 
-pub fn split_sorted_file_rows_for_object_limit(rows: &[FileRow]) -> usize {
+pub(crate) fn split_sorted_file_rows_for_object_limit(rows: &[FileRow]) -> usize {
     let midpoint = rows.len() / 2;
     if rows[midpoint - 1].path_hash != rows[midpoint].path_hash {
         return midpoint;
@@ -981,7 +981,7 @@ pub fn split_sorted_file_rows_for_object_limit(rows: &[FileRow]) -> usize {
     }
 }
 
-pub fn build_index_shard_plaintext(
+pub(crate) fn build_index_shard_plaintext(
     shard_index: u64,
     file_rows: &[FileRow],
     frames: &[PayloadFrame],
@@ -1213,7 +1213,7 @@ pub fn build_index_shard_plaintext(
     })
 }
 
-pub fn serialize_index_shard(
+pub(crate) fn serialize_index_shard(
     shard_index: u64,
     files: &[FileEntry],
     frames: &[FrameEntry],
@@ -1258,7 +1258,7 @@ pub fn serialize_index_shard(
     Ok(bytes)
 }
 
-pub fn build_directory_hint_plaintexts(
+pub(crate) fn build_directory_hint_plaintexts(
     shard_rows: &[Vec<FileRow>],
     options: WriterOptions,
 ) -> Result<Vec<PlannedDirectoryHintShard>, FormatError> {
@@ -1285,7 +1285,7 @@ pub fn build_directory_hint_plaintexts(
     Ok(planned)
 }
 
-pub fn append_directory_hint_shards_for_rows(
+pub(crate) fn append_directory_hint_shards_for_rows(
     planned: &mut Vec<PlannedDirectoryHintShard>,
     rows: &[([u8; 8], Vec<u8>, BTreeSet<u32>)],
     options: WriterOptions,
@@ -1309,7 +1309,7 @@ pub fn append_directory_hint_shards_for_rows(
     append_directory_hint_shards_for_rows(planned, &rows[split_at..], options)
 }
 
-pub fn add_directory_hint_rows(
+pub(crate) fn add_directory_hint_rows(
     map: &mut BTreeMap<Vec<u8>, BTreeSet<u32>>,
     shard_row_index: u32,
     path: &[u8],
@@ -1327,7 +1327,7 @@ pub fn add_directory_hint_rows(
     }
 }
 
-pub fn build_directory_hint_plaintext(
+pub(crate) fn build_directory_hint_plaintext(
     hint_shard_index: u64,
     rows: &[([u8; 8], Vec<u8>, BTreeSet<u32>)],
 ) -> Result<PlannedDirectoryHintShard, FormatError> {
@@ -1382,7 +1382,7 @@ pub fn build_directory_hint_plaintext(
     })
 }
 
-pub fn serialize_directory_hint_table(
+pub(crate) fn serialize_directory_hint_table(
     hint_shard_index: u64,
     entries: &[DirectoryHintEntry],
     shard_row_indexes: &[u32],
@@ -1429,7 +1429,7 @@ pub fn serialize_directory_hint_table(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct IndexRootPlaintextInput<'a> {
+pub(crate) struct IndexRootPlaintextInput<'a> {
     pub shard_entries: &'a [ShardEntry],
     pub frame_count: u64,
     pub envelope_count: u64,
@@ -1441,7 +1441,7 @@ pub struct IndexRootPlaintextInput<'a> {
     pub dictionary_extent: Option<(ObjectExtent, u32)>,
 }
 
-pub fn build_index_root_plaintext(input: IndexRootPlaintextInput<'_>) -> Vec<u8> {
+pub(crate) fn build_index_root_plaintext(input: IndexRootPlaintextInput<'_>) -> Vec<u8> {
     let mut header = IndexRootHeader::empty();
     header.frame_count = input.frame_count;
     header.envelope_count = input.envelope_count;
@@ -1465,13 +1465,13 @@ pub fn build_index_root_plaintext(input: IndexRootPlaintextInput<'_>) -> Vec<u8>
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MetadataClassPlan {
+pub(crate) struct MetadataClassPlan {
     pub options: WriterOptions,
     pub index_root: PlannedEncryptedObject,
     pub dictionary: Option<PlannedEncryptedObject>,
 }
 
-pub fn plan_index_root_metadata_class(
+pub(crate) fn plan_index_root_metadata_class(
     mut options: WriterOptions,
     compressed_index_root_len: usize,
     compressed_dictionary_len: Option<usize>,
@@ -1510,7 +1510,7 @@ pub fn plan_index_root_metadata_class(
     })
 }
 
-pub fn plan_metadata_object_without_class(
+pub(crate) fn plan_metadata_object_without_class(
     payload_len: usize,
     options: WriterOptions,
     kind: MetadataObjectKind,
@@ -1525,7 +1525,7 @@ pub fn plan_metadata_object_without_class(
     Ok(plan)
 }
 
-pub fn ensure_metadata_object_fits_class(
+pub(crate) fn ensure_metadata_object_fits_class(
     plan: PlannedEncryptedObject,
     options: WriterOptions,
     kind: MetadataObjectKind,
@@ -1540,7 +1540,7 @@ pub fn ensure_metadata_object_fits_class(
         .map_err(|_| kind.too_large_error())
 }
 
-pub fn payload_object_can_fit(payload_len: usize, options: WriterOptions) -> Result<bool, FormatError> {
+pub(crate) fn payload_object_can_fit(payload_len: usize, options: WriterOptions) -> Result<bool, FormatError> {
     encrypted_object_can_fit(
         payload_len,
         options.fec_data_shards,
@@ -1549,7 +1549,7 @@ pub fn payload_object_can_fit(payload_len: usize, options: WriterOptions) -> Res
     )
 }
 
-pub fn index_object_can_fit(payload_len: usize, options: WriterOptions) -> Result<bool, FormatError> {
+pub(crate) fn index_object_can_fit(payload_len: usize, options: WriterOptions) -> Result<bool, FormatError> {
     encrypted_object_can_fit(
         payload_len,
         options.index_fec_data_shards,
@@ -1558,7 +1558,7 @@ pub fn index_object_can_fit(payload_len: usize, options: WriterOptions) -> Resul
     )
 }
 
-pub fn encrypted_object_can_fit(
+pub(crate) fn encrypted_object_can_fit(
     payload_len: usize,
     data_shard_max: u16,
     parity_shard_max: u16,
@@ -1580,7 +1580,7 @@ pub fn encrypted_object_can_fit(
     }
 }
 
-pub fn plan_encrypted_object(
+pub(crate) fn plan_encrypted_object(
     payload_len: usize,
     data_shard_max: u16,
     parity_shard_max: u16,
@@ -1601,7 +1601,7 @@ pub fn plan_encrypted_object(
     Ok(plan)
 }
 
-pub fn plan_encrypted_object_without_class(
+pub(crate) fn plan_encrypted_object_without_class(
     payload_len: usize,
     options: WriterOptions,
 ) -> Result<PlannedEncryptedObject, FormatError> {
@@ -1614,7 +1614,7 @@ pub fn plan_encrypted_object_without_class(
     })
 }
 
-pub fn encrypted_object_data_extent(
+pub(crate) fn encrypted_object_data_extent(
     payload_len: usize,
     options: WriterOptions,
 ) -> Result<(u32, u32), FormatError> {
@@ -1646,7 +1646,7 @@ pub fn encrypted_object_data_extent(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ObjectEncryptionContext<'a> {
+pub(crate) struct ObjectEncryptionContext<'a> {
     pub key: &'a [u8; 32],
     pub nonce_seed: &'a [u8; 32],
     pub domain: &'a [u8],
@@ -1659,7 +1659,7 @@ pub struct ObjectEncryptionContext<'a> {
     pub session_id: &'a [u8; 16],
 }
 
-pub fn encrypt_object(
+pub(crate) fn encrypt_object(
     payload: &[u8],
     context: ObjectEncryptionContext<'_>,
     next_block_index: &mut u64,
@@ -1747,7 +1747,7 @@ pub fn encrypt_object(
     })
 }
 
-pub fn serialize_zero_parity_encrypted_object(
+pub(crate) fn serialize_zero_parity_encrypted_object(
     payload: &[u8],
     context: ObjectEncryptionContext<'_>,
     expected_extent: ObjectExtent,
@@ -1808,7 +1808,7 @@ pub fn serialize_zero_parity_encrypted_object(
     Ok(records)
 }
 
-pub fn encrypt_object_payload(
+pub(crate) fn encrypt_object_payload(
     payload: &[u8],
     context: ObjectEncryptionContext<'_>,
     options: WriterOptions,
@@ -1835,7 +1835,7 @@ pub fn encrypt_object_payload(
     aead_encrypt(options.aead_algo, context.key, &nonce, &aad, &padded)
 }
 
-pub fn validate_planned_object(
+pub(crate) fn validate_planned_object(
     object: &EncryptedObject,
     expected: PlannedEncryptedObject,
 ) -> Result<(), FormatError> {
@@ -1850,7 +1850,7 @@ pub fn validate_planned_object(
     Ok(())
 }
 
-pub fn validate_planned_extent(
+pub(crate) fn validate_planned_extent(
     object: &EncryptedObject,
     expected: ObjectExtent,
 ) -> Result<(), FormatError> {
@@ -1870,7 +1870,7 @@ pub fn validate_planned_extent(
     Ok(())
 }
 
-pub fn map_metadata_encrypt_error(error: FormatError, kind: MetadataObjectKind) -> FormatError {
+pub(crate) fn map_metadata_encrypt_error(error: FormatError, kind: MetadataObjectKind) -> FormatError {
     match error {
         FormatError::WriterUnsupported("encrypted object exceeds u32 size limit")
         | FormatError::WriterUnsupported("encrypted object exceeds its data shard class maximum")
@@ -1885,7 +1885,7 @@ pub fn map_metadata_encrypt_error(error: FormatError, kind: MetadataObjectKind) 
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct RootAuthFooterBuildInput<'a> {
+pub(crate) struct RootAuthFooterBuildInput<'a> {
     pub archive_uuid: [u8; 16],
     pub session_id: [u8; 16],
     pub volume_format_rev: u16,
@@ -1901,7 +1901,7 @@ pub struct RootAuthFooterBuildInput<'a> {
     pub data_leaf_hashes: &'a [(u64, [u8; 32])],
 }
 
-pub fn build_root_auth_footer_from_leaf_hashes(
+pub(crate) fn build_root_auth_footer_from_leaf_hashes(
     config: RootAuthWriterConfig<'_>,
     authenticator: &mut RootAuthAuthenticator<'_>,
     input: RootAuthFooterBuildInput<'_>,
@@ -2053,7 +2053,7 @@ pub fn build_root_auth_footer_from_leaf_hashes(
     .to_bytes()
 }
 
-pub fn writer_fec_layout_rows_from_extents(
+pub(crate) fn writer_fec_layout_rows_from_extents(
     index_root_extent: ObjectExtent,
     index_root_plain_size: u32,
     dictionary_extent: Option<(ObjectExtent, u32)>,
@@ -2134,14 +2134,14 @@ pub fn writer_fec_layout_rows_from_extents(
     rows
 }
 
-pub fn manifest_footer_global_pre_hmac_bytes(manifest_footer: &[u8; MANIFEST_FOOTER_LEN]) -> [u8; 104] {
+pub(crate) fn manifest_footer_global_pre_hmac_bytes(manifest_footer: &[u8; MANIFEST_FOOTER_LEN]) -> [u8; 104] {
     let mut bytes = [0u8; 104];
     bytes.copy_from_slice(&manifest_footer[..104]);
     bytes[36..40].fill(0);
     bytes
 }
 
-pub fn root_auth_footer_wire_length(
+pub(crate) fn root_auth_footer_wire_length(
     signer_identity_len: usize,
     authenticator_value_len: usize,
 ) -> Result<u32, FormatError> {
@@ -2163,7 +2163,7 @@ pub fn root_auth_footer_wire_length(
     u32::try_from(len).map_err(|_| FormatError::WriterUnsupported("RootAuthFooterV1 length"))
 }
 
-pub fn validate_root_auth_writer_config(config: RootAuthWriterConfig<'_>) -> Result<(), FormatError> {
+pub(crate) fn validate_root_auth_writer_config(config: RootAuthWriterConfig<'_>) -> Result<(), FormatError> {
     root_auth_footer_wire_length(
         config.signer_identity.len(),
         config.authenticator_value_length as usize,
@@ -2171,7 +2171,7 @@ pub fn validate_root_auth_writer_config(config: RootAuthWriterConfig<'_>) -> Res
     Ok(())
 }
 
-pub fn validate_root_auth_variable_lengths_for_writer(
+pub(crate) fn validate_root_auth_variable_lengths_for_writer(
     signer_identity_len: usize,
     authenticator_value_len: usize,
 ) -> Result<(), FormatError> {
@@ -2193,7 +2193,7 @@ pub fn validate_root_auth_variable_lengths_for_writer(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_manifest_footer(
+pub(crate) fn build_manifest_footer(
     subkeys: &Subkeys,
     aead_algo: AeadAlgo,
     volume_format_rev: u16,
@@ -2232,7 +2232,7 @@ pub fn build_manifest_footer(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct VolumeTrailerBuildInput<'a> {
+pub(crate) struct VolumeTrailerBuildInput<'a> {
     pub subkeys: &'a Subkeys,
     pub aead_algo: AeadAlgo,
     pub volume_format_rev: u16,
@@ -2246,7 +2246,7 @@ pub struct VolumeTrailerBuildInput<'a> {
     pub root_auth_footer: Option<(u64, u32)>,
 }
 
-pub fn build_volume_trailer(
+pub(crate) fn build_volume_trailer(
     input: VolumeTrailerBuildInput<'_>,
 ) -> Result<[u8; VOLUME_TRAILER_LEN], FormatError> {
     let (root_auth_footer_offset, root_auth_footer_length, root_auth_flags) =
@@ -2282,7 +2282,7 @@ pub fn build_volume_trailer(
     Ok(bytes)
 }
 
-pub struct BuiltCmra {
+pub(crate) struct BuiltCmra {
     pub bytes: Vec<u8>,
     pub shard_size: u32,
     pub data_shard_count: u16,
@@ -2292,7 +2292,7 @@ pub struct BuiltCmra {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CmraBuildInput<'a> {
+pub(crate) struct CmraBuildInput<'a> {
     pub volume_format_rev: u16,
     pub volume_header_bytes: &'a [u8; VOLUME_HEADER_LEN],
     pub crypto_header: &'a [u8],
@@ -2312,7 +2312,7 @@ pub struct CmraBuildInput<'a> {
     pub volume_index: u32,
 }
 
-pub fn build_v41_cmra(input: CmraBuildInput<'_>) -> Result<BuiltCmra, FormatError> {
+pub(crate) fn build_v41_cmra(input: CmraBuildInput<'_>) -> Result<BuiltCmra, FormatError> {
     let block_record_len = input.options.block_size as u64 + BLOCK_RECORD_FRAMING_LEN as u64;
     let crypto_end = VOLUME_HEADER_LEN as u64 + input.crypto_header.len() as u64;
     let block_records_offset = input.block_records_offset;
@@ -2562,7 +2562,7 @@ pub fn build_v41_cmra(input: CmraBuildInput<'_>) -> Result<BuiltCmra, FormatErro
     })
 }
 
-pub fn cmra_min_parity_shards(data_shard_count: u64, pct: u8) -> Result<u64, FormatError> {
+pub(crate) fn cmra_min_parity_shards(data_shard_count: u64, pct: u8) -> Result<u64, FormatError> {
     let by_pct = ceil_div(
         checked_u64_mul(data_shard_count, pct as u64, "CMRA parity overflow")?,
         100,
@@ -2570,7 +2570,7 @@ pub fn cmra_min_parity_shards(data_shard_count: u64, pct: u8) -> Result<u64, For
     Ok(2u64.max(by_pct))
 }
 
-pub fn compute_object_parity(
+pub(crate) fn compute_object_parity(
     data_block_count: u64,
     options: WriterOptions,
     class_parity_shard_max: u32,
@@ -2584,7 +2584,7 @@ pub fn compute_object_parity(
     Ok(computed)
 }
 
-pub fn validate_object_shard_total(
+pub(crate) fn validate_object_shard_total(
     data_block_count: u32,
     parity_block_count: u32,
 ) -> Result<(), FormatError> {
@@ -2601,7 +2601,7 @@ pub fn validate_object_shard_total(
     Ok(())
 }
 
-pub fn compute_parity_u16(
+pub(crate) fn compute_parity_u16(
     data_block_count: u64,
     options: WriterOptions,
     field: &'static str,
@@ -2610,7 +2610,7 @@ pub fn compute_parity_u16(
     u16::try_from(parity).map_err(|_| FormatError::WriterUnsupported(field))
 }
 
-pub fn compute_parity(data_block_count: u64, options: WriterOptions) -> Result<u32, FormatError> {
+pub(crate) fn compute_parity(data_block_count: u64, options: WriterOptions) -> Result<u32, FormatError> {
     let min_parity = if options.volume_loss_tolerance > 0 || options.bit_rot_buffer_pct > 0 {
         1u64
     } else {
@@ -2648,7 +2648,7 @@ pub fn compute_parity(data_block_count: u64, options: WriterOptions) -> Result<u
     ))
 }
 
-pub fn ceil_div(numerator: u64, denominator: u64) -> Result<u64, FormatError> {
+pub(crate) fn ceil_div(numerator: u64, denominator: u64) -> Result<u64, FormatError> {
     if denominator == 0 {
         return Err(FormatError::WriterUnsupported("division by zero"));
     }
@@ -2658,13 +2658,13 @@ pub fn ceil_div(numerator: u64, denominator: u64) -> Result<u64, FormatError> {
         .map(|value| value / denominator)
 }
 
-pub fn checked_u64_mul(lhs: u64, rhs: u64, field: &'static str) -> Result<u64, FormatError> {
+pub(crate) fn checked_u64_mul(lhs: u64, rhs: u64, field: &'static str) -> Result<u64, FormatError> {
     lhs.checked_mul(rhs)
         .ok_or(FormatError::WriterUnsupported(field))
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_bootstrap_sidecar(
+pub(crate) fn build_bootstrap_sidecar(
     subkeys: &Subkeys,
     aead_algo: AeadAlgo,
     volume_format_rev: u16,
@@ -2738,13 +2738,13 @@ pub fn build_bootstrap_sidecar(
     Ok(sidecar)
 }
 
-pub struct StreamingMemberReader<'a> {
+pub(crate) struct StreamingMemberReader<'a> {
     pub sections: Vec<StreamingMemberSection<'a>>,
     pub section_index: usize,
     pub pushback: Vec<u8>,
 }
 
-pub struct StreamingMemberSection<'a> {
+pub(crate) struct StreamingMemberSection<'a> {
     pub reader: Option<Box<dyn Read + 'a>>,
     pub opener: Option<SectionOpener<'a>>,
     pub remaining: u64,
@@ -2754,7 +2754,7 @@ pub struct StreamingMemberSection<'a> {
     pub source_eof_checked: bool,
 }
 
-pub type SectionOpener<'a> = Box<dyn FnOnce() -> Result<Box<dyn Read + 'a>, ArchiveWriteError> + 'a>;
+pub(crate) type SectionOpener<'a> = Box<dyn FnOnce() -> Result<Box<dyn Read + 'a>, ArchiveWriteError> + 'a>;
 
 impl<'a> StreamingMemberSection<'a> {
     pub fn bytes(bytes: Vec<u8>) -> Self {
@@ -2966,7 +2966,7 @@ impl Read for StreamingMemberReader<'_> {
 }
 
 #[cfg(test)]
-pub fn build_regular_file_member_prefix(
+pub(crate) fn build_regular_file_member_prefix(
     path: &[u8],
     file_size: u64,
     mode: u32,
@@ -2986,7 +2986,7 @@ pub fn build_regular_file_member_prefix(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_primary_member_prefix(
+pub(crate) fn build_primary_member_prefix(
     path: &[u8],
     entry_kind: SourceEntryKind,
     link_target: Option<&[u8]>,
@@ -3025,12 +3025,12 @@ pub fn build_primary_member_prefix(
     Ok(out)
 }
 
-pub struct PrimaryMemberLayout {
+pub(crate) struct PrimaryMemberLayout {
     pub auxiliary: Vec<NativeAuxiliaryMemberPrefix>,
     pub primary: Vec<u8>,
 }
 
-pub fn primary_member_layout_size(
+pub(crate) fn primary_member_layout_size(
     layout: &PrimaryMemberLayout,
     primary_payload_size: u64,
 ) -> Result<u64, FormatError> {
@@ -3054,7 +3054,7 @@ pub fn primary_member_layout_size(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_primary_member_layout(
+pub(crate) fn build_primary_member_layout(
     path: &[u8],
     entry_kind: SourceEntryKind,
     link_target: Option<&[u8]>,
@@ -3286,7 +3286,7 @@ pub fn build_primary_member_layout(
     Ok(PrimaryMemberLayout { auxiliary, primary })
 }
 
-pub fn sparse_extent_bytes(extents: &[SparseExtent], logical_size: u64) -> Result<u64, FormatError> {
+pub(crate) fn sparse_extent_bytes(extents: &[SparseExtent], logical_size: u64) -> Result<u64, FormatError> {
     if extents.len() > MAX_SPARSE_EXTENTS {
         return Err(FormatError::WriterUnsupported(
             "sparse extent count exceeds revision-45 limit",
@@ -3349,14 +3349,14 @@ pub fn encode_v45_sparse_map(
     Ok(map)
 }
 
-pub struct NativeAuxiliaryMemberPrefix {
+pub(crate) struct NativeAuxiliaryMemberPrefix {
     pub bytes: Vec<u8>,
     pub stored_size: u64,
     pub sha256: [u8; 32],
     pub parsed: crate::entry_metadata::AuxiliaryRecord,
 }
 
-pub fn build_native_auxiliary_member_prefix(
+pub(crate) fn build_native_auxiliary_member_prefix(
     ordinal: u32,
     record: &NativeAuxiliaryMetadata,
 ) -> Result<NativeAuxiliaryMemberPrefix, FormatError> {
@@ -3459,7 +3459,7 @@ pub fn build_native_auxiliary_member_prefix(
     })
 }
 
-pub fn merge_native_primary_metadata(
+pub(crate) fn merge_native_primary_metadata(
     pax_records: &mut crate::entry_metadata::PaxRecords,
     native: &NativeFileMetadata,
 ) -> Result<(), FormatError> {
@@ -3512,14 +3512,14 @@ pub fn merge_native_primary_metadata(
 }
 
 #[derive(Debug, Default)]
-pub struct PrimaryTarIdentity {
+pub(crate) struct PrimaryTarIdentity {
     pub uid: u64,
     pub gid: u64,
     pub uname: Vec<u8>,
     pub gname: Vec<u8>,
 }
 
-pub fn validate_portable_file_metadata(metadata: &PortableFileMetadata) -> Result<(), FormatError> {
+pub(crate) fn validate_portable_file_metadata(metadata: &PortableFileMetadata) -> Result<(), FormatError> {
     if !is_source_os(&metadata.source_os) {
         return Err(FormatError::WriterUnsupported("invalid metadata source OS"));
     }
@@ -3539,7 +3539,7 @@ pub fn validate_portable_file_metadata(metadata: &PortableFileMetadata) -> Resul
     Ok(())
 }
 
-pub fn prepare_primary_tar_identity(
+pub(crate) fn prepare_primary_tar_identity(
     pax_records: &mut crate::entry_metadata::PaxRecords,
     metadata: &PortableFileMetadata,
 ) -> Result<PrimaryTarIdentity, FormatError> {
@@ -3569,7 +3569,7 @@ pub fn prepare_primary_tar_identity(
     })
 }
 
-pub fn prepare_primary_name(
+pub(crate) fn prepare_primary_name(
     pax_records: &mut crate::entry_metadata::PaxRecords,
     key: &'static str,
     name: Option<&str>,
@@ -3590,7 +3590,7 @@ pub fn prepare_primary_name(
     }
 }
 
-pub fn apply_primary_tar_identity(
+pub(crate) fn apply_primary_tar_identity(
     header: &mut [u8; TAR_BLOCK_LEN],
     identity: &PrimaryTarIdentity,
 ) -> Result<(), FormatError> {
@@ -3604,7 +3604,7 @@ pub fn apply_primary_tar_identity(
 }
 
 #[cfg(test)]
-pub fn build_regular_file_member_group(
+pub(crate) fn build_regular_file_member_group(
     path: &[u8],
     contents: &[u8],
     mode: u32,
@@ -3623,11 +3623,11 @@ pub fn build_regular_file_member_group(
     Ok(out)
 }
 
-pub fn path_requires_pax(path: &[u8]) -> bool {
+pub(crate) fn path_requires_pax(path: &[u8]) -> bool {
     path.len() > 100
 }
 
-pub fn v45_portable_file_entry_flags(
+pub(crate) fn v45_portable_file_entry_flags(
     mode: u32,
     primary_sparse: bool,
     metadata: &PortableFileMetadata,
@@ -3691,7 +3691,7 @@ pub fn v45_portable_file_entry_flags(
         }
 }
 
-pub fn native_metadata_requires_system_restore(native: &NativeFileMetadata, source_os: &str) -> bool {
+pub(crate) fn native_metadata_requires_system_restore(native: &NativeFileMetadata, source_os: &str) -> bool {
     native.primary_pax_records.iter().any(|(key, value)| {
         key.starts_with("TZAP.posix.device-")
             || key == "TZAP.linux.whiteout"
@@ -3737,7 +3737,7 @@ pub fn native_metadata_requires_system_restore(native: &NativeFileMetadata, sour
     })
 }
 
-pub fn build_ustar_header(
+pub(crate) fn build_ustar_header(
     path: &[u8],
     size: u64,
     mode: u32,
@@ -3764,13 +3764,13 @@ pub fn build_ustar_header(
     Ok(header)
 }
 
-pub fn finalize_tar_checksum(header: &mut [u8; TAR_BLOCK_LEN]) -> Result<(), FormatError> {
+pub(crate) fn finalize_tar_checksum(header: &mut [u8; TAR_BLOCK_LEN]) -> Result<(), FormatError> {
     header[148..156].fill(b' ');
     let checksum = header.iter().map(|byte| *byte as u32).sum::<u32>() as u64;
     write_tar_checksum(&mut header[148..156], checksum)
 }
 
-pub fn write_tar_octal(field: &mut [u8], mut value: u64) -> Result<(), FormatError> {
+pub(crate) fn write_tar_octal(field: &mut [u8], mut value: u64) -> Result<(), FormatError> {
     if field.is_empty() {
         return Err(FormatError::WriterUnsupported("tar octal field overflow"));
     }
@@ -3800,7 +3800,7 @@ pub fn write_tar_octal(field: &mut [u8], mut value: u64) -> Result<(), FormatErr
     Ok(())
 }
 
-pub fn tar_octal_fits(field_len: usize, mut value: u64) -> bool {
+pub(crate) fn tar_octal_fits(field_len: usize, mut value: u64) -> bool {
     if field_len == 0 {
         return false;
     }
@@ -3816,7 +3816,7 @@ pub fn tar_octal_fits(field_len: usize, mut value: u64) -> bool {
     digits <= max_digits
 }
 
-pub fn write_tar_checksum(field: &mut [u8], mut value: u64) -> Result<(), FormatError> {
+pub(crate) fn write_tar_checksum(field: &mut [u8], mut value: u64) -> Result<(), FormatError> {
     if field.len() < 8 {
         return Err(FormatError::WriterUnsupported(
             "tar checksum field overflow",
@@ -3838,7 +3838,7 @@ pub fn write_tar_checksum(field: &mut [u8], mut value: u64) -> Result<(), Format
     Ok(())
 }
 
-pub fn member_frame_range(
+pub(crate) fn member_frame_range(
     member_index: usize,
     frames: &[PayloadFrame],
 ) -> Result<(u64, u32), FormatError> {
@@ -3854,7 +3854,7 @@ pub fn member_frame_range(
     Ok((first, u32_len(count, "FileEntry.frame_count")?))
 }
 
-pub fn envelope_frame_range(
+pub(crate) fn envelope_frame_range(
     envelope_index: u64,
     frames: &[PayloadFrame],
 ) -> Result<(u64, u32), FormatError> {
@@ -3870,14 +3870,14 @@ pub fn envelope_frame_range(
     Ok((first, u32_len(count, "EnvelopeEntry.frame_count")?))
 }
 
-pub fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
+pub(crate) fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
     let digest = Sha256::digest(bytes);
     let mut out = [0u8; 32];
     out.copy_from_slice(&digest);
     out
 }
 
-pub fn padding_to_512(len: usize) -> usize {
+pub(crate) fn padding_to_512(len: usize) -> usize {
     let remainder = len % TAR_BLOCK_LEN;
     if remainder == 0 {
         0
@@ -3886,7 +3886,7 @@ pub fn padding_to_512(len: usize) -> usize {
     }
 }
 
-pub fn padding_to_512_u64(len: u64) -> u64 {
+pub(crate) fn padding_to_512_u64(len: u64) -> u64 {
     let remainder = len % TAR_BLOCK_LEN as u64;
     if remainder == 0 {
         0
@@ -3895,7 +3895,7 @@ pub fn padding_to_512_u64(len: u64) -> u64 {
     }
 }
 
-pub fn table_offset(len: usize, cursor: usize) -> Result<u32, FormatError> {
+pub(crate) fn table_offset(len: usize, cursor: usize) -> Result<u32, FormatError> {
     if len == 0 {
         Ok(0)
     } else {
@@ -3903,20 +3903,20 @@ pub fn table_offset(len: usize, cursor: usize) -> Result<u32, FormatError> {
     }
 }
 
-pub fn u32_len(value: usize, field: &'static str) -> Result<u32, FormatError> {
+pub(crate) fn u32_len(value: usize, field: &'static str) -> Result<u32, FormatError> {
     u32::try_from(value).map_err(|_| FormatError::WriterUnsupported(field))
 }
 
-pub fn to_usize_writer(value: u64, field: &'static str) -> Result<usize, FormatError> {
+pub(crate) fn to_usize_writer(value: u64, field: &'static str) -> Result<usize, FormatError> {
     usize::try_from(value).map_err(|_| FormatError::WriterUnsupported(field))
 }
 
-pub fn checked_usize_add(lhs: usize, rhs: usize, field: &'static str) -> Result<usize, FormatError> {
+pub(crate) fn checked_usize_add(lhs: usize, rhs: usize, field: &'static str) -> Result<usize, FormatError> {
     lhs.checked_add(rhs)
         .ok_or(FormatError::WriterUnsupported(field))
 }
 
-pub fn checked_u64_add(lhs: u64, rhs: u64, field: &'static str) -> Result<u64, FormatError> {
+pub(crate) fn checked_u64_add(lhs: u64, rhs: u64, field: &'static str) -> Result<u64, FormatError> {
     lhs.checked_add(rhs)
         .ok_or(FormatError::WriterUnsupported(field))
 }
