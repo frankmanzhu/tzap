@@ -437,7 +437,7 @@ fn cli_verify_json_failure_reports_unsupported_revision_shape() {
         .clone();
     let value: Value = serde_json::from_slice(&output).unwrap();
 
-    assert_eq!(value.get("ok").unwrap().as_bool().unwrap(), false);
+    assert!(!value.get("ok").unwrap().as_bool().unwrap());
     let error = value.get("error").unwrap();
     assert_eq!(
         error.get("label").unwrap().as_str().unwrap(),
@@ -464,7 +464,7 @@ fn cli_verify_json_failure_reports_unsupported_revision_shape() {
         u64::from(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
     );
     assert!(
-        error.get("action").unwrap().as_str().unwrap().len() > 0,
+        !error.get("action").unwrap().as_str().unwrap().is_empty(),
         "unsupported-revision JSON must carry an action"
     );
 }
