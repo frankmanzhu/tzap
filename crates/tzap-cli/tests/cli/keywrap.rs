@@ -123,7 +123,7 @@ fn cli_create_list_verify_and_extract_with_keyfile() {
             "created 1 member(s), 16 bytes in, ",
         ))
         .stderr(predicate::str::contains(
-            "1 volume(s), volume-loss tolerance 0, bit-rot buffer 5%",
+            "1 volume(s), data:parity 224:1, no volume-loss tolerance, bit-rot buffer 5%",
         ));
 
     Command::cargo_bin("tzap")

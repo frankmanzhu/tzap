@@ -711,7 +711,7 @@ fn classify_format_error_covers_invalid_arguments() {
         },
         "invalid-arguments",
         EXIT_USAGE,
-        "check argon2 flags (--argon2-t-cost, --argon2-m-cost-kib, --argon2-parallelism)",
+        "archive exceeds reader resource limits (payload/metadata size caps, or argon2 parameters via --argon2-t-cost, --argon2-m-cost-kib, --argon2-parallelism)",
     );
 }
 

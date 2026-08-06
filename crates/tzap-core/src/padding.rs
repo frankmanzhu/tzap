@@ -42,9 +42,8 @@ pub fn append_suffix_padding(plaintext: &mut Vec<u8>, pad_len: usize) -> Result<
     if pad_len > u32::MAX as usize {
         return Err(FormatError::PaddingOverflow);
     }
-    if pad_len < 5 {
-        return Err(FormatError::InvalidSuffixPadding);
-    }
+    // Wide form is only reached when `pad_len > 254`, so no minimum check is
+    // needed here; the depad side enforces `pad_len >= 255`.
     plaintext.resize(plaintext.len() + pad_len - 5, 0);
     plaintext.extend_from_slice(&(pad_len as u32).to_le_bytes());
     plaintext.push(0xff);

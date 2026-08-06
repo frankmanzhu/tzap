@@ -2072,6 +2072,20 @@ pub(crate) fn validate_image_region(
     Ok(())
 }
 
+/// §30.5.1.1: `image.crypto_header_length` MUST equal
+/// `VolumeHeader.crypto_header_length` (and, transitively, `CryptoHeader.length`).
+fn validate_image_crypto_header_length(
+    image: &CriticalMetadataImage,
+    volume_header: &VolumeHeader,
+) -> Result<(), FormatError> {
+    if image.crypto_header_length != volume_header.crypto_header_length {
+        return Err(FormatError::InvalidArchive(
+            "CMRA crypto header length does not match recovered VolumeHeader",
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_image_identity(
     image: &CriticalMetadataImage,
     volume_header: &VolumeHeader,
@@ -2176,6 +2190,7 @@ pub(crate) fn validate_recovered_terminal_authority(
         .region(1)
         .ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
     let volume_header = VolumeHeader::parse(&volume_header_region.bytes)?;
+    validate_image_crypto_header_length(&image, &volume_header)?;
     let crypto_region = image
         .region(2)
         .ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
@@ -2250,6 +2265,7 @@ where
         .region(1)
         .ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
     let volume_header = VolumeHeader::parse(&volume_header_region.bytes)?;
+    validate_image_crypto_header_length(&image, &volume_header)?;
     let crypto_region = image
         .region(2)
         .ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
@@ -2365,6 +2381,7 @@ pub(crate) fn validate_recovered_terminal_inner(
             "CMRA VolumeHeader differs from parsed VolumeHeader",
         ));
     }
+    validate_image_crypto_header_length(&image, &recovered_volume_header)?;
     validate_image_identity(&image, volume_header, crypto_header)?;
     let crypto_region = image
         .region(2)
@@ -2501,6 +2518,7 @@ pub(crate) fn validate_recovered_public_terminal(
             "CMRA VolumeHeader differs from parsed VolumeHeader",
         ));
     }
+    validate_image_crypto_header_length(&image, &recovered_volume_header)?;
     validate_image_identity(&image, volume_header, &public_crypto_header.fixed)?;
     let crypto_region = image
         .region(2)

@@ -95,6 +95,15 @@ pub fn write_tar_stream_archive<R: Read>(
     master_key: &MasterKey,
     options: WriterOptions,
 ) -> Result<WrittenArchive, FormatError> {
+    if options.stripe_width > 1 {
+        // §19.3: single-sink streaming is supported only with stripe_width = 1.
+        // This convenience returns a single archive whose `.bytes` is volume 0;
+        // multi-volume output must go through the per-volume sink API so every
+        // volume is delivered to the caller.
+        return Err(FormatError::WriterUnsupported(
+            "single-archive streaming requires stripe_width = 1; use write_tar_stream_archive_to_sink for multi-volume output",
+        ));
+    }
     let mut sink = MemoryArchiveSink::default();
     let summary = write_tar_stream_archive_to_sink(reader, master_key, options, &mut sink)
         .map_err(format_error_from_archive_write_error)?;

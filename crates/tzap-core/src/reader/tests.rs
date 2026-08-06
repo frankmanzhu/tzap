@@ -6727,7 +6727,11 @@ fn manifest_footer_corruption_requires_trusted_sidecar() {
 }
 
 #[test]
-fn authenticated_footer_trailer_and_sidecar_hmac_boundaries_are_enforced() {
+fn sidecar_hmac_boundaries_enforced_physical_terminal_flips_tolerated() {
+    // HMAC boundaries are enforced where the reader actually consumes bytes:
+    // the bootstrap sidecar (asserted below) and the CMRA-recovered terminal.
+    // Flips inside the covered regions of the physical footer/trailer are
+    // tolerated because those copies are never read (§30.12/§17.1.2.j).
     let archive = write_archive(
         &[RegularFile::new("hmac-boundary.txt", b"boundary bytes")],
         &master_key(),
@@ -6804,7 +6808,11 @@ fn authenticated_footer_trailer_and_sidecar_hmac_boundaries_are_enforced() {
 }
 
 #[test]
-fn rejects_authenticated_footer_and_trailer_volume_index_mismatches() {
+fn physical_footer_and_trailer_volume_index_mutations_tolerated_under_recovered_terminal_authority() {
+    // The physical footer/trailer copies are not the terminal authority: the
+    // seekable open path verifies the CMRA-recovered terminal (§30.12 steps
+    // 6-7), whose HMAC-verified copies are authoritative even when physical
+    // bytes differ (§17.1.2.j). These mutations must open successfully.
     let archive = write_archive(
         &[RegularFile::new("volume-index.txt", b"identity")],
         &master_key(),
@@ -7016,7 +7024,10 @@ fn rejects_same_key_object_splice_with_session_mismatch() {
 }
 
 #[test]
-fn rejects_authenticated_trailer_pointer_and_count_mutations() {
+fn physical_trailer_pointer_and_count_mutations_tolerated_under_recovered_terminal_authority() {
+    // Same authority model as the sibling volume_index test: the physical
+    // VolumeTrailer is never the terminal source — the CMRA-recovered trailer
+    // (keyed-HMAC verified) is, per §30.12 and §17.1.2.j.
     let archive = write_archive(
         &[RegularFile::new(
             "trailer-range.txt",

@@ -671,7 +671,7 @@ pub(crate) fn classify_format_error(err: &FormatError) -> Diagnostic {
             label: "invalid-arguments",
             exit_code: EXIT_USAGE,
             action:
-                "check argon2 flags (--argon2-t-cost, --argon2-m-cost-kib, --argon2-parallelism)",
+                "archive exceeds reader resource limits (payload/metadata size caps, or argon2 parameters via --argon2-t-cost, --argon2-m-cost-kib, --argon2-parallelism)",
         },
         FormatError::UnsafeArchivePath => Diagnostic {
             label: "unsafe-path",

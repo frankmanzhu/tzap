@@ -105,6 +105,7 @@ pub(crate) struct RecipientWrapOpenStats {
     pub(crate) records_seen: usize,
     pub(crate) no_matching_private_key: usize,
     pub(crate) invalid_record_or_unwrap: usize,
+    pub(crate) policy_rejected: usize,
     pub(crate) unsupported_record: usize,
     pub(crate) candidate_count: usize,
 }
@@ -646,8 +647,12 @@ pub(crate) fn recipient_wrap_candidates_for_record(
             stats.no_matching_private_key += 1;
             Ok(Vec::new())
         }
-        KeyWrapOutcome::InvalidRecord | KeyWrapOutcome::CertificatePolicyRejected => {
+        KeyWrapOutcome::InvalidRecord => {
             stats.invalid_record_or_unwrap += 1;
+            Ok(Vec::new())
+        }
+        KeyWrapOutcome::CertificatePolicyRejected => {
+            stats.policy_rejected += 1;
             Ok(Vec::new())
         }
         KeyWrapOutcome::UnsupportedProfileId
@@ -674,6 +679,10 @@ pub(crate) fn recipient_wrap_open_error(
     }
     if stats.records_seen == 0 {
         return anyhow!(err).context("recipient-wrap archive has no recipient records");
+    }
+    if stats.policy_rejected > 0 && stats.invalid_record_or_unwrap == 0 {
+        return anyhow!(err)
+            .context("recipient record matched, but was rejected by recipient certificate policy");
     }
     if stats.no_matching_private_key > 0 && stats.invalid_record_or_unwrap == 0 {
         return anyhow!(err).context("no matching recipient private key for archive");

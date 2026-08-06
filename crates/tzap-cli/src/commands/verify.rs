@@ -40,11 +40,19 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
         jobs,
     } = args;
 
-    let reader_options = reader_options(resolve_jobs(jobs)?);
     let first = archives
         .first()
         .ok_or_else(|| anyhow!("at least one archive volume is required"))?;
     let archive_paths = archives.to_vec();
+    let reader_options = reader_options(match resolve_jobs(jobs) {
+        Ok(jobs) => jobs,
+        Err(err) => {
+            if json {
+                emit_verify_json_error(&archive_paths, None, None, &err)?;
+            }
+            return Err(err);
+        }
+    });
     if let Err(err) = validate_fast_verify_options(
         fast,
         public_no_key,
@@ -588,6 +596,8 @@ pub(crate) enum PublicNoKeyTrust {
     X509 {
         trusted_roots_der: Vec<Vec<u8>>,
         trusted_system_roots: bool,
+        /// The embedded official TZAP root is included in `trusted_roots_der`.
+        include_official_tzap_root: bool,
     },
 }
 
@@ -678,6 +688,7 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
             PublicNoKeyTrust::X509 {
                 trusted_roots_der,
                 trusted_system_roots,
+                include_official_tzap_root,
             } => {
                 if footer.authenticator_id != X509_AUTHENTICATOR_ID {
                     return Err(FormatError::ReaderUnsupported(
@@ -689,6 +700,7 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
                     archive_root,
                     trusted_roots_der,
                     *trusted_system_roots,
+                    *include_official_tzap_root,
                 ) {
                     Ok(report) => {
                         x509_report = Some(report);
@@ -743,6 +755,7 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
                 "volume_count": archive_paths.len(),
                 "root_auth": public_no_key_root_auth_json(&root_auth),
                 "public_diagnostics": public_no_key_diagnostic_labels_for_root_auth(&root_auth),
+                "public_outcome": PUBLIC_NO_KEY_OUTCOME_NOTE,
             }))
             .context("failed to encode verify output as JSON")?
         );
@@ -761,6 +774,7 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
     for diagnostic in public_no_key_diagnostic_labels_for_root_auth(&root_auth) {
         emit_success_stdout(request.quiet, &format!("public-no-key: {diagnostic}"))?;
     }
+    emit_success_stdout(request.quiet, &format!("public-no-key outcome: {PUBLIC_NO_KEY_OUTCOME_NOTE}"))?;
     Ok(())
 }
 
@@ -799,6 +813,7 @@ pub(crate) fn load_public_no_key_trust(
     Ok(PublicNoKeyTrust::X509 {
         trusted_roots_der: load_x509_trusted_roots(request.trusted_ca_cert, !wants_x509)?,
         trusted_system_roots: request.trusted_system_roots,
+        include_official_tzap_root: !wants_x509,
     })
 }
 
@@ -862,6 +877,7 @@ pub(crate) fn verify_opened_root_auth(
                 content_verification,
                 &trusted_roots_der,
                 trusted_system_roots,
+                wants_official_x509,
             )?))
         }
         ED25519_AUTHENTICATOR_ID => {
@@ -880,6 +896,7 @@ pub(crate) fn verify_opened_root_auth_x509(
     content_verification: &ArchiveContentVerification<'_>,
     trusted_roots_der: &[Vec<u8>],
     trusted_system_roots: bool,
+    include_official_tzap_root: bool,
 ) -> Result<VerifiedRootAuth> {
     let mut report = None;
     let mut x509_error = None;
@@ -890,6 +907,7 @@ pub(crate) fn verify_opened_root_auth_x509(
                 archive_root,
                 trusted_roots_der,
                 trusted_system_roots,
+                include_official_tzap_root,
             ) {
                 Ok(value) => {
                     report = Some(value);
@@ -989,6 +1007,10 @@ pub(crate) fn verified_root_auth_status(root_auth: &VerifiedRootAuth) -> &'stati
         VerifiedRootAuth::X509 { verification, .. } => root_auth_status(verification),
     }
 }
+
+/// §30.11: the explanatory sentence that MUST accompany every successful
+/// public no-key result.
+const PUBLIC_NO_KEY_OUTCOME_NOTE: &str = "Trusted key signed a commitment to this observed CRC-valid public data-block set (ciphertext in an encryption mode, plaintext in unencrypted mode) and to opaque component digests. Plaintext recovery for encrypted archives, decoded file/content authenticity, IndexRoot, mode-specifically authenticated metadata, physical completeness, and recovery margin were not inspected.";
 
 pub(crate) fn public_no_key_status_json(
     root_auth: &VerifiedPublicNoKeyRootAuth,

@@ -239,7 +239,7 @@ pub fn verify_hmac(
 pub fn compute_integrity_tag(
     domain: HmacDomain,
     aead_algo: AeadAlgo,
-    volume_format_rev: u16,
+    _volume_format_rev: u16,
     mac_key: Option<&[u8; SUBKEY_LEN]>,
     archive_uuid: &[u8; 16],
     session_id: &[u8; 16],
@@ -256,7 +256,6 @@ pub fn compute_integrity_tag(
     }
 
     let mut hasher = Sha256::new();
-    let _ = volume_format_rev;
     hasher.update(domain.digest_domain_bytes());
     hasher.update(archive_uuid);
     hasher.update(session_id);

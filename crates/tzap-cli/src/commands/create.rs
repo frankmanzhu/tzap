@@ -29,6 +29,20 @@ use tzap_plugin_signing::ed25519_raw::{
 
 use plaintext_spool::{spool_unknown_size_raw_stdin, ExplicitPlaintextSpool};
 
+/// §27: the create summary states the chosen parity and the resilience
+/// guarantee in plain English.
+fn create_summary_fec_fragment(options: &WriterOptions, tolerance: u8) -> String {
+    let resilience = match tolerance {
+        0 => "no volume-loss tolerance".to_string(),
+        1 => "survives loss of any 1 volume".to_string(),
+        t => format!("survives loss of any {t} volumes"),
+    };
+    format!(
+        "data:parity {}:{}, {resilience}",
+        options.fec_data_shards, options.fec_parity_shards
+    )
+}
+
 pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
     let CreateArgs {
         output,
@@ -221,6 +235,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
             CreateStdinMode::Tar => {
                 let options = build_writer_options(None)?;
                 validate_create_writer_options(&options)?;
+                let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
                 let (summary, bootstrap_sidecar) = write_tar_stdin_archive_output(
                     &output,
                     &key,
@@ -230,12 +245,12 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                     force,
                 )?;
                 let summary_text = format!(
-                            "created {} member(s), {} tar bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
+                            "created {} member(s), {} tar bytes in, {} archive bytes, {} volume(s), {}, bit-rot buffer {}%",
                             summary.input_member_count,
                             summary.input_tar_bytes,
                             summary.archive.archive_bytes,
                             summary.archive.volume_count,
-                            resolved_volume_loss_tolerance,
+                            fec_fragment,
                             bit_rot_buffer_pct
                         );
                 (bootstrap_sidecar, summary_text, summary.archive.timings)
@@ -244,6 +259,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                 let stdin_size = parse_size(stdin_size.as_deref().expect("validated stdin-size"))?;
                 let options = build_writer_options(Some(stdin_size))?;
                 validate_create_writer_options(&options)?;
+                let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
                 let (summary, bootstrap_sidecar) = write_raw_stdin_archive_output(
                     &output,
                     io::stdin().lock(),
@@ -256,11 +272,11 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                     force,
                 )?;
                 let summary_text = format!(
-                            "created 1 member(s), {} raw bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
+                            "created 1 member(s), {} raw bytes in, {} archive bytes, {} volume(s), {}, bit-rot buffer {}%",
                             summary.input_bytes,
                             summary.archive.archive_bytes,
                             summary.archive.volume_count,
-                            resolved_volume_loss_tolerance,
+                            fec_fragment,
                             bit_rot_buffer_pct
                         );
                 (bootstrap_sidecar, summary_text, summary.archive.timings)
@@ -277,6 +293,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                 let spool_reader = spool.reopen()?;
                 let options = build_writer_options(Some(known_size_source.size()))?;
                 validate_create_writer_options(&options)?;
+                let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
                 let (summary, bootstrap_sidecar) = write_raw_stdin_archive_output(
                     &output,
                     spool_reader,
@@ -289,11 +306,11 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
                     force,
                 )?;
                 let summary_text = format!(
-                            "created 1 member(s), {} spooled raw bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
+                            "created 1 member(s), {} spooled raw bytes in, {} archive bytes, {} volume(s), {}, bit-rot buffer {}%",
                             summary.input_bytes,
                             summary.archive.archive_bytes,
                             summary.archive.volume_count,
-                            resolved_volume_loss_tolerance,
+                            fec_fragment,
                             bit_rot_buffer_pct
                         );
                 (bootstrap_sidecar, summary_text, summary.archive.timings)
@@ -379,6 +396,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
     }
 
     if let Some(recipient_cert_path) = recipient_cert.as_deref() {
+        let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
         let mut recipient_options = options;
         let master_key = generate_random_master_key()?;
         let recipient_record =
@@ -414,12 +432,12 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
         }
         let write_outputs = write_outputs_started.elapsed();
         let summary = format!(
-                    "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
+                    "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), {}, bit-rot buffer {}%",
                     input_specs.len(),
                     input_bytes,
                     archive.archive_bytes,
                     archive.volume_count,
-                    resolved_volume_loss_tolerance,
+                    fec_fragment,
                     bit_rot_buffer_pct
                 );
         emit_success_summary(quiet, &summary)?;
@@ -470,6 +488,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
         && options.target_volume_size.is_none()
         && options.volume_loss_tolerance == 0
     {
+        let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
         let core_writer_started = Instant::now();
         let (archive, bootstrap_sidecar) = write_file_inputs_ordered_parallel_to_output(
             &output,
@@ -501,12 +520,12 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
         }
         let write_outputs = write_outputs_started.elapsed();
         let summary = format!(
-                    "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
+                    "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), {}, bit-rot buffer {}%",
                     input_specs.len(),
                     input_bytes,
                     archive.archive_bytes,
                     archive.volume_count,
-                    resolved_volume_loss_tolerance,
+                    fec_fragment,
                     bit_rot_buffer_pct
                 );
         emit_success_summary(quiet, &summary)?;
@@ -532,6 +551,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
     let read_inputs = Duration::default();
     let core_writer_started = Instant::now();
     let mut archive_sink = MemoryArchiveSink::default();
+    let fec_fragment = create_summary_fec_fragment(&options, resolved_volume_loss_tolerance);
     let archive = if let (Some(root_auth), Some(profile)) = (root_auth, root_auth_profile.as_ref())
     {
         let mut authenticator =
@@ -581,12 +601,12 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
     )?;
     let write_outputs = write_outputs_started.elapsed();
     let summary = format!(
-                "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), volume-loss tolerance {}, bit-rot buffer {}%",
+                "created {} member(s), {} bytes in, {} archive bytes, {} volume(s), {}, bit-rot buffer {}%",
                 input_specs.len(),
                 input_bytes,
                 archive_sink.volumes.iter().map(|volume| volume.len() as u64).sum::<u64>(),
                 archive_sink.volumes.len(),
-                resolved_volume_loss_tolerance,
+                fec_fragment,
                 bit_rot_buffer_pct
             );
     emit_success_summary(quiet, &summary)?;

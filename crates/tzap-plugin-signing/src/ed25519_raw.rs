@@ -293,6 +293,131 @@ mod tests {
         );
     }
 
+    fn footer_for_request(
+        signing_key: &SigningKey,
+        request: &RootAuthSigningRequest,
+    ) -> RootAuthFooterV1 {
+        let public_key = signing_key.verifying_key().to_bytes();
+        let value = authenticator_value_for_request(signing_key, request);
+        RootAuthFooterV1 {
+            archive_uuid: request.archive_uuid,
+            session_id: request.session_id,
+            format_version: FORMAT_VERSION,
+            volume_format_rev: VOLUME_FORMAT_REV,
+            authenticator_id: ED25519_AUTHENTICATOR_ID,
+            signer_identity_type: 1,
+            signer_identity_bytes: public_key.to_vec(),
+            authenticator_value: value.to_vec(),
+            total_data_block_count: 0,
+            critical_metadata_digest: [0; 32],
+            index_digest: [0; 32],
+            fec_layout_digest: [0; 32],
+            data_block_merkle_root: [0; 32],
+            signer_identity_digest: [0; 32],
+            archive_root: request.archive_root,
+            footer_crc32c: 0,
+        }
+    }
+
+    #[test]
+    fn strict_profile_negatives_all_rejected_as_invalid() {
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let public_key = signing_key.verifying_key().to_bytes();
+        let request = RootAuthSigningRequest {
+            root_auth_spec_id: ROOT_AUTH_SPEC_ID,
+            archive_uuid: [1; 16],
+            session_id: [2; 16],
+            archive_root: [3; 32],
+        };
+        let footer = footer_for_request(&signing_key, &request);
+
+        // Non-canonical trusted key (sign bit set) -> Invalid.
+        assert_eq!(
+            verify_root_auth_footer(
+                &footer,
+                &request.archive_root,
+                Some([0xFF; 32]),
+                Ed25519VerificationMode::KeyHoldingRootAuth,
+            ),
+            Ed25519RootAuthOutcome::Invalid
+        );
+
+        // Small-order trusted key (identity point, y=1) -> Invalid.
+        let mut small_order = [0u8; 32];
+        small_order[0] = 1;
+        assert_eq!(
+            verify_root_auth_footer(
+                &footer,
+                &request.archive_root,
+                Some(small_order),
+                Ed25519VerificationMode::KeyHoldingRootAuth,
+            ),
+            Ed25519RootAuthOutcome::Invalid
+        );
+
+        // Flipped archive_root: footer signed for root A, verified with root B.
+        let mut wrong_root = request.archive_root;
+        wrong_root[0] ^= 0x01;
+        assert_eq!(
+            verify_root_auth_footer(
+                &footer,
+                &wrong_root,
+                Some(public_key),
+                Ed25519VerificationMode::KeyHoldingRootAuth,
+            ),
+            Ed25519RootAuthOutcome::Invalid
+        );
+
+        // Non-canonical R (first 32 bytes of the signature set to 0xFF).
+        let mut bad_r_footer = footer.clone();
+        bad_r_footer.authenticator_value[4..36].copy_from_slice(&[0xFF; 32]);
+        assert_eq!(
+            verify_root_auth_footer(
+                &bad_r_footer,
+                &request.archive_root,
+                Some(public_key),
+                Ed25519VerificationMode::KeyHoldingRootAuth,
+            ),
+            Ed25519RootAuthOutcome::Invalid
+        );
+
+        // Non-canonical S (last 32 bytes of the signature set to 0xFF, >= L).
+        let mut bad_s_footer = footer.clone();
+        bad_s_footer.authenticator_value[36..68].copy_from_slice(&[0xFF; 32]);
+        assert_eq!(
+            verify_root_auth_footer(
+                &bad_s_footer,
+                &request.archive_root,
+                Some(public_key),
+                Ed25519VerificationMode::KeyHoldingRootAuth,
+            ),
+            Ed25519RootAuthOutcome::Invalid
+        );
+    }
+
+    #[test]
+    fn type_one_identity_length_mismatch_is_invalid() {
+        // §10.6: signer_identity_type 1 requires exactly 32 identity bytes.
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let request = RootAuthSigningRequest {
+            root_auth_spec_id: ROOT_AUTH_SPEC_ID,
+            archive_uuid: [1; 16],
+            session_id: [2; 16],
+            archive_root: [3; 32],
+        };
+        let mut footer = footer_for_request(&signing_key, &request);
+        footer.signer_identity_bytes = vec![0x42; 16];
+        assert_eq!(
+            verify_root_auth_footer(
+                &footer,
+                &request.archive_root,
+                None,
+                Ed25519VerificationMode::KeyHoldingRootAuth,
+            ),
+            Ed25519RootAuthOutcome::Invalid
+        );
+    }
+
     #[test]
     fn v45_footer_uses_core_archive_root_and_rejects_wrong_spec_id() {
         let signing_key = SigningKey::generate(&mut OsRng);

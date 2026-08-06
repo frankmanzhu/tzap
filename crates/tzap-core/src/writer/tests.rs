@@ -1,4 +1,4 @@
-use super::envelope::{MIN_BLOCK_SIZE, TAR_BLOCK_LEN};
+use super::envelope::{build_crypto_header, MIN_BLOCK_SIZE, TAR_BLOCK_LEN};
 use super::*;
 use crate::crypto::*;
 use crate::entry_metadata::*;
@@ -2957,4 +2957,94 @@ fn test_file_row(idx: usize, path_hash: [u8; 8]) -> FileRow {
             portable_metadata: PortableFileMetadata::default(),
         },
     }
+}
+
+#[test]
+fn crypto_header_extension_area_emits_only_terminator() {
+    // F10: the writer must never emit extension TLVs; the extension area is
+    // exactly the 6-byte terminator (tag 0x0000, length 0x00000000).
+    let options = plan_writer_options(WriterOptions {
+        aead_algo: AeadAlgo::None,
+        block_size: MIN_BLOCK_SIZE,
+        stripe_width: 1,
+        volume_loss_tolerance: 0,
+        bit_rot_buffer_pct: 0,
+        index_root_fec_parity_shards: 0,
+        ..WriterOptions::default()
+    })
+    .unwrap();
+    let subkeys = Subkeys::unencrypted_placeholder();
+    let archive_uuid = [1u8; 16];
+    let session_id = [2u8; 16];
+    let volume_format_rev = volume_format_revision_for_options(&options, &KdfParams::None);
+    let header = build_crypto_header(
+        options,
+        volume_format_rev,
+        false,
+        &subkeys,
+        &archive_uuid,
+        &session_id,
+        &KdfParams::None,
+    )
+    .unwrap();
+
+    let kdf_payload = serialize_kdf_params(&KdfParams::None).unwrap();
+    let extension_start = CRYPTO_HEADER_FIXED_LEN + kdf_payload.len();
+    let extension = &header[extension_start..extension_start + CRYPTO_EXTENSION_HEADER_LEN];
+    assert_eq!(extension, &[0u8; CRYPTO_EXTENSION_HEADER_LEN]);
+    assert_eq!(header.len(), extension_start + CRYPTO_EXTENSION_HEADER_LEN + CRYPTO_HEADER_HMAC_LEN);
+
+    let extensions = scan_crypto_extension_tlvs(extension).unwrap();
+    assert!(extensions.is_empty());
+}
+
+#[test]
+fn writer_rejects_loss_tolerance_at_or_above_stripe_width() {
+    // F10: N >= V must be rejected at option-planning time.
+    for stripe_width in [2u32, 8] {
+        for volume_loss_tolerance in [stripe_width as u8, stripe_width as u8 + 1] {
+            let err = plan_writer_options(WriterOptions {
+                block_size: MIN_BLOCK_SIZE,
+                stripe_width,
+                volume_loss_tolerance,
+                ..WriterOptions::default()
+            })
+            .unwrap_err();
+            assert!(
+                matches!(err, FormatError::WriterUnsupported(message) if message == "volume_loss_tolerance must be less than stripe_width"),
+                "expected rejection for stripe_width={stripe_width} volume_loss_tolerance={volume_loss_tolerance}"
+            );
+        }
+    }
+}
+
+#[test]
+fn seekable_dictionary_extent_requires_non_zero_extent_fields() {
+    // F10: core-side pin of the seekable dictionary-extent error message; the
+    // CLI verify path already pins the same message.
+    let index_root = IndexRoot {
+        header: IndexRootHeader {
+            version: 1,
+            shard_count: 1,
+            directory_hint_shard_count: 0,
+            frame_count: 0,
+            envelope_count: 0,
+            file_count: 0,
+            payload_block_count: 0,
+            tar_total_size: 0,
+            content_sha256: [0u8; 32],
+            shard_table_offset: 0,
+            directory_hint_shard_table_offset: 0,
+            dictionary_first_block: 0,
+            dictionary_data_block_count: 0,
+            dictionary_parity_block_count: 0,
+            dictionary_encrypted_size: 0,
+            dictionary_decompressed_size: 0,
+        },
+        shards: Vec::new(),
+        directory_hint_shards: Vec::new(),
+    };
+    let err = crate::reader::validation::dictionary_extent_from_index_root(&index_root)
+        .unwrap_err();
+    assert!(matches!(err, FormatError::InvalidArchive(message) if message == "dictionary extent missing from IndexRoot"));
 }

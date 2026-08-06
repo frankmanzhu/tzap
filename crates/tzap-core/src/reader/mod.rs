@@ -1035,7 +1035,7 @@ impl OpenedArchive {
             Some(footer) => footer,
             None => {
                 return Err(manifest_footer_error.unwrap_or(FormatError::InvalidArchive(
-                    "no authenticated ManifestFooter found",
+                    "no verified ManifestFooter found",
                 )));
             }
         };
@@ -1124,7 +1124,7 @@ impl OpenedArchive {
             Some(footer) => footer,
             None => {
                 return Err(parsed.manifest_footer_error.take().unwrap_or(
-                    FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+                    FormatError::InvalidArchive("no verified ManifestFooter found"),
                 ));
             }
         };
@@ -1351,13 +1351,13 @@ impl OpenedArchive {
         let first = first.ok_or(FormatError::InvalidArchive("no volumes supplied"))?;
         let manifest_footer = manifest_authority.ok_or(match first_manifest_footer_error {
             Some(err) => err,
-            None => FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            None => FormatError::InvalidArchive("no verified ManifestFooter found"),
         })?;
         let authority_volume_header = manifest_authority_volume_header.ok_or(
-            FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            FormatError::InvalidArchive("no verified ManifestFooter found"),
         )?;
         let authority_volume_trailer = manifest_authority_volume_trailer.ok_or(
-            FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            FormatError::InvalidArchive("no verified ManifestFooter found"),
         )?;
         let observed_volume_count = u32::try_from(seen_volume_indexes.len())
             .map_err(|_| FormatError::InvalidArchive("volume count overflow"))?;
@@ -1529,13 +1529,13 @@ impl OpenedArchive {
         let first = first.ok_or(FormatError::InvalidArchive("no volumes supplied"))?;
         let manifest_footer = manifest_authority.ok_or(match first_manifest_footer_error {
             Some(err) => err,
-            None => FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            None => FormatError::InvalidArchive("no verified ManifestFooter found"),
         })?;
         let authority_volume_header = manifest_authority_volume_header.ok_or(
-            FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            FormatError::InvalidArchive("no verified ManifestFooter found"),
         )?;
         let authority_volume_trailer = manifest_authority_volume_trailer.ok_or(
-            FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            FormatError::InvalidArchive("no verified ManifestFooter found"),
         )?;
         let observed_volume_count = u32::try_from(seen_volume_indexes.len())
             .map_err(|_| FormatError::InvalidArchive("volume count overflow"))?;
@@ -1752,13 +1752,13 @@ impl OpenedArchive {
         let first = first.ok_or(FormatError::InvalidArchive("no volumes supplied"))?;
         let manifest_footer = manifest_authority.ok_or(match first_manifest_footer_error {
             Some(err) => err,
-            None => FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            None => FormatError::InvalidArchive("no verified ManifestFooter found"),
         })?;
         let authority_volume_header = manifest_authority_volume_header.ok_or(
-            FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            FormatError::InvalidArchive("no verified ManifestFooter found"),
         )?;
         let authority_volume_trailer = manifest_authority_volume_trailer.ok_or(
-            FormatError::InvalidArchive("no authenticated ManifestFooter found"),
+            FormatError::InvalidArchive("no verified ManifestFooter found"),
         )?;
         let observed_volume_count = u32::try_from(seen_volume_indexes.len())
             .map_err(|_| FormatError::InvalidArchive("volume count overflow"))?;

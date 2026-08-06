@@ -2503,7 +2503,7 @@ fn open_or_create_safe_child_dir(parent: &CapDir, component: &str) -> Result<Cap
         Err(_) => return Err(FormatError::UnsafeArchivePath),
     }
 
-    match parent.create_dir(component) {
+    match create_dir_restrictive(parent, component) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(_) => {
@@ -3720,8 +3720,30 @@ pub(crate) fn remove_existing_leaf_if_needed(
     }
 }
 
+/// Creates a directory with temporary restrictive permissions per §16.13
+/// phase 3; the final mode is applied deepest-first at archive end, so the
+/// tree is not world-readable while extraction is still in progress.
+/// On non-Unix platforms this is a plain `create_dir`.
+fn create_dir_restrictive<P: AsRef<std::path::Path>>(
+    parent: &CapDir,
+    leaf: P,
+) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use cap_std::fs::DirBuilder;
+        use cap_std::fs::DirBuilderExt as _;
+        let mut builder = DirBuilder::new();
+        builder.mode(0o700);
+        parent.create_dir_with(leaf, &builder)
+    }
+    #[cfg(not(unix))]
+    {
+        parent.create_dir(leaf)
+    }
+}
+
 pub(crate) fn create_directory(destination: &PreparedDestination) -> Result<(), FormatError> {
-    match destination.parent.create_dir(&destination.leaf) {
+    match create_dir_restrictive(&destination.parent, &destination.leaf) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             let metadata = destination

@@ -1167,6 +1167,87 @@ mod tests {
     }
 
     #[test]
+    fn header_field_mutations_rejected_as_invalid_record() {
+        // §8 profile-payload header negatives: wrong version, non-zero flags,
+        // and non-zero reserved bytes must all be rejected as InvalidRecord.
+        let cert_der = test_certificate_der();
+        let identity = parse_x509_recipient_identity(&cert_der).unwrap();
+        let archive_identity = archive_identity();
+        let metadata = RecipientRecordMetadata {
+            profile_id: KEYWRAP_PROFILE_ID,
+            recipient_identity_type: KEYWRAP_RECIPIENT_IDENTITY_TYPE_BYTES,
+            recipient_identity_digest: identity.recipient_identity_digest,
+        };
+        let suite =
+            HpkeSuite::for_profile(X25519_KEM_ID, HKDF_SHA256_KDF_ID, CHACHA20POLY1305_AEAD_ID)
+                .unwrap();
+
+        // payload_version != 1 (bytes 0..2)
+        let mut payload = make_payload(&archive_identity, &metadata, &identity, suite);
+        payload[0..2].copy_from_slice(&2u16.to_le_bytes());
+        assert!(matches!(
+            dispatch_key_wrap_record(
+                recipient_record_input_with_payload(payload, &cert_der),
+                &NoMatchLookup
+            ),
+            KeyWrapOutcome::InvalidRecord
+        ));
+
+        // flags != 0 (bytes 12..16)
+        let mut payload = make_payload(&archive_identity, &metadata, &identity, suite);
+        payload[12..16].copy_from_slice(&1u32.to_le_bytes());
+        assert!(matches!(
+            dispatch_key_wrap_record(
+                recipient_record_input_with_payload(payload, &cert_der),
+                &NoMatchLookup
+            ),
+            KeyWrapOutcome::InvalidRecord
+        ));
+
+        // reserved bytes 48..64 non-zero
+        let mut payload = make_payload(&archive_identity, &metadata, &identity, suite);
+        payload[48] = 0x01;
+        assert!(matches!(
+            dispatch_key_wrap_record(
+                recipient_record_input_with_payload(payload, &cert_der),
+                &NoMatchLookup
+            ),
+            KeyWrapOutcome::InvalidRecord
+        ));
+    }
+
+    #[test]
+    fn concatenated_certificate_bytes_rejected_as_invalid_record() {
+        // §13 v8 multi-certificate recipient identity: concatenated DER
+        // certificates must be rejected, not silently interpreted.
+        let cert_der = test_certificate_der();
+        let mut concatenated = cert_der.clone();
+        concatenated.extend_from_slice(&test_certificate_der());
+        let identity_digest = sha256_digest(&concatenated);
+        let archive_identity = archive_identity();
+        let metadata = RecipientRecordMetadata {
+            profile_id: KEYWRAP_PROFILE_ID,
+            recipient_identity_type: KEYWRAP_RECIPIENT_IDENTITY_TYPE_BYTES,
+            recipient_identity_digest: identity_digest,
+        };
+        let identity = parse_x509_recipient_identity(&cert_der).unwrap();
+        let suite =
+            HpkeSuite::for_profile(X25519_KEM_ID, HKDF_SHA256_KDF_ID, CHACHA20POLY1305_AEAD_ID)
+                .unwrap();
+        let payload = make_payload(&archive_identity, &metadata, &identity, suite);
+        let input = RecipientRecordInput {
+            archive_identity,
+            metadata,
+            recipient_identity_bytes: concatenated,
+            profile_payload_bytes: payload,
+        };
+
+        let result = dispatch_key_wrap_record(input, &NoMatchLookup);
+
+        assert!(matches!(result, KeyWrapOutcome::InvalidRecord));
+    }
+
+    #[test]
     fn wrong_context_digest_is_invalid_record() {
         let (cert_der, private_key) = x25519_recipient_material();
         let identity = parse_x509_recipient_identity(&cert_der).unwrap();
