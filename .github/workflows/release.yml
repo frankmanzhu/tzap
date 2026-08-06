@@ -17,6 +17,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
+      - name: Check version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if ! [[ "$TAG_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not look like a semver tag"
+            exit 1
+          fi
+          failed=0
+          for manifest in \
+            crates/tzap-core/Cargo.toml \
+            crates/tzap-cli/Cargo.toml \
+            crates/tzap-plugin-keywrap/Cargo.toml \
+            crates/tzap-plugin-signing/Cargo.toml
+          do
+            crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$manifest")"
+            if [ "$crate_version" != "$TAG_VERSION" ]; then
+              echo "::error::$manifest declares version $crate_version but tag is $TAG_VERSION"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Bump the crate versions above to $TAG_VERSION, commit, and re-tag before releasing."
+            exit 1
+          fi
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:

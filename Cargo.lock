@@ -1653,7 +1653,7 @@ checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "tzap"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1679,7 +1679,7 @@ dependencies = [
 
 [[package]]
 name = "tzap-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aes-gcm",
  "aes-gcm-siv",
@@ -1708,7 +1708,7 @@ dependencies = [
 
 [[package]]
 name = "tzap-plugin-keywrap"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "hpke",
  "openssl",
@@ -1720,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "tzap-plugin-signing"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ed25519-dalek",
  "openssl",
