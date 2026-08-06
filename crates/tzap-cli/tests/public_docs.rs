@@ -436,7 +436,7 @@ fn public_docs_keep_boundaries_out_of_readme_marketing() {
     let readme = read_workspace_file("README.md");
     let reference = read_workspace_file("public-docs/tzap-cli-reference.md");
     let boundaries = read_workspace_file("public-docs/tzap-operational-boundaries.md");
-    let writer = read_workspace_file("crates/tzap-core/src/writer.rs");
+    let writer = read_workspace_file("crates/tzap-core/src/writer/mod.rs");
     let reader = read_workspace_file("crates/tzap-core/src/reader.rs");
     let cli = read_workspace_file("crates/tzap-cli/src/main.rs");
 
