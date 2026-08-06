@@ -500,7 +500,7 @@ fn rename_open_file_noreplace(
 pub(crate) fn publish_regular_file(
     destination: &PreparedDestination,
     temp_leaf: &Path,
-    mut temp_file: fs::File,
+    temp_file: fs::File,
     options: SafeExtractionOptions,
 ) -> Result<fs::File, FormatError> {
     if options.overwrite_existing {
@@ -580,6 +580,11 @@ pub(crate) fn publish_regular_file(
             ));
         }
     };
+
+    // The Windows and Linux publish paths never mutate `temp_file`, so the parameter is
+    // declared without `mut`; the copy-based path rebinds it mutable.
+    #[cfg(all(not(windows), not(target_os = "linux")))]
+    let mut temp_file = temp_file;
 
     #[cfg(all(not(windows), not(target_os = "linux")))]
     let copy_result = temp_file
