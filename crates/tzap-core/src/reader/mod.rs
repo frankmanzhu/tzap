@@ -11,7 +11,7 @@ use crate::entry_metadata::ArchiveTimestamp;
 use crate::fec::{encode_parity_gf16, repair_data_gf16};
 use crate::format::{
     AeadAlgo, BlockKind, ExtractError, FormatError, KdfAlgo, VolumeFormatRevision,
-    CRYPTO_HEADER_HMAC_LEN, MASTER_KEY_LEN, VOLUME_HEADER_LEN,
+    CRYPTO_HEADER_HMAC_LEN, MASTER_KEY_LEN, READER_MAX_ENVELOPE_TARGET_SIZE, VOLUME_HEADER_LEN,
 };
 use crate::metadata::{
     normalize_lookup_file_path, DirectoryHintShardEntry, DirectoryHintTable, EnvelopeEntry,
@@ -3646,9 +3646,10 @@ impl OpenedArchive {
             .files
             .get(file_index)
             .ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
-        if enforce_extraction_cap {
-            self.validate_total_extraction_size(file.file_data_size)?;
-        }
+        // Always enforce the extraction cap: this path materializes the file's full
+        // decompressed content into memory regardless of enforce_extraction_cap, so the
+        // cap protects list/verify metadata passes just as much as extraction.
+        self.validate_total_extraction_size(file.file_data_size)?;
         let expected_path = shard
             .file_path(file_index)
             .ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
@@ -4030,6 +4031,16 @@ impl OpenedArchive {
         decompressed_size: u32,
     ) -> Result<Vec<u8>, FormatError> {
         validate_exact_zstd_frame(compressed)?;
+        // Bound the allocation before zstd sees the untrusted size: the writer frames
+        // payloads at envelope_target_size (≤ READER_MAX_ENVELOPE_TARGET_SIZE) before
+        // compression, so any larger declared frame is corrupt or hostile.
+        if decompressed_size as u64 > READER_MAX_ENVELOPE_TARGET_SIZE as u64 {
+            return Err(FormatError::ReaderResourceLimitExceeded {
+                field: "FrameEntry.decompressed_size",
+                cap: READER_MAX_ENVELOPE_TARGET_SIZE as u64,
+                actual: decompressed_size as u64,
+            });
+        }
         let expected = decompressed_size as usize;
         let decoded = decompressor
             .decompress(compressed, expected)

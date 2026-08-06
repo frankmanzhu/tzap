@@ -1382,6 +1382,14 @@ pub(crate) fn validate_envelope_frame_coverage(
                 .ok_or(FormatError::InvalidArchive(
                     "EnvelopeEntry frame range overflow",
                 ))?;
+        // Bound the allocation by the actual frame table before with_capacity: a crafted
+        // frame_count far larger than the table would otherwise force a multi-GiB
+        // allocation that the coverage loop below would only then reject.
+        if envelope.frame_count as u64 > frames.len() as u64 {
+            return Err(FormatError::InvalidArchive(
+                "EnvelopeEntry references missing FrameEntry",
+            ));
+        }
         let mut ranges = Vec::with_capacity(envelope.frame_count as usize);
         for frame_index in first..end {
             let frame = frames.get(&frame_index).ok_or(FormatError::InvalidArchive(

@@ -1,4 +1,4 @@
-use crate::format::FormatError;
+use crate::format::{FormatError, READER_MAX_METADATA_OBJECT_SIZE};
 
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 
@@ -111,10 +111,10 @@ pub fn validate_exact_zstd_frame(compressed: &[u8]) -> Result<(), FormatError> {
 fn validate_metadata_decompressed_size(
     expected_decompressed_size: usize,
 ) -> Result<(), FormatError> {
-    if expected_decompressed_size > u32::MAX as usize {
+    if expected_decompressed_size > READER_MAX_METADATA_OBJECT_SIZE as usize {
         Err(FormatError::ReaderResourceLimitExceeded {
             field: "decompressed_size",
-            cap: u32::MAX as u64,
+            cap: READER_MAX_METADATA_OBJECT_SIZE as u64,
             actual: expected_decompressed_size as u64,
         })
     } else {
@@ -179,8 +179,22 @@ mod tests {
             decompress_exact_zstd_frame(&compressed, (u32::MAX as usize) + 1).unwrap_err(),
             FormatError::ReaderResourceLimitExceeded {
                 field: "decompressed_size",
-                cap: u32::MAX as u64,
+                cap: READER_MAX_METADATA_OBJECT_SIZE as u64,
                 actual: (u32::MAX as u64) + 1,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_decompressed_size_over_metadata_object_cap() {
+        let compressed = compress_zstd_frame(b"metadata-object", 1).unwrap();
+        let over_cap = READER_MAX_METADATA_OBJECT_SIZE as usize + 1;
+        assert_eq!(
+            decompress_exact_zstd_frame(&compressed, over_cap).unwrap_err(),
+            FormatError::ReaderResourceLimitExceeded {
+                field: "decompressed_size",
+                cap: READER_MAX_METADATA_OBJECT_SIZE as u64,
+                actual: over_cap as u64,
             }
         );
     }

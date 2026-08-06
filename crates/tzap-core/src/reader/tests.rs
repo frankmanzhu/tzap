@@ -11,8 +11,9 @@ use crate::format::{
     BOOTSTRAP_SIDECAR_HEADER_LEN, CRITICAL_METADATA_RECOVERY_HEADER_LEN,
     CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN, CRITICAL_RECOVERY_LOCATOR_LEN,
     CRYPTO_EXTENSION_HEADER_LEN, CRYPTO_HEADER_FIXED_LEN, FORMAT_VERSION, LOCATOR_PAIR_LEN,
-    MANIFEST_FOOTER_LEN, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV,
-    VOLUME_FORMAT_REV_45, VOLUME_TRAILER_LEN,
+    MANIFEST_FOOTER_LEN, READER_MAX_ENVELOPE_TARGET_SIZE, READER_MAX_METADATA_OBJECT_SIZE,
+    READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45,
+    VOLUME_TRAILER_LEN,
 };
 use crate::metadata::{
     hash_prefix, DirectoryHintEntry, DirectoryHintTableHeader, IndexRootHeader, IndexShardHeader,
@@ -5064,6 +5065,163 @@ fn verify_helper_rejects_file_extent_gaps_and_overlaps() {
     assert_eq!(
         validate_file_extent_coverage_ranges(&[(0, 1024), (512, 512)], 1024).unwrap_err(),
         FormatError::InvalidArchive("FileEntry extents do not cover tar stream exactly")
+    );
+}
+
+#[test]
+fn verify_helper_rejects_envelope_frame_count_exceeding_table_before_allocation() {
+    // Regression: an unvalidated u32 frame_count drove Vec::with_capacity to ~34 GiB
+    // before the coverage loop rejected the missing FrameEntry. The early bound check
+    // must error cleanly with no large allocation.
+    let frames = BTreeMap::from([(
+        0,
+        FrameEntry {
+            frame_index: 0,
+            envelope_index: 0,
+            offset_in_envelope: 0,
+            compressed_size: 10,
+            decompressed_size: 512,
+            flags: 0,
+            tar_stream_offset: 0,
+        },
+    )]);
+    let envelopes = BTreeMap::from([(
+        0,
+        EnvelopeEntry {
+            envelope_index: 0,
+            first_block_index: 0,
+            data_block_count: 1,
+            parity_block_count: 1,
+            encrypted_size: 4096,
+            plaintext_size: 11,
+            first_frame_index: 0,
+            frame_count: u32::MAX,
+        },
+    )]);
+
+    assert_eq!(
+        validate_envelope_frame_coverage(&frames, &envelopes).unwrap_err(),
+        FormatError::InvalidArchive("EnvelopeEntry references missing FrameEntry")
+    );
+}
+
+#[test]
+fn verify_helper_envelope_frame_count_bound_keeps_in_range_counts() {
+    // The early frame_count <= frames.len() bound must not reject an envelope whose
+    // count fits the table even when the referenced range itself is missing; that case
+    // still falls through to the per-frame loop and the same diagnostic.
+    let frames = BTreeMap::from([(
+        10,
+        FrameEntry {
+            frame_index: 10,
+            envelope_index: 0,
+            offset_in_envelope: 0,
+            compressed_size: 10,
+            decompressed_size: 512,
+            flags: 0,
+            tar_stream_offset: 0,
+        },
+    )]);
+    let envelopes = BTreeMap::from([(
+        0,
+        EnvelopeEntry {
+            envelope_index: 0,
+            first_block_index: 0,
+            data_block_count: 1,
+            parity_block_count: 1,
+            encrypted_size: 4096,
+            plaintext_size: 11,
+            first_frame_index: 20,
+            frame_count: 1,
+        },
+    )]);
+
+    assert_eq!(
+        validate_envelope_frame_coverage(&frames, &envelopes).unwrap_err(),
+        FormatError::InvalidArchive("EnvelopeEntry references missing FrameEntry")
+    );
+}
+
+#[test]
+fn verify_rejects_frame_decompressed_size_over_envelope_target_cap() {
+    // Regression: frame.decompressed_size (raw u32) was passed as the zstd bulk-decode
+    // capacity, forcing a multi-GiB allocation before any cap check. Must error with a
+    // resource-limit diagnostic, not OOM.
+    let (mut opened, _) = multi_envelope_reader_fixture();
+    replace_first_index_shard(&mut opened, |shard| {
+        // Mutate only the last frame so the tar-stream-offset packing check (which
+        // walks previous frames' sizes) still passes and the scan reaches the
+        // decompression cap.
+        let last = shard.frames.last_mut().unwrap();
+        last.decompressed_size = u32::MAX;
+    });
+
+    assert_eq!(
+        opened.verify().unwrap_err(),
+        FormatError::ReaderResourceLimitExceeded {
+            field: "FrameEntry.decompressed_size",
+            cap: READER_MAX_ENVELOPE_TARGET_SIZE as u64,
+            actual: u32::MAX as u64,
+        }
+    );
+}
+
+#[test]
+fn list_files_rejects_file_exceeding_total_extraction_cap_in_metadata_only_mode() {
+    // Regression: list_files decoded with enforce_extraction_cap = false, skipping the
+    // total-extraction-size cap even though the full decompressed content is
+    // materialized. A tiny fixture archive caps extraction at 10x its bytes, so a 1 MiB
+    // claimed file must be rejected cleanly rather than decoded.
+    let (mut opened, _) = multi_envelope_reader_fixture();
+    replace_first_index_shard(&mut opened, |shard| {
+        // The fixture observes 1_000_000 archive bytes, so the extraction cap is
+        // 10 MiB; claim 16 MiB.
+        shard.files[0].file_data_size = 1 << 24;
+    });
+
+    assert_eq!(
+        opened.list_files().unwrap_err(),
+        FormatError::ReaderUnsupported("total extraction size exceeds configured cap")
+    );
+}
+
+#[test]
+fn load_metadata_object_rejects_oversized_declared_size_before_allocation() {
+    // Regression: index metadata objects capped only at u32::MAX forced ~4 GiB
+    // allocations at open from crafted declared sizes. Must fail with the per-object
+    // resource-limit cap before zstd sees the size.
+    let volume_header = test_volume_header();
+    let crypto_header = test_crypto_header();
+    let subkeys = Subkeys::derive(
+        &master_key(),
+        &volume_header.archive_uuid,
+        &volume_header.session_id,
+    )
+    .unwrap();
+    let mut next_block_index = 0u64;
+
+    let index_root_payload = b"index root metadata object";
+    let index_root_compressed = compress_zstd_frame(index_root_payload, 1).unwrap();
+    assert_metadata_object_from_compressed(
+        &index_root_compressed,
+        u32::MAX as usize,
+        &subkeys,
+        &volume_header,
+        &crypto_header,
+        &subkeys.index_root_key,
+        &subkeys.index_nonce_seed,
+        b"idxroot",
+        0,
+        BlockKind::IndexRootData,
+        BlockKind::IndexRootParity,
+        crypto_header.index_root_fec_data_shards,
+        crypto_header.index_root_fec_parity_shards,
+        &mut next_block_index,
+        FormatError::ReaderResourceLimitExceeded {
+            field: "decompressed_size",
+            cap: READER_MAX_METADATA_OBJECT_SIZE as u64,
+            actual: u32::MAX as u64,
+        },
     );
 }
 
