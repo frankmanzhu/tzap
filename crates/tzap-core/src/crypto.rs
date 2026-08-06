@@ -11,9 +11,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use aes_gcm_siv::aead::{Aead, KeyInit as AeadKeyInit, Payload};
 
 use crate::format::{
-    AeadAlgo, FormatError, KdfAlgo, MASTER_KEY_LEN, READER_MAX_ARGON2ID_M_COST_KIB,
-    READER_MAX_ARGON2ID_PARALLELISM, READER_MAX_ARGON2ID_T_COST, READER_MAX_KEY_WRAP_TABLE_LEN,
-    READER_MAX_KEY_WRAP_TABLE_RECIPIENT_RECORDS, SUBKEY_LEN,
+    AeadAlgo, FormatError, KdfAlgo, MASTER_KEY_LEN, READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT,
+    READER_MAX_ARGON2ID_M_COST_KIB, READER_MAX_ARGON2ID_PARALLELISM, READER_MAX_ARGON2ID_T_COST,
+    READER_MAX_KEY_WRAP_TABLE_LEN, READER_MAX_KEY_WRAP_TABLE_RECIPIENT_RECORDS, SUBKEY_LEN,
 };
 use crate::padding::{depad_suffix_padding, suffix_pad_for_aead};
 
@@ -670,6 +670,19 @@ fn validate_argon2id_bounds(
             actual: m_cost_kib as u64,
         });
     }
+    // Individual caps allow e.g. 4 GiB × 100 passes (~400 GiB of memory traffic) —
+    // a pre-authentication DoS since KDF params are inherently unauthenticated.
+    // Bound the m × t work product as well.
+    let memory_time_product = u64::from(t_cost).checked_mul(u64::from(m_cost_kib)).ok_or(
+        FormatError::InvalidKdfParams("argon2id work product overflow"),
+    )?;
+    if memory_time_product > READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT as u64 {
+        return Err(FormatError::ReaderResourceLimitExceeded {
+            field: "argon2id m_cost_kib × t_cost",
+            cap: READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT as u64,
+            actual: memory_time_product,
+        });
+    }
     let min_memory = parallelism
         .checked_mul(8)
         .ok_or(FormatError::InvalidKdfParams(
@@ -939,6 +952,40 @@ mod tests {
                 actual: (READER_MAX_ARGON2ID_M_COST_KIB + 1) as u64,
             }
         );
+    }
+
+    #[test]
+    fn rejects_argon2id_product_of_m_cost_and_t_cost_over_reader_cap() {
+        // Regression: 4 GiB × 100 passes are each within the individual caps but force
+        // ~400 GiB of memory traffic per open before authentication. The m × t product
+        // bound must reject them as a pre-authentication DoS vector.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(KdfAlgo::Argon2id as u16).to_le_bytes());
+        bytes.extend_from_slice(&READER_MAX_ARGON2ID_T_COST.to_le_bytes());
+        bytes.extend_from_slice(&READER_MAX_ARGON2ID_M_COST_KIB.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&8u16.to_le_bytes());
+        bytes.extend_from_slice(b"12345678");
+
+        assert_eq!(
+            KdfParams::parse(KdfAlgo::Argon2id, &bytes).unwrap_err(),
+            FormatError::ReaderResourceLimitExceeded {
+                field: "argon2id m_cost_kib × t_cost",
+                cap: READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT as u64,
+                actual: u64::from(READER_MAX_ARGON2ID_T_COST)
+                    * u64::from(READER_MAX_ARGON2ID_M_COST_KIB),
+            }
+        );
+
+        // The RFC 9106-style default (64 MiB × 3) stays well under the product cap.
+        let mut ok_bytes = Vec::new();
+        ok_bytes.extend_from_slice(&(KdfAlgo::Argon2id as u16).to_le_bytes());
+        ok_bytes.extend_from_slice(&3u32.to_le_bytes());
+        ok_bytes.extend_from_slice(&(64u32 * 1024).to_le_bytes());
+        ok_bytes.extend_from_slice(&1u32.to_le_bytes());
+        ok_bytes.extend_from_slice(&8u16.to_le_bytes());
+        ok_bytes.extend_from_slice(b"12345678");
+        assert!(KdfParams::parse(KdfAlgo::Argon2id, &ok_bytes).is_ok());
     }
 
     #[test]

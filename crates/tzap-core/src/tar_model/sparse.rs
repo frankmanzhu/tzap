@@ -1,5 +1,5 @@
 use super::restore::{
-    create_new_file_options, read_member_bytes, remove_existing_leaf_if_needed,
+    create_new_file_options, read_member_bytes, remove_existing_leaf_if_needed, sync_directory,
     PreparedDestination, TarMemberStreamHandler,
 };
 use super::*;
@@ -509,9 +509,9 @@ pub(crate) fn publish_regular_file(
 
     #[cfg(windows)]
     {
-        temp_file
-            .flush()
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to flush regular file"))?;
+        temp_file.sync_data().map_err(|_| {
+            FormatError::FilesystemExtractionFailed("failed to sync regular file data")
+        })?;
         if let Err(error) =
             rename_open_file_noreplace(&temp_file, &destination.parent, &destination.leaf)
         {
@@ -526,9 +526,9 @@ pub(crate) fn publish_regular_file(
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt as _;
 
-        temp_file
-            .flush()
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to flush regular file"))?;
+        temp_file.sync_data().map_err(|_| {
+            FormatError::FilesystemExtractionFailed("failed to sync regular file data")
+        })?;
         let source = CString::new(temp_leaf.as_os_str().as_bytes())
             .map_err(|_| FormatError::UnsafeArchivePath)?;
         let target = CString::new(destination.leaf.as_os_str().as_bytes())
@@ -557,6 +557,9 @@ pub(crate) fn publish_regular_file(
                 ))
             };
         }
+        // Persist the rename before reporting success: the file data is already
+        // synced, and the directory fsync makes the entry durable against power loss.
+        sync_directory(&destination.parent)?;
         Ok(temp_file)
     }
 
@@ -582,7 +585,7 @@ pub(crate) fn publish_regular_file(
     let copy_result = temp_file
         .seek(SeekFrom::Start(0))
         .and_then(|_| std::io::copy(&mut temp_file, &mut output))
-        .and_then(|_| output.flush());
+        .and_then(|_| output.sync_data());
 
     #[cfg(all(not(windows), not(target_os = "linux")))]
     if copy_result.is_err() {
@@ -595,6 +598,9 @@ pub(crate) fn publish_regular_file(
 
     #[cfg(all(not(windows), not(target_os = "linux")))]
     {
+        // Persist the directory entry before reporting success, matching the
+        // sync-then-rename ordering of the other publish paths.
+        sync_directory(&destination.parent)?;
         let _ = destination.parent.remove_file_or_symlink(temp_leaf);
         Ok(output)
     }

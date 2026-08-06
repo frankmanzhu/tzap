@@ -411,7 +411,22 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                     )?;
                 }
             } else {
-                let entries = opened.list_files()?;
+                let entries = match opened.list_files() {
+                    Ok(entries) => entries,
+                    Err(err) => {
+                        if json {
+                            let err = anyhow::Error::from(err);
+                            emit_verify_json_error(
+                                &archive_paths,
+                                Some(volume_count as u64),
+                                Some(file_count),
+                                &err,
+                            )?;
+                            return Err(err);
+                        }
+                        return Err(err.into());
+                    }
+                };
                 emit_entry_metadata_diagnostics(quiet, &entries)?;
             }
             let repaired_outputs = if write_repaired {
@@ -497,6 +512,8 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                 emit_fast_verify_diagnostics_stdout(quiet, &opened)?;
             } else if let Some(root_auth) = &root_auth {
                 emit_root_auth_stdout(quiet, root_auth)?;
+            } else if opened.root_auth_footer.is_some() {
+                emit_root_auth_skipped_warning(quiet)?;
             }
             if let Some(report) = &metadata_report {
                 emit_metadata_verification_stdout(quiet, report)?;
@@ -1113,6 +1130,17 @@ pub(crate) fn root_auth_diagnostic_labels(root_auth: &RootAuthVerification) -> V
         .iter()
         .map(|diagnostic| diagnostic.label())
         .collect()
+}
+
+pub(crate) fn emit_root_auth_skipped_warning(quiet: bool) -> io::Result<()> {
+    if quiet {
+        return Ok(());
+    }
+    // The archive is signed but no trust configuration was provided (e.g. an Ed25519
+    // archive without --trusted-public-key), so the signature was NOT verified. A bare
+    // "OK" line would otherwise give automation false assurance.
+    eprintln!("warning: archive is signed, but no trust configuration was provided; the signature was NOT verified");
+    Ok(())
 }
 
 pub(crate) fn emit_root_auth_stdout(quiet: bool, root_auth: &VerifiedRootAuth) -> io::Result<()> {

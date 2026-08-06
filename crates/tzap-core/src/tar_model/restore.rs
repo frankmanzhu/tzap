@@ -1504,7 +1504,29 @@ impl<'a> FilesystemRestoreHandler<'a> {
                 &mut diagnostics,
             )?;
         }
+        // Persist the root directory itself after every publish (per-file data sync +
+        // parent-directory fsync happen in publish_regular_file; hardlinks, directory
+        // metadata, and symlinks are covered by this final root fsync) so that a
+        // reported-successful extract survives power loss, matching the writer's
+        // durable-close guarantee.
+        self.sync_root_for_durability()?;
         Ok(diagnostics)
+    }
+
+    /// fsync the restore root directory at the end of the archive.
+    #[cfg(unix)]
+    fn sync_root_for_durability(&self) -> Result<(), FormatError> {
+        std::fs::File::open(self.root)
+            .and_then(|root_file| root_file.sync_all())
+            .map_err(|_| {
+                FormatError::FilesystemExtractionFailed("failed to sync restore root directory")
+            })
+    }
+
+    #[cfg(not(unix))]
+    fn sync_root_for_durability(&self) -> Result<(), FormatError> {
+        // Windows NTFS journals directory metadata; no explicit directory sync is required.
+        Ok(())
     }
 
     fn finish(
@@ -2562,6 +2584,26 @@ fn existing_safe_windows_reparse_path(
     // alias. Every ancestor remains subject to the ordinary no-follow traversal checks above.
     drop(open_existing_windows_reparse(&destination)?);
     Ok(destination)
+}
+
+/// fsync a destination directory so a rename/create published beneath it is durable
+/// before the restore is reported successful. The per-file data sync happens in
+/// `publish_regular_file`; this makes the directory entry itself survive power loss.
+#[cfg(unix)]
+pub(crate) fn sync_directory(directory: &CapDir) -> Result<(), FormatError> {
+    // SAFETY: the directory handle is live for the duration of the call.
+    if unsafe { libc::fsync(directory.as_raw_fd()) } != 0 {
+        return Err(FormatError::FilesystemExtractionFailed(
+            "failed to sync destination directory",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub(crate) fn sync_directory(_directory: &CapDir) -> Result<(), FormatError> {
+    // Windows NTFS journals directory metadata; no explicit directory sync is required.
+    Ok(())
 }
 
 pub(crate) fn create_new_file_options() -> CapOpenOptions {

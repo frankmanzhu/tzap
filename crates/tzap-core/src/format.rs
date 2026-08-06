@@ -68,6 +68,11 @@ pub enum ArchiveWriteError {
 }
 pub const READER_MAX_ARGON2ID_T_COST: u32 = 100;
 pub const READER_MAX_ARGON2ID_PARALLELISM: u32 = 64;
+// Bound on m_cost_kib × t_cost (KiB·passes): KDF params are unauthenticated (they are
+// needed to derive the key that authenticates everything else), so a crafted archive
+// could otherwise force ~400 GiB of memory traffic per open. 16 GiB·passes allows
+// RFC 9106's 64 MiB × 3 default with ~85× headroom (and even 4 GiB × 4 or 1 GiB × 16).
+pub const READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT: u32 = 16 * 1024 * 1024;
 pub const READER_MAX_CRYPTO_HEADER_LEN: u32 = 64 * 1024;
 pub const READER_MAX_CHUNK_SIZE: u32 = 64 * 1024 * 1024;
 pub const READER_MAX_ENVELOPE_TARGET_SIZE: u32 = 64 * 1024 * 1024;
@@ -75,6 +80,13 @@ pub const READER_MAX_METADATA_OBJECT_SIZE: u32 = 512 * 1024 * 1024;
 pub const READER_MAX_BLOCK_SIZE: u32 = 1024 * 1024;
 pub const READER_MAX_STRIPE_WIDTH: u32 = 4096;
 pub const READER_MAX_FEC_CLASS_SHARDS: u32 = 4096;
+// Lower local cap on the erasure-repair matrix size: inversion is O(n³) in GF(2^16), so
+// the spec-permitted 4096-shard maximum costs minutes of CPU per crafted envelope on
+// unauthenticated (plaintext) archives. 1024 is 4.5× the tzap writer's own default
+// (224 data shards); envelopes above it fail repair with a resource-limit diagnostic
+// per spec §13.3 ("A reader that uses a lower local cap may reject an otherwise valid
+// archive with a resource-limit diagnostic").
+pub const READER_MAX_REPAIR_TOTAL_SHARDS: u32 = 1024;
 pub const READER_MAX_INDEX_FEC_CLASS_SHARDS: u32 = 4096;
 pub const READER_MAX_INDEX_ROOT_FEC_CLASS_SHARDS: u32 = 131_070;
 pub const READER_MAX_PATH_LENGTH: u32 = 4096;

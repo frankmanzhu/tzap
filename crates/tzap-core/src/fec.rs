@@ -1,4 +1,4 @@
-use crate::format::FormatError;
+use crate::format::{FormatError, READER_MAX_REPAIR_TOTAL_SHARDS};
 
 use std::sync::OnceLock;
 
@@ -63,6 +63,18 @@ pub fn repair_data_gf16(
             .iter()
             .map(|shard| validate_available_shard(shard.as_ref().unwrap(), shard_size))
             .collect();
+    }
+
+    // Bound the O(n³) Gauss-Jordan inversion before building the matrix: this path runs
+    // on erasure recovery (plaintext archives are fully forgeable, so shard counts are
+    // attacker-controlled). The parse caps are larger by spec, but repair work gets a
+    // tighter local bound with a clean resource-limit diagnostic.
+    if data_shard_count > READER_MAX_REPAIR_TOTAL_SHARDS as usize {
+        return Err(FormatError::ReaderResourceLimitExceeded {
+            field: "fec repair data shards",
+            cap: READER_MAX_REPAIR_TOTAL_SHARDS as u64,
+            actual: data_shard_count as u64,
+        });
     }
 
     let mut rows = Vec::with_capacity(data_shard_count);
@@ -343,6 +355,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(repaired, data);
+    }
+
+    #[test]
+    fn rejects_erasure_repair_above_work_cap_before_inversion() {
+        // Regression: the O(n³) inversion is bounded by READER_MAX_REPAIR_TOTAL_SHARDS;
+        // a crafted archive with an erased shard among a huge stripe must fail with a
+        // clean resource-limit diagnostic instead of burning minutes of CPU.
+        let shards = (0..READER_MAX_REPAIR_TOTAL_SHARDS as usize + 1)
+            .map(|index| if index == 0 { None } else { Some(vec![0u8; 2]) })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            repair_data_gf16(&shards, &[], 2).unwrap_err(),
+            FormatError::ReaderResourceLimitExceeded {
+                field: "fec repair data shards",
+                cap: READER_MAX_REPAIR_TOTAL_SHARDS as u64,
+                actual: (READER_MAX_REPAIR_TOTAL_SHARDS as u64) + 1,
+            }
+        );
+
+        // At the cap the same shape with no erasures still validates (no inversion).
+        let full = (0..READER_MAX_REPAIR_TOTAL_SHARDS as usize)
+            .map(|_| Some(vec![0u8; 2]))
+            .collect::<Vec<_>>();
+        assert!(repair_data_gf16(&full, &[], 2).is_ok());
     }
 
     #[test]

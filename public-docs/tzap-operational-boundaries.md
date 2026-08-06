@@ -213,6 +213,37 @@ Operational shape:
   `public_physical_completeness_unverified`, and
   `public_recovery_margin_unchecked`.
 
+### X.509 trust boundary
+
+The v45 X.509 verification profile does not enforce KeyUsage or
+ExtendedKeyUsage on the signing leaf. A certificate that chains to a trusted
+root verifies as a signing leaf when it has the plain `digitalSignature`
+KeyUsage bit, when it carries no KeyUsage at all, or when it is itself a
+CA:true certificate. This is an operational boundary of the current profile,
+not a configuration error.
+
+Consequences:
+
+- Under `--trusted-system-roots`, any holder of the private key of a
+  non-expired certificate that chains to an OS root — including a free TLS
+  server certificate or a subordinate CA certificate — can sign an archive
+  that verifies as trusted.
+- Verification still requires a valid chain to the trusted roots and validity
+  at verifier current time, and signing still requires the leaf's private key.
+
+What to do:
+
+- Prefer `--trusted-ca-cert` pinned to a CA you control, and issue
+  document-signing certificates with a constrained profile for signing
+  identities.
+- Treat `--trusted-system-roots` verification as a scope-of-trust statement:
+  it proves "a private key chaining to an OS root signed this archive", not
+  "a dedicated signing certificate signed this archive".
+- Do not rely on a certificate's EKU (such as `serverAuth`) to exclude
+  certificates from archive signing under the current profile.
+- A future plugin-spec revision that mandates a document-signing EKU and/or
+  rejects CA:true leaves will lift this boundary.
+
 ## Explicit plaintext archives
 
 `--no-encryption` is the v45 mode for workflows that intentionally publish
