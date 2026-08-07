@@ -25,103 +25,138 @@ jobs:
             exit 1
           fi
 
-      - name: Download release tarballs
-        run: |
-          TAG="${{ inputs.tag }}"
-          for ASSET in \
-            "tzap-${TAG}-macos-aarch64.tar.gz" \
-            "tzap-${TAG}-macos-x86_64.tar.gz" \
-            "tzap-${TAG}-linux-x86_64-musl.tar.gz" \
-            "tzap-${TAG}-linux-aarch64-musl.tar.gz"; do
-            curl -fsSL -o "$ASSET" \
-              "https://github.com/tzap-org/tzap/releases/download/${TAG}/${ASSET}"
-          done
-
-      - name: Generate updated formula
+      - name: Generate updated formula from release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ inputs.tag }}"
           VERSION="${TAG#v}"
 
-          SHA_MACOS_ARM=$(sha256sum "tzap-${TAG}-macos-aarch64.tar.gz" | awk '{print $1}')
-          SHA_MACOS_X86=$(sha256sum "tzap-${TAG}-macos-x86_64.tar.gz" | awk '{print $1}')
-          SHA_LINUX_X86=$(sha256sum "tzap-${TAG}-linux-x86_64-musl.tar.gz" | awk '{print $1}')
-          SHA_LINUX_ARM=$(sha256sum "tzap-${TAG}-linux-aarch64-musl.tar.gz" | awk '{print $1}')
+          RELEASE_JSON=$(gh api "repos/tzap-org/tzap/releases/tags/${TAG}")
 
-          # Note: #{...} is Ruby interpolation and is intentionally NOT expanded by bash.
+          get_sha() {
+            local asset="$1"
+            local digest
+
+            digest=$(echo "$RELEASE_JSON" | jq -r \
+              --arg asset "$asset" \
+              '.assets[] | select(.name == $asset) | .digest' | head -n 1)
+
+            if [ -z "$digest" ] || [ "$digest" = "null" ]; then
+              echo "::error::No digest found for release asset '$asset'" >&2
+              exit 1
+            fi
+
+            if [[ "$digest" != sha256:* ]]; then
+              echo "::error::Unexpected digest format for '$asset': $digest" >&2
+              exit 1
+            fi
+
+            echo "${digest#sha256:}"
+          }
+
+          SHA_MACOS_ARM=$(get_sha "tzap-${TAG}-macos-aarch64.tar.gz")
+          SHA_MACOS_X86=$(get_sha "tzap-${TAG}-macos-x86_64.tar.gz")
+          SHA_LINUX_X86=$(get_sha "tzap-${TAG}-linux-x86_64-musl.tar.gz")
+          SHA_LINUX_ARM=$(get_sha "tzap-${TAG}-linux-aarch64-musl.tar.gz")
+
           cat > tzap.rb <<FORMULA
-class Tzap < Formula
-  desc "Create, list, verify, and extract encrypted recoverable tzap archives"
-  homepage "https://github.com/tzap-org/tzap"
-  version "${VERSION}"
-  license "Apache-2.0"
+          class Tzap < Formula
+            desc "Create, list, verify, and extract encrypted recoverable tzap archives"
+            homepage "https://github.com/tzap-org/tzap"
+            version "${VERSION}"
+            license "Apache-2.0"
 
-  on_macos do
-    if Hardware::CPU.arm?
-      url "https://github.com/tzap-org/tzap/releases/download/${TAG}/tzap-${TAG}-macos-aarch64.tar.gz"
-      sha256 "${SHA_MACOS_ARM}"
-    else
-      url "https://github.com/tzap-org/tzap/releases/download/${TAG}/tzap-${TAG}-macos-x86_64.tar.gz"
-      sha256 "${SHA_MACOS_X86}"
-    end
-  end
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/tzap-org/tzap/releases/download/${TAG}/tzap-${TAG}-macos-aarch64.tar.gz"
+                sha256 "${SHA_MACOS_ARM}"
+              else
+                url "https://github.com/tzap-org/tzap/releases/download/${TAG}/tzap-${TAG}-macos-x86_64.tar.gz"
+                sha256 "${SHA_MACOS_X86}"
+              end
+            end
 
-  on_linux do
-    if Hardware::CPU.intel?
-      url "https://github.com/tzap-org/tzap/releases/download/${TAG}/tzap-${TAG}-linux-x86_64-musl.tar.gz"
-      sha256 "${SHA_LINUX_X86}"
-    else
-      url "https://github.com/tzap-org/tzap/releases/download/${TAG}/tzap-${TAG}-linux-aarch64-musl.tar.gz"
-      sha256 "${SHA_LINUX_ARM}"
-    end
-  end
+            on_linux do
+              if Hardware::CPU.intel?
+                url "https://github.com/tzap-org/tzap/releases/download/${TAG}/tzap-${TAG}-linux-x86_64-musl.tar.gz"
+                sha256 "${SHA_LINUX_X86}"
+              else
+                url "https://github.com/tzap-org/tzap/releases/download/${TAG}/tzap-${TAG}-linux-aarch64-musl.tar.gz"
+                sha256 "${SHA_LINUX_ARM}"
+              end
+            end
 
-  def install
-    bin.install "tzap"
-  end
+            def install
+              bin.install "tzap"
+            end
 
-  test do
-    assert_match "tzap ${VERSION}", shell_output("#{bin}/tzap --version")
+            test do
+              assert_match "tzap ${VERSION}", shell_output("#{bin}/tzap --version")
 
-    (testpath/"input.txt").write "homebrew smoke payload\n"
-    archive = testpath/"smoke.tzap"
-    outdir = testpath/"out"
-    passphrase = "homebrew-smoke-passphrase\n"
+              (testpath/"input.txt").write "homebrew smoke payload\n"
+              archive = testpath/"smoke.tzap"
+              outdir = testpath/"out"
+              passphrase = "homebrew-smoke-passphrase\n"
 
-    pipe_output(
-      "#{bin}/tzap create --password-stdin --argon2-t-cost 1 --argon2-m-cost-kib 8 " \
-      "--argon2-parallelism 1 -o #{archive} #{testpath}/input.txt",
-      passphrase,
-      0
-    )
+              pipe_output(
+                "#{bin}/tzap create --password-stdin --argon2-t-cost 1 --argon2-m-cost-kib 8 " \
+                "--argon2-parallelism 1 -o #{archive} #{testpath}/input.txt",
+                passphrase,
+                0
+              )
 
-    assert_match "input.txt", pipe_output("#{bin}/tzap list --password-stdin #{archive}", passphrase, 0)
+              assert_match(
+                "input.txt",
+                pipe_output("#{bin}/tzap list --password-stdin #{archive}", passphrase, 0)
+              )
 
-    pipe_output("#{bin}/tzap verify --password-stdin #{archive}", passphrase, 0)
+              pipe_output(
+                "#{bin}/tzap verify --password-stdin #{archive}",
+                passphrase,
+                0
+              )
 
-    mkdir outdir
-    pipe_output(
-      "#{bin}/tzap extract --password-stdin --directory #{outdir} #{archive} input.txt",
-      passphrase,
-      0
-    )
+              outdir.mkpath
 
-    assert_equal "homebrew smoke payload\n", (outdir/"input.txt").read
-  end
-end
-FORMULA
+              pipe_output(
+                "#{bin}/tzap extract --password-stdin --directory #{outdir} #{archive} input.txt",
+                passphrase,
+                0
+              )
+
+              assert_equal "homebrew smoke payload\n", (outdir/"input.txt").read
+            end
+          end
+          FORMULA
 
       - name: Push updated formula to homebrew-tzap
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           TAG="${{ inputs.tag }}"
+
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is not configured"
+            exit 1
+          fi
+
           git clone \
             "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/tzap-org/homebrew-tzap.git" \
             tap
+
           cp tzap.rb tap/Formula/tzap.rb
           cd tap
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
           git add Formula/tzap.rb
+
+          if git diff --cached --quiet; then
+            echo "Formula already up to date."
+            exit 0
+          fi
+
           git commit -m "tzap ${TAG}"
-          git push
+          git push origin main
