@@ -1,8 +1,7 @@
 name: Publish crates.io
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -42,9 +41,12 @@ jobs:
 
             if [ "$status" = "200" ]; then
               echo "✓ $crate v$version already published — skipping"
-            else
+            elif [ "$status" = "404" ]; then
               echo "Publishing $crate v$version..."
               cargo publish -p "$crate"
+            else
+              echo "Unexpected crates.io response: HTTP $status"
+              exit 1
             fi
           }
 
