@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Adds `tzap-plugin-signing::x509_chain::verify_root_auth_signature` — a
+  trustless (no chain, no roots, no time) signature check over the recomputed
+  archive root, with the `X509RootAuthSignatureReport` result. Consumers that
+  only need to display certificate info can delegate to it instead of
+  reimplementing scheme-1-only subset verification.
+
 ## 0.2.0 - 2026-08-04
 
 - Updates the tzap format to the v45 specification, incorporating format-level

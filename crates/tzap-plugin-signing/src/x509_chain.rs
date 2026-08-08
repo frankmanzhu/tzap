@@ -382,6 +382,77 @@ pub fn verify_root_auth_footer(
     })
 }
 
+/// Report for the trustless assertion-1 check: the embedded leaf key really
+/// signed the footer over the recomputed `archive_root`.
+///
+/// This report intentionally carries NO trust-derived fields: consumers must
+/// not render a "verified/trusted" verdict from it. Pair with
+/// `verify_root_auth_footer` whenever chain/trust/time claims are required.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct X509RootAuthSignatureReport {
+    /// Signature scheme (same values as `X509RootAuthReport`):
+    /// `"rsa-pkcs1-sha256"`, `"ecdsa-sha256-der"`, or `"rsa-pss-sha256"`.
+    pub signature_scheme: String,
+    /// Signer-claimed Unix seconds, from the authenticator envelope
+    /// (offset 8..16, little-endian).
+    pub signed_at_unix_seconds: i64,
+    /// SHA-256 digest of the embedded leaf certificate (DER).
+    pub certificate_sha256: [u8; SHA256_LEN],
+}
+
+/// Verify that the embedded X.509 leaf key really signed this footer over
+/// `archive_root` — a standalone signature check with NO trust evaluation:
+/// no chain verification, no trusted roots, no time or revocation checks.
+///
+/// Callers MUST pass the *recomputed* archive root (e.g. the one returned by
+/// `tzap_core::reader::public_no_key_inspect_footer`, which validates the
+/// recompute against the stored value), never a raw stored value — the
+/// signing input binds the recomputed root, not an untrusted stored one.
+///
+/// Any `Err` means "not authentic". A signature mismatch yields exactly
+/// `Invalid("X.509 RootAuth signature failed")`, distinct from parse errors.
+pub fn verify_root_auth_signature(footer: &RootAuthFooterV1, archive_root: &[u8; 32]) -> Result<X509RootAuthSignatureReport, X509RootAuthError> {
+    if footer.authenticator_id != X509_AUTHENTICATOR_ID {
+        return Err(X509RootAuthError::Invalid("unsupported authenticator id"));
+    }
+    if footer.signer_identity_type != X509_SIGNER_IDENTITY_TYPE_DER_CERT {
+        return Err(X509RootAuthError::UnsupportedIdentity);
+    }
+
+    let leaf_certificate = X509::from_der(&footer.signer_identity_bytes).map_err(|_| X509RootAuthError::Invalid("invalid X.509 signer identity"))?;
+    let parsed = parse_authenticator_value(&footer.authenticator_value)?;
+    let root_auth_spec_id = root_auth_spec_id_for_revision(footer.format_version, footer.volume_format_rev)
+        .map_err(|_| X509RootAuthError::Invalid("unsupported RootAuthFooter root_auth_spec_id"))?;
+    let signing_input = signing_input_for_root_auth_spec_id(
+        &root_auth_spec_id,
+        &footer.archive_uuid,
+        &footer.session_id,
+        archive_root,
+        parsed.signed_at_unix_seconds,
+        &parsed.chain_digest,
+    );
+    let leaf_public_key = leaf_certificate.public_key()?;
+    validate_rsa_spki_signature_scheme(parsed.sig_scheme, footer.signer_identity_bytes.as_slice())?;
+    validate_public_key_matches_scheme(parsed.sig_scheme, &leaf_public_key)?;
+    validate_signature_for_scheme(parsed.sig_scheme, &leaf_public_key, &parsed.signature)?;
+    let mut verifier = verifier_for_scheme(parsed.sig_scheme, &leaf_public_key)?;
+    verifier.update(&signing_input)?;
+    if !verifier.verify(&parsed.signature)? {
+        return Err(X509RootAuthError::Invalid("X.509 RootAuth signature failed"));
+    }
+    validate_leaf_key_usage(&footer.signer_identity_bytes)?;
+
+    let fingerprint = leaf_certificate.digest(MessageDigest::sha256())?;
+    let mut certificate_sha256 = [0u8; SHA256_LEN];
+    certificate_sha256.copy_from_slice(&fingerprint);
+
+    Ok(X509RootAuthSignatureReport {
+        signature_scheme: signature_scheme_name(parsed.sig_scheme).to_string(),
+        signed_at_unix_seconds: parsed.signed_at_unix_seconds,
+        certificate_sha256,
+    })
+}
+
 fn validate_rsa_spki_signature_scheme(sig_scheme: u16, leaf_certificate_bytes: &[u8]) -> Result<(), X509RootAuthError> {
     let (remaining, certificate) = x509_parser::certificate::X509Certificate::from_der(leaf_certificate_bytes)
         .map_err(|_| X509RootAuthError::Invalid("failed to parse leaf certificate"))?;
@@ -991,6 +1062,435 @@ mod tests {
             X509RootAuthError::UntrustedChain(message) => message,
             other => format!("unexpected error: {other:?}"),
         }
+    }
+
+    fn signature_error_message(footer: &RootAuthFooterV1, archive_root: &[u8; 32]) -> String {
+        let err = verify_root_auth_signature(footer, archive_root).unwrap_err();
+        match err {
+            X509RootAuthError::Invalid(message) => message.to_string(),
+            other => format!("unexpected error: {other:?}"),
+        }
+    }
+
+    fn default_signing_request() -> RootAuthSigningRequest {
+        RootAuthSigningRequest {
+            root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
+            archive_uuid: [1; 16],
+            session_id: [2; 16],
+            archive_root: [3; 32],
+        }
+    }
+
+    #[test]
+    fn verify_root_auth_signature_scheme1_valid_report() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signed_at = now_unix_seconds();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
+        let request = default_signing_request();
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+
+        let report = verify_root_auth_signature(&footer, &request.archive_root).unwrap();
+
+        assert_eq!(report.signature_scheme, "rsa-pkcs1-sha256");
+        assert_eq!(report.signed_at_unix_seconds, signed_at);
+        let mut expected_digest = [0u8; SHA256_LEN];
+        expected_digest.copy_from_slice(&leaf_cert.digest(MessageDigest::sha256()).unwrap());
+        assert_eq!(report.certificate_sha256, expected_digest);
+
+        // The trustless report fields must agree with the full-verify report.
+        let full_report = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap();
+        assert_eq!(report.signature_scheme, full_report.signature_scheme);
+        assert_eq!(report.signed_at_unix_seconds, full_report.signed_at_unix_seconds);
+        assert_eq!(report.certificate_sha256, full_report.certificate_sha256);
+    }
+
+    #[test]
+    fn verify_root_auth_signature_scheme2_ecdsa_valid_report() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_ec_leaf_cert("Acme EC Release Signing", root_cert.as_ref(), root_key.as_ref(), Nid::X9_62_PRIME256V1);
+        let signed_at = now_unix_seconds();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
+        let request = default_signing_request();
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+
+        let report = verify_root_auth_signature(&footer, &request.archive_root).unwrap();
+
+        assert_eq!(report.signature_scheme, "ecdsa-sha256-der");
+        assert_eq!(report.signed_at_unix_seconds, signed_at);
+        let mut expected_digest = [0u8; SHA256_LEN];
+        expected_digest.copy_from_slice(&leaf_cert.digest(MessageDigest::sha256()).unwrap());
+        assert_eq!(report.certificate_sha256, expected_digest);
+    }
+
+    #[test]
+    fn verify_root_auth_signature_scheme3_rsa_pss_valid_report() {
+        // Regression for the false-tamper-alarm bug: scheme 3 archives that
+        // full verification accepts must also pass the trustless check.
+        let (leaf_cert, leaf_key) = rsa_pss_leaf_cert_and_key();
+        let signed_at = now_unix_seconds();
+        let signer = X509RootAuthSigner::new_with_signature_scheme(
+            leaf_cert.to_der().unwrap(),
+            leaf_key,
+            Vec::new(),
+            signed_at,
+            Some(X509SignatureScheme::RsaPssSha256),
+        )
+        .unwrap();
+        let request = default_signing_request();
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+
+        let report = verify_root_auth_signature(&footer, &request.archive_root).unwrap();
+
+        assert_eq!(report.signature_scheme, "rsa-pss-sha256");
+        assert_eq!(report.signed_at_unix_seconds, signed_at);
+        let mut expected_digest = [0u8; SHA256_LEN];
+        expected_digest.copy_from_slice(&leaf_cert.digest(MessageDigest::sha256()).unwrap());
+        assert_eq!(report.certificate_sha256, expected_digest);
+    }
+
+    #[test]
+    fn verify_root_auth_signature_accepts_without_roots_or_time_basis() {
+        // Contract boundary: an expired leaf with no trusted roots still
+        // passes the trustless check (the signature is time-independent),
+        // while the full verify path rejects it for chain-time.
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_expired_leaf_cert("Acme Expired Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds() - 3600).unwrap();
+        let request = default_signing_request();
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+
+        assert!(verify_root_auth_signature(&footer, &request.archive_root).is_ok());
+
+        // No roots: the full path never gets to chain-time checks.
+        let no_roots_err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        assert!(matches!(no_roots_err, X509RootAuthError::MissingTrustPolicy));
+        // With roots, the full path rejects the expired leaf at current time.
+        let full_err = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap_err();
+        assert!(matches!(full_err, X509RootAuthError::UntrustedChain(message) if message.contains("certificate has expired")));
+    }
+
+    #[test]
+    fn verify_root_auth_signature_accepts_embedded_chain() {
+        // An embedded chain must parse and its digest must match, but the
+        // report digest is the leaf certificate only.
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, vec![root_cert.to_der().unwrap()], now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+
+        let report = verify_root_auth_signature(&footer, &request.archive_root).unwrap();
+
+        let mut expected_digest = [0u8; SHA256_LEN];
+        expected_digest.copy_from_slice(&leaf_cert.digest(MessageDigest::sha256()).unwrap());
+        assert_eq!(report.certificate_sha256, expected_digest);
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_wrong_archive_root() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let mut wrong_root = request.archive_root;
+        wrong_root[0] ^= 0x01;
+
+        // Must be a VERIFY error, not a parse error.
+        assert_eq!(signature_error_message(&footer, &wrong_root), "X.509 RootAuth signature failed");
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_wrong_signing_key() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+
+        // Same envelope (signed by the first key) but a different identity cert.
+        let (other_cert, _) = test_leaf_cert("Other Signing", root_cert.as_ref(), root_key.as_ref());
+        footer.signer_identity_bytes = other_cert.to_der().unwrap();
+
+        assert_eq!(signature_error_message(&footer, &request.archive_root), "X.509 RootAuth signature failed");
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_nonzero_signature_padding() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_ec_leaf_cert("Acme EC Release Signing", root_cert.as_ref(), root_key.as_ref(), Nid::X9_62_PRIME256V1);
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let signature_len = read_u32(&footer.authenticator_value, 48).unwrap() as usize;
+        footer.authenticator_value[AUTHENTICATOR_FIXED_LEN + signature_len] = 0xFF;
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "X.509 authenticator signature padding is non-zero"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_trailing_bytes() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value.push(0x00);
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "X.509 authenticator has trailing bytes"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_truncated_envelope() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value.truncate(footer.authenticator_value.len() - 1);
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "X.509 authenticator signature is truncated"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_short_envelope() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value.clear();
+
+        assert_eq!(signature_error_message(&footer, &request.archive_root), "X.509 authenticator is too short");
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_chain_digest_mismatch() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value[16] ^= 0x01;
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "X.509 authenticator chain digest mismatch"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_bad_magic() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value[0] ^= 0xFF;
+
+        // Same parse error as the full verify path, byte for byte.
+        assert_eq!(signature_error_message(&footer, &request.archive_root), "X.509 authenticator magic mismatch");
+        assert_eq!(
+            verify_error_message(&footer, &request.archive_root, &[root_cert.to_der().unwrap()]),
+            "X.509 authenticator magic mismatch"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_non_x509_authenticator_id() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_id = 0x0002; // Ed25519 authenticator id
+
+        assert_eq!(signature_error_message(&footer, &request.archive_root), "unsupported authenticator id");
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_unsupported_identity_type() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.signer_identity_type = 0xFFFF;
+
+        assert!(matches!(
+            verify_root_auth_signature(&footer, &request.archive_root).unwrap_err(),
+            X509RootAuthError::UnsupportedIdentity
+        ));
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_key_scheme_mismatch() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value[6..8].copy_from_slice(&SIG_SCHEME_ECDSA_SHA256_DER.to_le_bytes());
+
+        assert_eq!(signature_error_message(&footer, &request.archive_root), "X.509 signature scheme/key mismatch");
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_unsupported_scheme_id() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value[6..8].copy_from_slice(&0xFFFFu16.to_le_bytes());
+
+        assert_eq!(signature_error_message(&footer, &request.archive_root), "unsupported X.509 signature scheme");
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_future_volume_format_rev() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45 + 1);
+
+        // Must fail at root_auth_spec_id_for_revision, not silently default.
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "unsupported RootAuthFooter root_auth_spec_id"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_key_usage_not_allowing_signing() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert_with_usage(
+            "Acme Key Encipherment Only",
+            root_cert.as_ref(),
+            root_key.as_ref(),
+            LeafKeyUsage::KeyEnciphermentOnly,
+        );
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "leaf certificate KeyUsage does not allow archive signing"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_invalid_leaf_der() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.signer_identity_bytes = vec![0xDE, 0xAD];
+
+        assert_eq!(signature_error_message(&footer, &request.archive_root), "invalid X.509 signer identity");
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_unsupported_envelope_version() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value[4..6].copy_from_slice(&2u16.to_le_bytes());
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "unsupported X.509 authenticator version"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_zero_signature_length() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value[48..52].copy_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "X.509 signature length must be nonzero"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_signature_length_exceeding_capacity() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let signature_capacity = read_u32(&footer.authenticator_value, 52).unwrap();
+        footer.authenticator_value[48..52].copy_from_slice(&(signature_capacity + 1).to_le_bytes());
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "X.509 signature length exceeds capacity"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_impossible_chain_count() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        footer.authenticator_value[56..60].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        assert_eq!(
+            signature_error_message(&footer, &request.archive_root),
+            "X.509 authenticator chain count exceeds payload"
+        );
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_malformed_chain_certificate() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, vec![root_cert.to_der().unwrap()], now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let signature_capacity = read_u32(&footer.authenticator_value, 52).unwrap() as usize;
+        let first_cert_start = AUTHENTICATOR_FIXED_LEN + signature_capacity + 4;
+        // Corrupt the DER SEQUENCE tag so the chain certificate no longer parses.
+        footer.authenticator_value[first_cert_start] = 0xFF;
+
+        assert_eq!(signature_error_message(&footer, &request.archive_root), "invalid X.509 chain certificate");
+    }
+
+    #[test]
+    fn verify_root_auth_signature_rejects_noncanonical_ecdsa_der() {
+        let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
+        let (leaf_cert, leaf_key) = test_ec_leaf_cert("Acme EC Release Signing", root_cert.as_ref(), root_key.as_ref(), Nid::X9_62_PRIME256V1);
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), now_unix_seconds()).unwrap();
+        let request = default_signing_request();
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let nonminimal = nonminimal_ecdsa_integer_encoding(x509_signature_bytes(&footer.authenticator_value));
+        replace_x509_signature(&mut footer.authenticator_value, &nonminimal);
+
+        let message = signature_error_message(&footer, &request.archive_root);
+        assert!(message.contains("canonical DER") || message.contains("valid DER"), "{message}");
     }
 
     #[test]
