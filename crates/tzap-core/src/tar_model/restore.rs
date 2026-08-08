@@ -2639,6 +2639,7 @@ pub(crate) fn sync_directory(directory: &CapDir) -> Result<(), FormatError> {
     Ok(())
 }
 
+#[allow(dead_code)]
 #[cfg(not(unix))]
 pub(crate) fn sync_directory(_directory: &CapDir) -> Result<(), FormatError> {
     // Windows NTFS journals directory metadata; no explicit directory sync is required.

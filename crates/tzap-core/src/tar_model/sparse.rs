@@ -1,7 +1,9 @@
 use super::restore::{
-    create_new_file_options, read_member_bytes, remove_existing_leaf_if_needed, sync_directory,
+    create_new_file_options, read_member_bytes, remove_existing_leaf_if_needed,
     PreparedDestination, TarMemberStreamHandler,
 };
+#[cfg(not(windows))]
+use super::restore::sync_directory;
 use super::*;
 
 #[cfg(target_os = "linux")]
@@ -557,10 +559,13 @@ pub(crate) fn publish_regular_file(
                 ))
             };
         }
-        // Persist the rename before reporting success: the file data is already
-        // synced, and the directory fsync makes the entry durable against power loss.
-        sync_directory(&destination.parent)?;
-        Ok(temp_file)
+        #[cfg(not(windows))]
+        {
+            // Persist the rename before reporting success: the file data is already
+            // synced, and the directory fsync makes the entry durable against power loss.
+            sync_directory(&destination.parent)?;
+            Ok(temp_file)
+        }
     }
 
     #[cfg(all(not(windows), not(target_os = "linux")))]
