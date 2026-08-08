@@ -1,28 +1,15 @@
 use crate::format::FormatError;
 
-pub fn suffix_pad_for_aead(
-    payload: &[u8],
-    tag_len: usize,
-    block_size: usize,
-) -> Result<Vec<u8>, FormatError> {
-    let total_before_padding = payload
-        .len()
-        .checked_add(tag_len)
-        .ok_or(FormatError::PaddingOverflow)?;
+pub fn suffix_pad_for_aead(payload: &[u8], tag_len: usize, block_size: usize) -> Result<Vec<u8>, FormatError> {
+    let total_before_padding = payload.len().checked_add(tag_len).ok_or(FormatError::PaddingOverflow)?;
     let mut envelope_total = round_up_to_block(total_before_padding, block_size)?;
-    let mut pad_len = envelope_total
-        .checked_sub(total_before_padding)
-        .ok_or(FormatError::PaddingOverflow)?;
+    let mut pad_len = envelope_total.checked_sub(total_before_padding).ok_or(FormatError::PaddingOverflow)?;
     if pad_len == 0 {
-        envelope_total = envelope_total
-            .checked_add(block_size)
-            .ok_or(FormatError::PaddingOverflow)?;
+        envelope_total = envelope_total.checked_add(block_size).ok_or(FormatError::PaddingOverflow)?;
         pad_len = block_size;
     }
 
-    let plaintext_len = envelope_total
-        .checked_sub(tag_len)
-        .ok_or(FormatError::PaddingOverflow)?;
+    let plaintext_len = envelope_total.checked_sub(tag_len).ok_or(FormatError::PaddingOverflow)?;
     let mut plaintext = Vec::with_capacity(plaintext_len);
     plaintext.extend_from_slice(payload);
     append_suffix_padding(&mut plaintext, pad_len)?;
@@ -63,11 +50,7 @@ pub fn depad_suffix_padding(plaintext: &[u8]) -> Result<&[u8], FormatError> {
         if n < 5 {
             return Err(FormatError::InvalidSuffixPadding);
         }
-        let pad_len = u32::from_le_bytes(
-            plaintext[n - 5..n - 1]
-                .try_into()
-                .expect("slice length checked"),
-        ) as usize;
+        let pad_len = u32::from_le_bytes(plaintext[n - 5..n - 1].try_into().expect("slice length checked")) as usize;
         if pad_len < 255 {
             return Err(FormatError::InvalidSuffixPadding);
         }
@@ -77,14 +60,9 @@ pub fn depad_suffix_padding(plaintext: &[u8]) -> Result<&[u8], FormatError> {
     if pad_len < marker_size || pad_len > n {
         return Err(FormatError::InvalidSuffixPadding);
     }
-    let payload_len = n
-        .checked_sub(pad_len)
-        .ok_or(FormatError::InvalidSuffixPadding)?;
+    let payload_len = n.checked_sub(pad_len).ok_or(FormatError::InvalidSuffixPadding)?;
     let zero_padding_end = n - marker_size;
-    if plaintext[payload_len..zero_padding_end]
-        .iter()
-        .any(|byte| *byte != 0)
-    {
+    if plaintext[payload_len..zero_padding_end].iter().any(|byte| *byte != 0) {
         return Err(FormatError::NonZeroPaddingBytes);
     }
     Ok(&plaintext[..payload_len])
@@ -98,9 +76,7 @@ fn round_up_to_block(value: usize, block_size: usize) -> Result<usize, FormatErr
     if remainder == 0 {
         Ok(value.max(block_size))
     } else {
-        value
-            .checked_add(block_size - remainder)
-            .ok_or(FormatError::PaddingOverflow)
+        value.checked_add(block_size - remainder).ok_or(FormatError::PaddingOverflow)
     }
 }
 
@@ -150,17 +126,11 @@ mod tests {
 
     #[test]
     fn rejects_zero_padding_and_non_zero_padding_bytes() {
-        assert_eq!(
-            depad_suffix_padding(&[1, 2, 0]).unwrap_err(),
-            FormatError::InvalidSuffixPadding
-        );
+        assert_eq!(depad_suffix_padding(&[1, 2, 0]).unwrap_err(), FormatError::InvalidSuffixPadding);
 
         let mut padded = suffix_pad_for_aead(b"hello", 16, 32).unwrap();
         let payload_len = 5;
         padded[payload_len] = 1;
-        assert_eq!(
-            depad_suffix_padding(&padded).unwrap_err(),
-            FormatError::NonZeroPaddingBytes
-        );
+        assert_eq!(depad_suffix_padding(&padded).unwrap_err(), FormatError::NonZeroPaddingBytes);
     }
 }

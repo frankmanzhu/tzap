@@ -17,17 +17,12 @@ pub use predicates::prelude::*;
 pub use serde_json::Value;
 pub use tempfile::tempdir;
 pub use tzap_core::format::{
-    BlockKind, BLOCK_RECORD_FRAMING_LEN, BOOTSTRAP_SIDECAR_HEADER_LEN, FORMAT_VERSION,
-    READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
-    VOLUME_TRAILER_LEN,
+    BlockKind, BLOCK_RECORD_FRAMING_LEN, BOOTSTRAP_SIDECAR_HEADER_LEN, FORMAT_VERSION, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45,
+    VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
 };
-pub use tzap_core::wire::{
-    BlockRecord, BootstrapSidecarHeader, CriticalRecoveryLocator, CryptoHeader, VolumeHeader,
-    VolumeTrailer,
-};
+pub use tzap_core::wire::{BlockRecord, BootstrapSidecarHeader, CriticalRecoveryLocator, CryptoHeader, VolumeHeader, VolumeTrailer};
 pub use tzap_core::{
-    crypto::compute_hmac, write_archive_with_recipient_wrap_records, ArchiveTimestamp, HmacDomain,
-    MasterKey, RegularFile, Subkeys, WriterOptions,
+    crypto::compute_hmac, write_archive_with_recipient_wrap_records, ArchiveTimestamp, HmacDomain, MasterKey, RegularFile, Subkeys, WriterOptions,
 };
 pub use tzap_plugin_keywrap::{wrap_master_key_for_recipient, ArchiveIdentity, KeyWrapSuite};
 
@@ -53,9 +48,7 @@ pub fn expected_input_mode(_path: &Path) -> u32 {
 pub fn create_windows_relative_symlink(path: &Path, target: &str) {
     pub use std::os::windows::fs::OpenOptionsExt as _;
     pub use std::os::windows::io::AsRawHandle as _;
-    pub use windows_sys::Win32::Storage::FileSystem::{
-        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
-    };
+    pub use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE};
     pub use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
     pub use windows_sys::Win32::System::IO::DeviceIoControl;
 
@@ -100,33 +93,21 @@ pub fn create_windows_relative_symlink(path: &Path, target: &str) {
             std::ptr::null_mut(),
         )
     };
-    assert_ne!(
-        result,
-        0,
-        "failed to create relative symlink fixture: {}",
-        std::io::Error::last_os_error()
-    );
+    assert_ne!(result, 0, "failed to create relative symlink fixture: {}", std::io::Error::last_os_error());
 }
 
 #[cfg(windows)]
-pub fn windows_basic_info(
-    path: &Path,
-    write: bool,
-) -> windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO {
+pub fn windows_basic_info(path: &Path, write: bool) -> windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO {
     pub use std::os::windows::fs::OpenOptionsExt as _;
     pub use std::os::windows::io::AsRawHandle as _;
     pub use windows_sys::Win32::Storage::FileSystem::{
-        FileBasicInfo, GetFileInformationByHandleEx, FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS,
-        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+        FileBasicInfo, GetFileInformationByHandleEx, FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
+        FILE_GENERIC_WRITE,
     };
 
     let mut options = fs::OpenOptions::new();
     options
-        .access_mode(if write {
-            FILE_GENERIC_READ | FILE_GENERIC_WRITE
-        } else {
-            FILE_GENERIC_READ
-        })
+        .access_mode(if write { FILE_GENERIC_READ | FILE_GENERIC_WRITE } else { FILE_GENERIC_READ })
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT);
     let file = options.open(path).unwrap();
     let mut info = FILE_BASIC_INFO::default();
@@ -138,25 +119,16 @@ pub fn windows_basic_info(
             std::mem::size_of::<FILE_BASIC_INFO>() as u32,
         )
     };
-    assert_ne!(
-        status,
-        0,
-        "failed to read basic metadata for {}",
-        path.display()
-    );
+    assert_ne!(status, 0, "failed to read basic metadata for {}", path.display());
     info
 }
 
 #[cfg(windows)]
-pub fn set_windows_basic_info(
-    path: &Path,
-    info: &windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO,
-) {
+pub fn set_windows_basic_info(path: &Path, info: &windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO) {
     pub use std::os::windows::fs::OpenOptionsExt as _;
     pub use std::os::windows::io::AsRawHandle as _;
     pub use windows_sys::Win32::Storage::FileSystem::{
-        FileBasicInfo, SetFileInformationByHandle, FILE_FLAG_BACKUP_SEMANTICS,
-        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+        FileBasicInfo, SetFileInformationByHandle, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
     };
 
     let file = fs::OpenOptions::new()
@@ -172,21 +144,14 @@ pub fn set_windows_basic_info(
             std::mem::size_of::<windows_sys::Win32::Storage::FileSystem::FILE_BASIC_INFO>() as u32,
         )
     };
-    assert_ne!(
-        status,
-        0,
-        "failed to set basic metadata for {}",
-        path.display()
-    );
+    assert_ne!(status, 0, "failed to set basic metadata for {}", path.display());
 }
 
 #[cfg(windows)]
 pub fn windows_process_is_elevated() -> bool {
     pub use std::mem::size_of;
     pub use windows_sys::Win32::Foundation::CloseHandle;
-    pub use windows_sys::Win32::Security::{
-        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
-    };
+    pub use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
     pub use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
     let mut token = std::ptr::null_mut();
@@ -293,25 +258,19 @@ fn payload_data_record_locations(volume_index: usize, volume: &[u8]) -> Vec<Payl
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&volume[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let block_size = crypto_header.fixed.block_size as usize;
     let record_len = block_size + BLOCK_RECORD_FRAMING_LEN;
     let locator = CriticalRecoveryLocator::parse(&volume[volume.len() - 128..]).unwrap();
     let trailer_offset = locator.volume_trailer_offset as usize;
-    let trailer =
-        VolumeTrailer::parse(&volume[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
+    let trailer = VolumeTrailer::parse(&volume[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
     let manifest_offset = trailer.manifest_footer_offset as usize;
     assert_eq!((manifest_offset - crypto_end) % record_len, 0);
 
     (crypto_end..manifest_offset)
         .step_by(record_len)
         .filter_map(|offset| {
-            let record =
-                BlockRecord::parse(&volume[offset..offset + record_len], block_size).unwrap();
+            let record = BlockRecord::parse(&volume[offset..offset + record_len], block_size).unwrap();
             (record.kind == BlockKind::PayloadData).then_some(PayloadRecordLocation {
                 volume_index,
                 payload_offset: offset + 16,
@@ -326,22 +285,16 @@ pub fn corrupt_first_record_of_kind(volume: &mut [u8], kind: BlockKind) {
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&volume[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let block_size = crypto_header.fixed.block_size as usize;
     let record_len = block_size + BLOCK_RECORD_FRAMING_LEN;
     let locator = CriticalRecoveryLocator::parse(&volume[volume.len() - 128..]).unwrap();
     let trailer_offset = locator.volume_trailer_offset as usize;
-    let trailer =
-        VolumeTrailer::parse(&volume[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
+    let trailer = VolumeTrailer::parse(&volume[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
     let manifest_offset = trailer.manifest_footer_offset as usize;
 
     for offset in (crypto_end..manifest_offset).step_by(record_len) {
-        let mut record =
-            BlockRecord::parse(&volume[offset..offset + record_len], block_size).unwrap();
+        let mut record = BlockRecord::parse(&volume[offset..offset + record_len], block_size).unwrap();
         if record.kind == kind {
             record.payload[0] ^= 0x55;
             volume[offset..offset + record_len].copy_from_slice(&record.to_bytes());
@@ -355,17 +308,12 @@ pub fn corrupt_first_record_payload_crc_of_kind(volume: &mut [u8], kind: BlockKi
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&volume[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let block_size = crypto_header.fixed.block_size as usize;
     let record_len = block_size + BLOCK_RECORD_FRAMING_LEN;
     let locator = CriticalRecoveryLocator::parse(&volume[volume.len() - 128..]).unwrap();
     let trailer_offset = locator.volume_trailer_offset as usize;
-    let trailer =
-        VolumeTrailer::parse(&volume[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
+    let trailer = VolumeTrailer::parse(&volume[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
     let manifest_offset = trailer.manifest_footer_offset as usize;
 
     for offset in (crypto_end..manifest_offset).step_by(record_len) {
@@ -382,17 +330,12 @@ pub fn corrupt_first_record_magic_of_kind(volume: &mut [u8], kind: BlockKind) {
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&volume[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let block_size = crypto_header.fixed.block_size as usize;
     let record_len = block_size + BLOCK_RECORD_FRAMING_LEN;
     let locator = CriticalRecoveryLocator::parse(&volume[volume.len() - 128..]).unwrap();
     let trailer_offset = locator.volume_trailer_offset as usize;
-    let trailer =
-        VolumeTrailer::parse(&volume[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
+    let trailer = VolumeTrailer::parse(&volume[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
     let manifest_offset = trailer.manifest_footer_offset as usize;
 
     for offset in (crypto_end..manifest_offset).step_by(record_len) {
@@ -405,14 +348,8 @@ pub fn corrupt_first_record_magic_of_kind(volume: &mut [u8], kind: BlockKind) {
     panic!("no {kind:?} record found to corrupt");
 }
 
-pub fn zero_deterministic_payload_blocks(
-    volume_paths: &[PathBuf],
-    corruption_pct: usize,
-) -> (usize, usize) {
-    let mut volumes = volume_paths
-        .iter()
-        .map(|path| fs::read(path).unwrap())
-        .collect::<Vec<_>>();
+pub fn zero_deterministic_payload_blocks(volume_paths: &[PathBuf], corruption_pct: usize) -> (usize, usize) {
+    let mut volumes = volume_paths.iter().map(|path| fs::read(path).unwrap()).collect::<Vec<_>>();
     let mut locations = volumes
         .iter()
         .enumerate()
@@ -425,25 +362,18 @@ pub fn zero_deterministic_payload_blocks(
     );
 
     let corrupt_count = locations.len() * corruption_pct / 100;
-    assert!(
-        corrupt_count > 0,
-        "corruption percent should select at least one payload block"
-    );
+    assert!(corrupt_count > 0, "corruption percent should select at least one payload block");
 
     let mut selected = BTreeSet::new();
     let mut state = 0x9e37_79b9_7f4a_7c15u64;
     while selected.len() < corrupt_count {
-        state = state
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
+        state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
         selected.insert((state as usize) % locations.len());
     }
 
     for index in selected {
         let location = &locations[index];
-        volumes[location.volume_index]
-            [location.payload_offset..location.payload_offset + location.block_size]
-            .fill(0);
+        volumes[location.volume_index][location.payload_offset..location.payload_offset + location.block_size].fill(0);
     }
 
     for (path, bytes) in volume_paths.iter().zip(volumes) {
@@ -503,13 +433,7 @@ pub fn create_plaintext_dash_archive(temp: &Path) -> (PathBuf, Vec<u8>) {
     fs::write(&input, b"hello plaintext stdin\n").unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -521,9 +445,7 @@ pub fn is_lower_hex_byte(byte: u8) -> bool {
 }
 
 pub fn is_lower_hex_str(value: &str) -> bool {
-    value
-        .bytes()
-        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    value.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 pub fn test_ca_cert(cn: &str) -> (X509, PKey<Private>) {
@@ -537,34 +459,17 @@ pub fn test_ca_cert(cn: &str) -> (X509, PKey<Private>) {
     builder.set_subject_name(&name).unwrap();
     builder.set_issuer_name(&name).unwrap();
     builder.set_pubkey(&key).unwrap();
+    builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+    builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
+    builder.append_extension(BasicConstraints::new().critical().ca().build().unwrap()).unwrap();
     builder
-        .set_not_before(&Asn1Time::days_from_now(0).unwrap())
-        .unwrap();
-    builder
-        .set_not_after(&Asn1Time::days_from_now(365).unwrap())
-        .unwrap();
-    builder
-        .append_extension(BasicConstraints::new().critical().ca().build().unwrap())
-        .unwrap();
-    builder
-        .append_extension(
-            KeyUsage::new()
-                .critical()
-                .key_cert_sign()
-                .crl_sign()
-                .build()
-                .unwrap(),
-        )
+        .append_extension(KeyUsage::new().critical().key_cert_sign().crl_sign().build().unwrap())
         .unwrap();
     builder.sign(&key, MessageDigest::sha256()).unwrap();
     (builder.build(), key)
 }
 
-pub fn test_leaf_cert(
-    cn: &str,
-    ca_cert: &X509Ref,
-    ca_key: &PKeyRef<Private>,
-) -> (X509, PKey<Private>) {
+pub fn test_leaf_cert(cn: &str, ca_cert: &X509Ref, ca_key: &PKeyRef<Private>) -> (X509, PKey<Private>) {
     let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
     let mut name = X509NameBuilder::new().unwrap();
     name.append_entry_by_text("CN", cn).unwrap();
@@ -575,23 +480,11 @@ pub fn test_leaf_cert(
     builder.set_subject_name(&name).unwrap();
     builder.set_issuer_name(ca_cert.subject_name()).unwrap();
     builder.set_pubkey(&key).unwrap();
+    builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+    builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
+    builder.append_extension(BasicConstraints::new().build().unwrap()).unwrap();
     builder
-        .set_not_before(&Asn1Time::days_from_now(0).unwrap())
-        .unwrap();
-    builder
-        .set_not_after(&Asn1Time::days_from_now(365).unwrap())
-        .unwrap();
-    builder
-        .append_extension(BasicConstraints::new().build().unwrap())
-        .unwrap();
-    builder
-        .append_extension(
-            KeyUsage::new()
-                .critical()
-                .digital_signature()
-                .build()
-                .unwrap(),
-        )
+        .append_extension(KeyUsage::new().critical().digital_signature().build().unwrap())
         .unwrap();
     builder.sign(ca_key, MessageDigest::sha256()).unwrap();
     (builder.build(), key)
@@ -609,18 +502,10 @@ pub fn test_x25519_recipient_cert() -> (X509, Vec<u8>) {
     builder.set_subject_name(&name).unwrap();
     builder.set_issuer_name(&name).unwrap();
     builder.set_pubkey(&subject_key).unwrap();
-    builder
-        .set_not_before(&Asn1Time::days_from_now(0).unwrap())
-        .unwrap();
-    builder
-        .set_not_after(&Asn1Time::days_from_now(365).unwrap())
-        .unwrap();
-    builder
-        .append_extension(BasicConstraints::new().build().unwrap())
-        .unwrap();
-    builder
-        .append_extension(KeyUsage::new().critical().key_agreement().build().unwrap())
-        .unwrap();
+    builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+    builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
+    builder.append_extension(BasicConstraints::new().build().unwrap()).unwrap();
+    builder.append_extension(KeyUsage::new().critical().key_agreement().build().unwrap()).unwrap();
     builder.sign(&signer_key, MessageDigest::sha256()).unwrap();
     (builder.build(), subject_key.raw_private_key().unwrap())
 }

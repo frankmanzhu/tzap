@@ -5,8 +5,8 @@ use anyhow::anyhow;
 use openssl::x509::X509;
 use tzap_core::entry_metadata::CaptureStatus;
 use tzap_core::format::{
-    ArchiveWriteError, CompressionAlgo, ExtractError, FecAlgo, FormatError, FORMAT_VERSION,
-    READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
+    ArchiveWriteError, CompressionAlgo, ExtractError, FecAlgo, FormatError, FORMAT_VERSION, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45,
+    VOLUME_HEADER_LEN,
 };
 use tzap_core::reader::ArchiveEntry;
 use tzap_core::wire::VolumeHeader;
@@ -17,9 +17,8 @@ use tzap_core::PortablePosixOwner;
 #[cfg(test)]
 use tzap_core::{write_archive_with_kdf, RegularFile};
 use tzap_core::{
-    ArchiveTimestamp, EntryMetadataVerification, KdfParams, MasterKey, MetadataDiagnostic,
-    MetadataVerificationReport, PublicNoKeyVerification, RestorePolicy, RestorePolicyCapability,
-    RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, TarEntryKind, WriterOptions,
+    ArchiveTimestamp, EntryMetadataVerification, KdfParams, MasterKey, MetadataDiagnostic, MetadataVerificationReport, PublicNoKeyVerification, RestorePolicy,
+    RestorePolicyCapability, RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, TarEntryKind, WriterOptions,
 };
 #[cfg(test)]
 use tzap_core::{MetadataDiagnosticStatus, MetadataOperation};
@@ -39,9 +38,7 @@ use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use tzap_core::{write_archive_sources_to_sink, RegularFileSource};
 #[cfg(any(target_os = "linux", windows))]
-use tzap_core::{
-    write_archive_sources_to_sink_ordered_parallel, MemoryArchiveSink, SafeExtractionOptions,
-};
+use tzap_core::{write_archive_sources_to_sink_ordered_parallel, MemoryArchiveSink, SafeExtractionOptions};
 
 use super::*;
 use crate::commands::*;
@@ -62,10 +59,7 @@ fn windows_test_tempdir() -> tempfile::TempDir {
     };
     let root = PathBuf::from(root);
     fs::create_dir_all(&root).unwrap();
-    tempfile::Builder::new()
-        .prefix("tzap-windows-")
-        .tempdir_in(root)
-        .unwrap()
+    tempfile::Builder::new().prefix("tzap-windows-").tempdir_in(root).unwrap()
 }
 
 #[cfg(windows)]
@@ -73,9 +67,7 @@ fn create_windows_relative_symlink(path: &Path, target: &str) -> bool {
     use std::os::windows::fs::OpenOptionsExt as _;
     use std::os::windows::io::AsRawHandle as _;
     use windows_sys::Win32::Foundation::ERROR_PRIVILEGE_NOT_HELD;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE};
     use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
     use windows_sys::Win32::System::IO::DeviceIoControl;
 
@@ -121,8 +113,7 @@ fn create_windows_relative_symlink(path: &Path, target: &str) -> bool {
         )
     };
     let error = std::io::Error::last_os_error();
-    if result == 0 && error.raw_os_error().map(|code| code as u32) == Some(ERROR_PRIVILEGE_NOT_HELD)
-    {
+    if result == 0 && error.raw_os_error().map(|code| code as u32) == Some(ERROR_PRIVILEGE_NOT_HELD) {
         return false;
     }
     assert_ne!(result, 0, "{error}");
@@ -199,10 +190,7 @@ fn create_layout_defaults_scale_by_input_size() {
             envelope_target_size: 64 * 1024 * 1024,
         }
     );
-    assert_eq!(
-        default_create_layout(None),
-        default_create_layout(Some(LARGE_CREATE_LAYOUT_THRESHOLD + 1))
-    );
+    assert_eq!(default_create_layout(None), default_create_layout(Some(LARGE_CREATE_LAYOUT_THRESHOLD + 1)));
 }
 
 #[test]
@@ -231,26 +219,15 @@ fn create_groups_selected_hardlinks_under_deterministic_canonical_target() {
     fs::write(&first, b"shared").unwrap();
     fs::hard_link(&first, &second).unwrap();
 
-    let specs = collect_input_specs(&[
-        first.to_string_lossy().into_owned(),
-        second.to_string_lossy().into_owned(),
-    ])
-    .unwrap();
+    let specs = collect_input_specs(&[first.to_string_lossy().into_owned(), second.to_string_lossy().into_owned()]).unwrap();
 
     assert_eq!(specs[0].entry_kind, SourceEntryKind::Regular);
     assert_eq!(specs[1].entry_kind, SourceEntryKind::Hardlink);
-    assert_eq!(
-        specs[1].link_target.as_deref(),
-        Some(b"first.txt".as_slice())
-    );
+    assert_eq!(specs[1].link_target.as_deref(), Some(b"first.txt".as_slice()));
     assert_eq!(specs[1].size, 0);
     assert_eq!(specs[1].portable_metadata.created, None);
     assert_eq!(specs[1].portable_metadata.accessed, None);
-    assert!(specs[1]
-        .portable_metadata
-        .native
-        .auxiliary_records
-        .is_empty());
+    assert!(specs[1].portable_metadata.native.auxiliary_records.is_empty());
 }
 
 #[test]
@@ -267,9 +244,7 @@ fn tar_stdin_signer_failure_removes_temporary_archive_output() {
         signer_identity: b"test signer",
         authenticator_value_length: 64,
     };
-    let mut authenticator = |_request: &RootAuthSigningRequest| {
-        Err(FormatError::WriterUnsupported("test signer failed"))
-    };
+    let mut authenticator = |_request: &RootAuthSigningRequest| Err(FormatError::WriterUnsupported("test signer failed"));
     let mut input = Cursor::new(test_tar_stream(&[("signed.txt", b"signed")]));
 
     let error = write_tar_stdin_archive_output_from_reader(
@@ -309,12 +284,8 @@ fn raw_spool_multi_volume_signer_failure_removes_temporary_archive_outputs_and_s
         signer_identity: b"test signer",
         authenticator_value_length: 64,
     };
-    let mut authenticator = |_request: &RootAuthSigningRequest| {
-        Err(FormatError::WriterUnsupported("test signer failed"))
-    };
-    let payload = (0..150_000)
-        .map(|index| (index % 251) as u8)
-        .collect::<Vec<_>>();
+    let mut authenticator = |_request: &RootAuthSigningRequest| Err(FormatError::WriterUnsupported("test signer failed"));
+    let payload = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
     let spool_path;
 
     {
@@ -386,9 +357,7 @@ fn read_kdf_params_rejects_stripe_width_mismatch_before_returning_kdf() {
 
     assert_eq!(
         err.downcast_ref::<FormatError>(),
-        Some(&FormatError::InvalidArchive(
-            "VolumeHeader and CryptoHeader stripe_width differ"
-        ))
+        Some(&FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ"))
     );
 }
 
@@ -406,10 +375,7 @@ fn unsupported_revision_errors_suggest_reader_upgrade() {
 
         assert_eq!(diagnostic.label, "unsupported-revision");
         assert_eq!(diagnostic.exit_code, EXIT_UNSUPPORTED_REVISION);
-        assert_eq!(
-            diagnostic.action,
-            "upgrade tzap or use a reader that supports this archive revision"
-        );
+        assert_eq!(diagnostic.action, "upgrade tzap or use a reader that supports this archive revision");
     }
 }
 
@@ -421,24 +387,12 @@ fn reporting_unsupported_revision_json_has_observed_supported_action_only() {
         reader_max_supported_revision: VOLUME_FORMAT_REV_45,
     });
 
-    let payload = unsupported_revision_error_json(
-        &err,
-        "upgrade tzap or use a reader that supports this archive revision",
-    );
+    let payload = unsupported_revision_error_json(&err, "upgrade tzap or use a reader that supports this archive revision");
 
     assert_eq!(payload["label"], "unsupported-revision");
-    assert_eq!(
-        payload["observed"]["format_version"],
-        serde_json::json!(FORMAT_VERSION)
-    );
-    assert_eq!(
-        payload["observed"]["volume_format_rev"],
-        serde_json::json!(VOLUME_FORMAT_REV_45 + 1)
-    );
-    assert_eq!(
-        payload["supported"]["max_volume_format_rev"],
-        serde_json::json!(VOLUME_FORMAT_REV_45)
-    );
+    assert_eq!(payload["observed"]["format_version"], serde_json::json!(FORMAT_VERSION));
+    assert_eq!(payload["observed"]["volume_format_rev"], serde_json::json!(VOLUME_FORMAT_REV_45 + 1));
+    assert_eq!(payload["supported"]["max_volume_format_rev"], serde_json::json!(VOLUME_FORMAT_REV_45));
     assert!(payload.get("root_auth").is_none());
     assert!(payload.get("decryption_keywrap").is_none());
 }
@@ -463,14 +417,8 @@ fn reporting_public_no_key_status_is_metadata_only() {
 
     assert_eq!(status["revision_mode"], serde_json::json!("v45"));
     assert_eq!(status["decryption_keywrap"], serde_json::json!("not_used"));
-    assert_eq!(
-        status["trust_policy"],
-        serde_json::json!("public_trust_matched")
-    );
-    assert_eq!(
-        status["public_no_key_metadata_only"],
-        serde_json::json!("metadata_commitments_verified")
-    );
+    assert_eq!(status["trust_policy"], serde_json::json!("public_trust_matched"));
+    assert_eq!(status["public_no_key_metadata_only"], serde_json::json!("metadata_commitments_verified"));
 }
 
 #[test]
@@ -479,19 +427,14 @@ fn embedded_official_root_fingerprint_matches_certificate() {
     let cert = X509::from_der(&der).unwrap();
     let digest = cert.digest(openssl::hash::MessageDigest::sha256()).unwrap();
 
-    assert_eq!(
-        OFFICIAL_TZAP_ROOT_CERT_SHA256,
-        format!("sha256:{}", encode_hex(&digest))
-    );
+    assert_eq!(OFFICIAL_TZAP_ROOT_CERT_SHA256, format!("sha256:{}", encode_hex(&digest)));
 }
 
 #[test]
 fn bootstrap_required_errors_keep_missing_bootstrap_diagnostic() {
     for err in [
         FormatError::ReaderUnsupported("dictionary bootstrap required"),
-        FormatError::ReaderUnsupported(
-            "dictionary bootstrap required for non-seekable sequential extraction",
-        ),
+        FormatError::ReaderUnsupported("dictionary bootstrap required for non-seekable sequential extraction"),
         FormatError::ReaderUnsupported("non-seekable random access requires a bootstrap sidecar"),
         FormatError::WriterUnsupported("bootstrap sidecar required"),
     ] {
@@ -505,16 +448,11 @@ fn bootstrap_required_errors_keep_missing_bootstrap_diagnostic() {
 
 #[test]
 fn missing_volume_errors_keep_stable_diagnostic() {
-    let diagnostic = classify_format_error(&FormatError::InvalidArchive(
-        "missing volume count exceeds volume_loss_tolerance",
-    ));
+    let diagnostic = classify_format_error(&FormatError::InvalidArchive("missing volume count exceeds volume_loss_tolerance"));
 
     assert_eq!(diagnostic.label, "missing-volume");
     assert_eq!(diagnostic.exit_code, EXIT_CORRUPT_ARCHIVE);
-    assert_eq!(
-        diagnostic.action,
-        "add the missing archive volume(s) or confirm volume-loss tolerance"
-    );
+    assert_eq!(diagnostic.action, "add the missing archive volume(s) or confirm volume-loss tolerance");
 }
 
 fn assert_format_diagnostic(err: &FormatError, label: &str, exit_code: u8, action: &str) {
@@ -553,12 +491,8 @@ fn classify_format_error_covers_unsupported_revision_group() {
 #[test]
 fn classify_format_error_covers_corrupt_header_structures() {
     for err in [
-        FormatError::BadMagic {
-            structure: "VolumeTrailer",
-        },
-        FormatError::BadMagic {
-            structure: "ManifestFooter",
-        },
+        FormatError::BadMagic { structure: "VolumeTrailer" },
+        FormatError::BadMagic { structure: "ManifestFooter" },
     ] {
         assert_format_diagnostic(
             &err,
@@ -568,15 +502,9 @@ fn classify_format_error_covers_corrupt_header_structures() {
         );
     }
     for err in [
-        FormatError::BadCrc {
-            structure: "VolumeHeader",
-        },
-        FormatError::BadCrc {
-            structure: "VolumeTrailer",
-        },
-        FormatError::BadCrc {
-            structure: "ManifestFooter",
-        },
+        FormatError::BadCrc { structure: "VolumeHeader" },
+        FormatError::BadCrc { structure: "VolumeTrailer" },
+        FormatError::BadCrc { structure: "ManifestFooter" },
         FormatError::InvalidMetadata {
             structure: "VolumeHeader",
             reason: "bad field",
@@ -586,21 +514,14 @@ fn classify_format_error_covers_corrupt_header_structures() {
             reason: "bad field",
         },
     ] {
-        assert_format_diagnostic(
-            &err,
-            "corrupt-header",
-            EXIT_CORRUPT_ARCHIVE,
-            "inspect archive metadata and source file path",
-        );
+        assert_format_diagnostic(&err, "corrupt-header", EXIT_CORRUPT_ARCHIVE, "inspect archive metadata and source file path");
     }
 }
 
 #[test]
 fn classify_format_error_covers_wrong_key_group() {
     for err in [
-        FormatError::HmacMismatch {
-            structure: "CryptoHeader",
-        },
+        FormatError::HmacMismatch { structure: "CryptoHeader" },
         FormatError::KeyMaterialMismatch,
         FormatError::InvalidRawMasterKeyLength,
     ] {
@@ -616,9 +537,7 @@ fn classify_format_error_covers_wrong_key_group() {
 #[test]
 fn classify_format_error_covers_corrupt_archive_and_missing_volume() {
     assert_format_diagnostic(
-        &FormatError::IntegrityDigestMismatch {
-            structure: "ManifestFooter",
-        },
+        &FormatError::IntegrityDigestMismatch { structure: "ManifestFooter" },
         "corrupt-archive",
         EXIT_CORRUPT_ARCHIVE,
         "verify the archive bytes and source file path",
@@ -660,23 +579,11 @@ fn classify_format_error_pins_dictionary_extent_message_as_corrupt_archive() {
 
 #[test]
 fn classify_format_error_covers_corrupt_payload_group() {
-    for err in [
-        FormatError::HmacMismatch {
-            structure: "PayloadBlock",
-        },
-        FormatError::AeadFailure,
-    ] {
-        assert_format_diagnostic(
-            &err,
-            "corrupt-payload",
-            EXIT_CORRUPT_ARCHIVE,
-            "verify archive payload integrity",
-        );
+    for err in [FormatError::HmacMismatch { structure: "PayloadBlock" }, FormatError::AeadFailure] {
+        assert_format_diagnostic(&err, "corrupt-payload", EXIT_CORRUPT_ARCHIVE, "verify archive payload integrity");
     }
     assert_format_diagnostic(
-        &FormatError::BadCrc {
-            structure: "PayloadBlock",
-        },
+        &FormatError::BadCrc { structure: "PayloadBlock" },
         "corrupt-payload",
         EXIT_CORRUPT_ARCHIVE,
         "verify payload integrity",
@@ -697,12 +604,7 @@ fn classify_format_error_covers_corrupt_payload_group() {
 #[test]
 fn classify_format_error_covers_invalid_arguments() {
     let message = "argon2 T-cost exceeds reader cap";
-    assert_format_diagnostic(
-        &FormatError::InvalidKdfParams(message),
-        "invalid-arguments",
-        EXIT_USAGE,
-        message,
-    );
+    assert_format_diagnostic(&FormatError::InvalidKdfParams(message), "invalid-arguments", EXIT_USAGE, message);
     assert_format_diagnostic(
         &FormatError::ReaderResourceLimitExceeded {
             field: "entry-count",
@@ -748,16 +650,8 @@ fn classify_format_error_covers_unsupported_feature_fallback() {
 
 #[test]
 fn classify_format_error_wildcard_is_corrupt_archive() {
-    for err in [
-        FormatError::UnknownBlockKind(9),
-        FormatError::InvalidArchive("some other archive reason"),
-    ] {
-        assert_format_diagnostic(
-            &err,
-            "corrupt-archive",
-            EXIT_CORRUPT_ARCHIVE,
-            "verify archive integrity and source",
-        );
+    for err in [FormatError::UnknownBlockKind(9), FormatError::InvalidArchive("some other archive reason")] {
+        assert_format_diagnostic(&err, "corrupt-archive", EXIT_CORRUPT_ARCHIVE, "verify archive integrity and source");
     }
 }
 
@@ -768,8 +662,7 @@ fn classify_error_maps_wrapped_core_errors_and_fallbacks() {
     assert_eq!(diagnostic.label, "invalid-arguments");
     assert_eq!(diagnostic.exit_code, EXIT_USAGE);
 
-    let contextual_usage = anyhow!("invalid size '10Q': unsupported suffix 'Q'")
-        .context(UsageError("invalid volume-size"));
+    let contextual_usage = anyhow!("invalid size '10Q': unsupported suffix 'Q'").context(UsageError("invalid volume-size"));
     let diagnostic = classify_error(&contextual_usage);
     assert_eq!(diagnostic.label, "invalid-arguments");
     assert_eq!(diagnostic.exit_code, EXIT_USAGE);
@@ -779,34 +672,23 @@ fn classify_error_maps_wrapped_core_errors_and_fallbacks() {
     assert_eq!(diagnostic.label, "unsafe-path");
     assert_eq!(diagnostic.exit_code, EXIT_UNSAFE_PATH);
 
-    let write_io = anyhow!(ArchiveWriteError::Io(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "missing archive"
-    )));
+    let write_io = anyhow!(ArchiveWriteError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "missing archive")));
     let diagnostic = classify_error(&write_io);
     assert_eq!(diagnostic.label, "io-error");
     assert_eq!(diagnostic.exit_code, EXIT_IO);
     assert_eq!(diagnostic.action, "check file paths and permissions");
 
-    let extract_format = anyhow!(ExtractError::Format(FormatError::UnsupportedFormatVersion(
-        2
-    )));
+    let extract_format = anyhow!(ExtractError::Format(FormatError::UnsupportedFormatVersion(2)));
     let diagnostic = classify_error(&extract_format);
     assert_eq!(diagnostic.label, "unsupported-revision");
     assert_eq!(diagnostic.exit_code, EXIT_UNSUPPORTED_REVISION);
 
-    let extract_output = anyhow!(ExtractError::Output(std::io::Error::new(
-        std::io::ErrorKind::PermissionDenied,
-        "denied"
-    )));
+    let extract_output = anyhow!(ExtractError::Output(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied")));
     let diagnostic = classify_error(&extract_output);
     assert_eq!(diagnostic.label, "io-error");
     assert_eq!(diagnostic.exit_code, EXIT_IO);
 
-    let chained_format = anyhow!(FormatError::BadMagic {
-        structure: "VolumeHeader",
-    })
-    .context("reading archive");
+    let chained_format = anyhow!(FormatError::BadMagic { structure: "VolumeHeader" }).context("reading archive");
     let diagnostic = classify_error(&chained_format);
     assert_eq!(diagnostic.label, "corrupt-header");
     assert_eq!(diagnostic.exit_code, EXIT_CORRUPT_ARCHIVE);
@@ -841,40 +723,25 @@ fn classify_io_error_covers_kinds_and_actions() {
 #[test]
 fn unsupported_revision_error_json_covers_all_branches() {
     let version_err = anyhow!(FormatError::UnsupportedFormatVersion(2));
-    let payload = unsupported_revision_error_json(
-        &version_err,
-        "upgrade tzap or use a reader that supports this archive revision",
-    );
+    let payload = unsupported_revision_error_json(&version_err, "upgrade tzap or use a reader that supports this archive revision");
     assert_eq!(payload["label"], "unsupported-revision");
     assert_eq!(payload["observed"]["format_version"], serde_json::json!(2));
-    assert_eq!(
-        payload["supported"]["format_version"],
-        serde_json::json!(FORMAT_VERSION)
-    );
+    assert_eq!(payload["supported"]["format_version"], serde_json::json!(FORMAT_VERSION));
     assert_eq!(
         payload["supported"]["max_volume_format_rev"],
         serde_json::json!(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
     );
 
     let no_format_cause = anyhow!("plain io failure");
-    let payload = unsupported_revision_error_json(
-        &no_format_cause,
-        "upgrade tzap or use a reader that supports this archive revision",
-    );
+    let payload = unsupported_revision_error_json(&no_format_cause, "upgrade tzap or use a reader that supports this archive revision");
     assert_eq!(payload["label"], "unsupported-revision");
     assert!(payload.get("observed").unwrap().is_null());
-    assert_eq!(
-        payload["supported"]["format_version"],
-        serde_json::json!(FORMAT_VERSION)
-    );
+    assert_eq!(payload["supported"]["format_version"], serde_json::json!(FORMAT_VERSION));
     assert_eq!(
         payload["supported"]["max_volume_format_rev"],
         serde_json::json!(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
     );
-    assert_eq!(
-        payload["action"],
-        "upgrade tzap or use a reader that supports this archive revision"
-    );
+    assert_eq!(payload["action"], "upgrade tzap or use a reader that supports this archive revision");
 }
 
 #[test]
@@ -897,9 +764,9 @@ fn metadata_diagnostic_lines_use_stable_cli_warning_prefix() {
     );
 
     assert_eq!(
-            line,
-            "tzap: degraded-metadata: path/in/archive: gnu-sparse: sparse-layout: Plan/Unsupported: unsupported sparse-file PAX metadata was ignored"
-        );
+        line,
+        "tzap: degraded-metadata: path/in/archive: gnu-sparse: sparse-layout: Plan/Unsupported: unsupported sparse-file PAX metadata was ignored"
+    );
 }
 
 #[test]
@@ -964,12 +831,9 @@ fn selected_metadata_diagnostic_lines_filter_to_requested_paths() {
     ];
 
     assert_eq!(
-            metadata_diagnostic_lines_for_paths(&entries, &["selected.txt".to_string()]),
-            vec![
-                "tzap: degraded-metadata: selected.txt: pax-posix-2001: pax-key: Plan/Unsupported: unsupported PAX key was ignored"
-                    .to_string()
-            ]
-        );
+        metadata_diagnostic_lines_for_paths(&entries, &["selected.txt".to_string()]),
+        vec!["tzap: degraded-metadata: selected.txt: pax-posix-2001: pax-key: Plan/Unsupported: unsupported PAX key was ignored".to_string()]
+    );
     assert_eq!(metadata_diagnostic_lines_for_entries(&entries).len(), 2);
 }
 
@@ -1107,50 +971,26 @@ fn metadata_verification_json_reports_diagnostics_and_policies() {
 
     assert_eq!(payload["capture_complete"], serde_json::json!(false));
     assert_eq!(payload["full_fidelity_possible"], serde_json::json!(false));
-    assert_eq!(
-        payload["profiles_present"],
-        serde_json::json!(["pax-posix-2001"])
-    );
-    assert_eq!(
-        payload["auxiliary_kinds_present"],
-        serde_json::json!(["xattr"])
-    );
+    assert_eq!(payload["profiles_present"], serde_json::json!(["pax-posix-2001"]));
+    assert_eq!(payload["auxiliary_kinds_present"], serde_json::json!(["xattr"]));
 
     let entry = &payload["entries"][0];
     assert_eq!(entry["path"], serde_json::json!("in/archive"));
     assert_eq!(entry["capture_status"], serde_json::json!("partial"));
-    assert_eq!(
-        entry["required_profiles"],
-        serde_json::json!(["pax-posix-2001"])
-    );
-    assert_eq!(
-        entry["optional_profiles"],
-        serde_json::json!(["gnu-sparse"])
-    );
+    assert_eq!(entry["required_profiles"], serde_json::json!(["pax-posix-2001"]));
+    assert_eq!(entry["optional_profiles"], serde_json::json!(["gnu-sparse"]));
     assert_eq!(entry["auxiliary_kinds"], serde_json::json!(["xattr"]));
     assert_eq!(entry["full_fidelity_possible"], serde_json::json!(false));
 
     let capabilities = &entry["policy_capabilities"];
     assert_eq!(capabilities[0]["policy"], serde_json::json!("content"));
     assert_eq!(capabilities[0]["policy_complete"], serde_json::json!(true));
-    assert_eq!(
-        capabilities[0]["degraded_restore_available"],
-        serde_json::json!(false)
-    );
-    assert_eq!(
-        capabilities[0]["reason"],
-        serde_json::json!("no content metadata captured")
-    );
+    assert_eq!(capabilities[0]["degraded_restore_available"], serde_json::json!(false));
+    assert_eq!(capabilities[0]["reason"], serde_json::json!("no content metadata captured"));
     assert_eq!(capabilities[1]["policy"], serde_json::json!("system"));
     assert_eq!(capabilities[1]["policy_complete"], serde_json::json!(false));
-    assert_eq!(
-        capabilities[1]["degraded_restore_available"],
-        serde_json::json!(true)
-    );
-    assert_eq!(
-        capabilities[1]["reason"],
-        serde_json::json!("native metadata partially restored")
-    );
+    assert_eq!(capabilities[1]["degraded_restore_available"], serde_json::json!(true));
+    assert_eq!(capabilities[1]["reason"], serde_json::json!("native metadata partially restored"));
 
     let diagnostic = &entry["diagnostics"][0];
     assert_eq!(diagnostic["path"], serde_json::json!("in/archive"));
@@ -1158,10 +998,7 @@ fn metadata_verification_json_reports_diagnostics_and_policies() {
     assert_eq!(diagnostic["metadata_class"], serde_json::json!("acl"));
     assert_eq!(diagnostic["operation"], serde_json::json!("capture"));
     assert_eq!(diagnostic["status"], serde_json::json!("partial"));
-    assert_eq!(
-        diagnostic["reason"],
-        serde_json::json!("some ACL entries not capturable")
-    );
+    assert_eq!(diagnostic["reason"], serde_json::json!("some ACL entries not capturable"));
     assert_eq!(diagnostic["restore_policy"], serde_json::json!("system"));
     assert_eq!(diagnostic["restore_phase"], serde_json::json!(1));
     assert_eq!(diagnostic["native_host_error"], serde_json::json!("EINVAL"));
@@ -1241,38 +1078,20 @@ fn metadata_verification_stdout_lines_cover_partial_and_policy_counts() {
         )],
     };
     let lines = metadata_verification_stdout_lines(&complete);
-    assert_eq!(
-        lines[0],
-        "metadata: capture=complete full-fidelity=possible profiles=[] auxiliary-kinds=[]"
-    );
-    assert_eq!(
-        lines[1],
-        "metadata-policy content: 0/1 entries policy-complete"
-    );
-    assert_eq!(
-        lines[2],
-        "metadata-policy portable: 1/1 entries policy-complete"
-    );
+    assert_eq!(lines[0], "metadata: capture=complete full-fidelity=possible profiles=[] auxiliary-kinds=[]");
+    assert_eq!(lines[1], "metadata-policy content: 0/1 entries policy-complete");
+    assert_eq!(lines[2], "metadata-policy portable: 1/1 entries policy-complete");
     assert_eq!(lines.len(), 5);
 }
 
 #[test]
 fn archive_entry_kind_label_covers_all_kinds() {
     assert_eq!(archive_entry_kind_label(TarEntryKind::Regular), "file");
-    assert_eq!(
-        archive_entry_kind_label(TarEntryKind::Directory),
-        "directory"
-    );
+    assert_eq!(archive_entry_kind_label(TarEntryKind::Directory), "directory");
     assert_eq!(archive_entry_kind_label(TarEntryKind::Symlink), "symlink");
     assert_eq!(archive_entry_kind_label(TarEntryKind::Hardlink), "hardlink");
-    assert_eq!(
-        archive_entry_kind_label(TarEntryKind::CharacterDevice),
-        "character-device"
-    );
-    assert_eq!(
-        archive_entry_kind_label(TarEntryKind::BlockDevice),
-        "block-device"
-    );
+    assert_eq!(archive_entry_kind_label(TarEntryKind::CharacterDevice), "character-device");
+    assert_eq!(archive_entry_kind_label(TarEntryKind::BlockDevice), "block-device");
     assert_eq!(archive_entry_kind_label(TarEntryKind::Fifo), "fifo");
 }
 
@@ -1295,27 +1114,15 @@ fn filesystem_scan_captures_linux_native_profile_and_user_xattr() {
 
     let native = capture_native_file_metadata(&path, identity).unwrap();
 
+    assert_eq!(native.required_profiles, vec!["linux-backup-v1", "posix-backup-v1"]);
     assert_eq!(
-        native.required_profiles,
-        vec!["linux-backup-v1", "posix-backup-v1"]
-    );
-    assert_eq!(
-        native
-            .primary_pax_records
-            .get("LIBARCHIVE.xattr.user.tzap-test")
-            .map(Vec::as_slice),
+        native.primary_pax_records.get("LIBARCHIVE.xattr.user.tzap-test").map(Vec::as_slice),
         Some(b"bWV0YWRhdGE".as_slice())
     );
-    assert!(native
-        .primary_pax_records
-        .contains_key("TZAP.linux.fsflags"));
-    assert!(native
-        .primary_pax_records
-        .contains_key("TZAP.unix.ctime-observed"));
+    assert!(native.primary_pax_records.contains_key("TZAP.linux.fsflags"));
+    assert!(native.primary_pax_records.contains_key("TZAP.unix.ctime-observed"));
     if identity.creation_time.is_some() {
-        assert!(native
-            .primary_pax_records
-            .contains_key("LIBARCHIVE.creationtime"));
+        assert!(native.primary_pax_records.contains_key("LIBARCHIVE.creationtime"));
     }
 }
 
@@ -1339,19 +1146,13 @@ fn filesystem_scan_and_restore_preserve_linux_fifo() {
         0x20, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, // other
     ];
     xattr::set(&source, "system.posix_acl_access", &acl).unwrap();
-    let expected_acl = xattr::get(&source, "system.posix_acl_access")
-        .unwrap()
-        .unwrap();
+    let expected_acl = xattr::get(&source, "system.posix_acl_access").unwrap().unwrap();
 
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap();
     assert_eq!(specs.len(), 1);
     assert_eq!(specs[0].entry_kind, SourceEntryKind::Fifo);
     assert_eq!(specs[0].size, 0);
-    assert!(specs[0]
-        .portable_metadata
-        .native
-        .primary_pax_records
-        .contains_key("SCHILY.acl.access"));
+    assert!(specs[0].portable_metadata.native.primary_pax_records.contains_key("SCHILY.acl.access"));
 
     let key = MasterKey::from_raw_key(&[41u8; 32]).unwrap();
     let mut sink = MemoryArchiveSink::default();
@@ -1391,9 +1192,7 @@ fn filesystem_scan_and_restore_preserve_linux_fifo() {
     assert!(restored.file_type().is_fifo());
     assert_eq!(readonly_mode(&restored) & 0o777, 0o660);
     assert_eq!(
-        xattr::get(output.join("events.fifo"), "system.posix_acl_access")
-            .unwrap()
-            .unwrap(),
+        xattr::get(output.join("events.fifo"), "system.posix_acl_access").unwrap().unwrap(),
         expected_acl
     );
 }
@@ -1403,11 +1202,7 @@ fn filesystem_scan_and_restore_preserve_linux_fifo() {
 fn filesystem_scan_discovers_linux_sparse_extents() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("sparse.bin");
-    let mut file = fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&source)
-        .unwrap();
+    let mut file = fs::OpenOptions::new().create_new(true).write(true).open(&source).unwrap();
     let logical_size = 512 * 1024u64;
     file.set_len(logical_size).unwrap();
     file.seek(SeekFrom::Start(64 * 1024)).unwrap();
@@ -1417,10 +1212,7 @@ fn filesystem_scan_discovers_linux_sparse_extents() {
     file.flush().unwrap();
 
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap();
-    let extents = specs[0]
-        .sparse_extents
-        .as_ref()
-        .expect("filesystem should expose SEEK_DATA/SEEK_HOLE");
+    let extents = specs[0].sparse_extents.as_ref().expect("filesystem should expose SEEK_DATA/SEEK_HOLE");
     assert!(!extents.is_empty());
     assert!(extents.iter().map(|extent| extent.length).sum::<u64>() < logical_size);
 
@@ -1443,11 +1235,7 @@ fn filesystem_scan_discovers_linux_sparse_extents() {
     .unwrap();
     let opened = tzap_core::open_archive(&sink.volumes[0], &key).unwrap();
     let indexed = opened.lookup_index_entry("sparse.bin").unwrap().unwrap();
-    assert_ne!(
-        indexed.flags & (1 << 3),
-        0,
-        "archive index lost sparse metadata"
-    );
+    assert_ne!(indexed.flags & (1 << 3), 0, "archive index lost sparse metadata");
     let output = temp.path().join("sparse-output");
     fs::create_dir(&output).unwrap();
     opened
@@ -1472,13 +1260,7 @@ fn filesystem_scan_discovers_linux_sparse_extents() {
         restored.metadata().unwrap().blocks()
     );
     let restored_extents = restored_extents.unwrap();
-    assert!(
-        restored_extents
-            .iter()
-            .map(|extent| extent.length)
-            .sum::<u64>()
-            < logical_size
-    );
+    assert!(restored_extents.iter().map(|extent| extent.length).sum::<u64>() < logical_size);
     let bytes = fs::read(restored_path).unwrap();
     assert_eq!(&bytes[64 * 1024..64 * 1024 + 12], b"first extent");
     assert_eq!(&bytes[384 * 1024..384 * 1024 + 11], b"last extent");
@@ -1504,20 +1286,11 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
 
     let native = capture_native_file_metadata(&path, identity).unwrap();
     let shared = tzap_core::macos_metadata::capture_macos_metadata(&path, false).unwrap();
-    assert_eq!(
-        shared.native, native,
-        "CLI and reusable TZAP metadata capture must remain identical"
-    );
+    assert_eq!(shared.native, native, "CLI and reusable TZAP metadata capture must remain identical");
 
+    assert_eq!(native.required_profiles, vec!["macos-backup-v1", "posix-backup-v1"]);
     assert_eq!(
-        native.required_profiles,
-        vec!["macos-backup-v1", "posix-backup-v1"]
-    );
-    assert_eq!(
-        native
-            .primary_pax_records
-            .get("LIBARCHIVE.xattr.com.tzap.test")
-            .map(Vec::as_slice),
+        native.primary_pax_records.get("LIBARCHIVE.xattr.com.tzap.test").map(Vec::as_slice),
         Some(b"bWV0YWRhdGE".as_slice())
     );
     for key in [
@@ -1528,25 +1301,13 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
     ] {
         assert!(native.primary_pax_records.contains_key(key), "{key}");
     }
-    let finder_info = native
-        .auxiliary_records
-        .iter()
-        .find(|record| record.kind == "macos.finder-info")
-        .unwrap();
+    let finder_info = native.auxiliary_records.iter().find(|record| record.kind == "macos.finder-info").unwrap();
     assert_eq!(finder_info.payload, [0x5a; 32]);
-    let resource_fork = native
-        .auxiliary_records
-        .iter()
-        .find(|record| record.kind == "macos.resource-fork")
-        .unwrap();
+    let resource_fork = native.auxiliary_records.iter().find(|record| record.kind == "macos.resource-fork").unwrap();
     assert!(resource_fork.is_streamed());
     assert!(resource_fork.payload.is_empty());
     assert_eq!(resource_fork.logical_size, b"resource fork".len() as u64);
-    let acl = native
-        .auxiliary_records
-        .iter()
-        .find(|record| record.kind == "macos.acl-native")
-        .unwrap();
+    let acl = native.auxiliary_records.iter().find(|record| record.kind == "macos.acl-native").unwrap();
     assert!(!acl.payload.is_empty());
     assert_eq!(
         acl.meta.get("TZAP.aux.meta.acl-format").map(Vec::as_slice),
@@ -1562,12 +1323,8 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
         .iter()
         .position(|record| record.kind == "macos.resource-fork")
         .unwrap();
-    archive_native.auxiliary_records[resource_index] = NativeAuxiliaryMetadata::new(
-        "macos.resource-fork",
-        "macos-backup-v1",
-        RestoreClass::SameOs,
-        b"resource fork".to_vec(),
-    );
+    archive_native.auxiliary_records[resource_index] =
+        NativeAuxiliaryMetadata::new("macos.resource-fork", "macos-backup-v1", RestoreClass::SameOs, b"resource fork".to_vec());
 
     let archive = write_archive(
         &[RegularFile {
@@ -1600,27 +1357,14 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
         },
     )
     .unwrap();
-    let opened = tzap_core::open_archive(
-        &archive.bytes,
-        &MasterKey::from_raw_key(&[7u8; 32]).unwrap(),
-    )
-    .unwrap();
+    let opened = tzap_core::open_archive(&archive.bytes, &MasterKey::from_raw_key(&[7u8; 32]).unwrap()).unwrap();
     opened.verify().unwrap();
     let verification = opened.verify_content().unwrap();
     let report = verification.metadata_report().unwrap();
-    assert_eq!(
-        report.profiles_present,
-        vec!["macos-backup-v1", "portable-v1", "posix-backup-v1"]
-    );
-    assert!(report
-        .auxiliary_kinds_present
-        .contains(&"macos.acl-native".to_string()));
-    assert!(report
-        .auxiliary_kinds_present
-        .contains(&"macos.finder-info".to_string()));
-    assert!(report
-        .auxiliary_kinds_present
-        .contains(&"macos.resource-fork".to_string()));
+    assert_eq!(report.profiles_present, vec!["macos-backup-v1", "portable-v1", "posix-backup-v1"]);
+    assert!(report.auxiliary_kinds_present.contains(&"macos.acl-native".to_string()));
+    assert!(report.auxiliary_kinds_present.contains(&"macos.finder-info".to_string()));
+    assert!(report.auxiliary_kinds_present.contains(&"macos.resource-fork".to_string()));
 }
 
 #[cfg(target_os = "macos")]
@@ -1635,9 +1379,7 @@ fn macos_metadata_capture_rejects_a_replaced_source_object() {
     fs::write(&path, b"replacement").unwrap();
 
     let error = capture_native_file_metadata(&path, identity).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("changed before metadata capture"));
+    assert!(error.to_string().contains("changed before metadata capture"));
 }
 
 #[cfg(target_os = "macos")]
@@ -1654,18 +1396,14 @@ fn macos_symlink_capture_rejects_a_replaced_link_object() {
     symlink("replacement-target", &path).unwrap();
 
     let error = capture_macos_symlink_metadata(&path, identity).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("changed before metadata capture"));
+    assert!(error.to_string().contains("changed before metadata capture"));
 }
 
 #[cfg(windows)]
 #[test]
 fn windows_capture_rejects_metadata_classes_that_are_not_exactly_supported() {
     use std::os::windows::ffi::OsStrExt as _;
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetFileAttributesW, SetFileAttributesW, FILE_ATTRIBUTE_OFFLINE,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{GetFileAttributesW, SetFileAttributesW, FILE_ATTRIBUTE_OFFLINE};
 
     for attributes in [0x0000_0400, 0x0000_1000] {
         assert!(unsupported_windows_file_attribute_reason(attributes).is_some());
@@ -1677,19 +1415,12 @@ fn windows_capture_rejects_metadata_classes_that_are_not_exactly_supported() {
     let temp = windows_test_tempdir();
     let offline = temp.path().join("offline-placeholder.bin");
     fs::write(&offline, b"must not be read").unwrap();
-    let wide = offline
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
+    let wide = offline.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
     // SAFETY: the path is NUL-terminated and remains live for both calls.
     let original = unsafe { GetFileAttributesW(wide.as_ptr()) };
     assert_ne!(original, u32::MAX);
     // SAFETY: as above; OFFLINE is a settable attribute on this ordinary fixture.
-    assert_ne!(
-        unsafe { SetFileAttributesW(wide.as_ptr(), original | FILE_ATTRIBUTE_OFFLINE) },
-        0
-    );
+    assert_ne!(unsafe { SetFileAttributesW(wide.as_ptr(), original | FILE_ATTRIBUTE_OFFLINE) }, 0);
     let error = collect_input_specs(&[offline.to_string_lossy().into_owned()]).unwrap_err();
     assert!(format!("{error:#}").contains("explicit hydration policy"));
     // SAFETY: restore the original attributes so temporary-directory cleanup is ordinary.
@@ -1720,10 +1451,7 @@ fn windows_filetime_conversion_preserves_100ns_precision() {
         windows_filetime_timestamp(UNIX_EPOCH_FILETIME - 1).unwrap(),
         ArchiveTimestamp::new(-1, 999_999_900)
     );
-    assert_eq!(
-        windows_filetime_timestamp(0).unwrap(),
-        ArchiveTimestamp::new(-11_644_473_600, 0)
-    );
+    assert_eq!(windows_filetime_timestamp(0).unwrap(), ArchiveTimestamp::new(-11_644_473_600, 0));
 }
 
 #[cfg(windows)]
@@ -1732,12 +1460,10 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
     use std::os::windows::ffi::OsStrExt as _;
     use std::ptr;
     use windows_sys::Win32::Foundation::LocalFree;
-    use windows_sys::Win32::Security::Authorization::{
-        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
-    };
+    use windows_sys::Win32::Security::Authorization::{ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1};
     use windows_sys::Win32::Security::{
-        SetFileSecurityW, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
-        PROTECTED_SACL_SECURITY_INFORMATION, SACL_SECURITY_INFORMATION, SE_RESTORE_NAME,
+        SetFileSecurityW, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PROTECTED_SACL_SECURITY_INFORMATION, SACL_SECURITY_INFORMATION,
+        SE_RESTORE_NAME,
     };
 
     let temp = windows_test_tempdir();
@@ -1755,21 +1481,10 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
     let mut descriptor = ptr::null_mut();
     // SAFETY: the SDDL is NUL-terminated and the descriptor output is released with LocalFree.
     assert_ne!(
-        unsafe {
-            ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                sddl.as_ptr(),
-                SDDL_REVISION_1,
-                &mut descriptor,
-                ptr::null_mut(),
-            )
-        },
+        unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut descriptor, ptr::null_mut(),) },
         0
     );
-    let path_wide = path
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
+    let path_wide = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
     // SAFETY: the path and descriptor remain live and valid for the call.
     let security_information = DACL_SECURITY_INFORMATION
         | PROTECTED_DACL_SECURITY_INFORMATION
@@ -1820,21 +1535,13 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
         .iter()
         .find(|record| record.kind == "windows.security-descriptor")
         .unwrap();
-    let security_mask = u32::from_str_radix(
-        std::str::from_utf8(&security.meta["TZAP.aux.meta.security-information"]).unwrap(),
-        16,
-    )
-    .unwrap();
+    let security_mask = u32::from_str_radix(std::str::from_utf8(&security.meta["TZAP.aux.meta.security-information"]).unwrap(), 16).unwrap();
     assert_eq!(security_mask & 0xf, if sacl_available { 0xf } else { 0x7 });
     assert_eq!(security_mask & !0xf000_000f, 0);
     let security_control = u16::from_le_bytes([security.payload[2], security.payload[3]]);
     assert_eq!(
         security_mask & 0xa000_0000,
-        if security_control & 0x1000 != 0 {
-            0x8000_0000
-        } else {
-            0x2000_0000
-        }
+        if security_control & 0x1000 != 0 { 0x8000_0000 } else { 0x2000_0000 }
     );
     assert_eq!(
         security_mask & 0x5000_0000,
@@ -1850,30 +1557,15 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
         .auxiliary_records
         .iter()
         .find(|record| {
-            record.kind == "windows.alternate-data"
-                && record.name
-                    == ":tzap-test:$DATA"
-                        .encode_utf16()
-                        .flat_map(u16::to_le_bytes)
-                        .collect::<Vec<_>>()
+            record.kind == "windows.alternate-data" && record.name == ":tzap-test:$DATA".encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>()
         })
         .unwrap();
     assert!(alternate.payload.is_empty());
     assert!(alternate.is_streamed());
-    assert_eq!(
-        alternate.stored_payload_size(),
-        b"alternate metadata".len() as u64
-    );
-    assert_eq!(
-        alternate.name,
-        ":tzap-test:$DATA"
-            .encode_utf16()
-            .flat_map(u16::to_le_bytes)
-            .collect::<Vec<_>>()
-    );
+    assert_eq!(alternate.stored_payload_size(), b"alternate metadata".len() as u64);
+    assert_eq!(alternate.name, ":tzap-test:$DATA".encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>());
 
-    let specs = collect_input_specs(&[path.to_string_lossy().into_owned()])
-        .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[path.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     let mut checked_reader = specs[0].open().unwrap();
     let mut checked_payload = Vec::new();
     checked_reader.read_to_end(&mut checked_payload).unwrap();
@@ -1911,19 +1603,12 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
         .unwrap();
     assert_eq!(fs::read(output.join("native.txt")).unwrap(), b"payload");
     assert_eq!(
-        fs::read(PathBuf::from(format!(
-            "{}:tzap-test",
-            output.join("native.txt").display()
-        )))
-        .unwrap_or_else(|error| panic!("{error}; report={restore_report:#?}")),
+        fs::read(PathBuf::from(format!("{}:tzap-test", output.join("native.txt").display())))
+            .unwrap_or_else(|error| panic!("{error}; report={restore_report:#?}")),
         b"alternate metadata"
     );
     assert_eq!(
-        fs::read(PathBuf::from(format!(
-            "{}:元数据",
-            output.join("native.txt").display()
-        )))
-        .unwrap(),
+        fs::read(PathBuf::from(format!("{}:元数据", output.join("native.txt").display()))).unwrap(),
         b"unicode alternate metadata"
     );
 
@@ -2001,15 +1686,7 @@ fn windows_ea_backup_stream_round_trips_exactly() {
         let mut ignored = 0u32;
         // SAFETY: aborting with an empty buffer releases this context once.
         unsafe {
-            BackupWrite(
-                file.as_raw_handle().cast(),
-                ptr::null(),
-                0,
-                &mut ignored,
-                1,
-                0,
-                &mut context,
-            );
+            BackupWrite(file.as_raw_handle().cast(), ptr::null(), 0, &mut ignored, 1, 0, &mut context);
         }
         result
     }
@@ -2017,11 +1694,7 @@ fn windows_ea_backup_stream_round_trips_exactly() {
     let temp = windows_test_tempdir();
     let source = temp.path().join("ea-source.bin");
     fs::write(&source, b"payload").unwrap();
-    let source_file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&source)
-        .unwrap();
+    let source_file = fs::OpenOptions::new().read(true).write(true).open(&source).unwrap();
     let ea_name = b"TZAP";
     let ea_value = b"exact-ea-value";
     let mut ea = Vec::new();
@@ -2100,11 +1773,7 @@ fn windows_object_id_backup_stream_round_trips_exactly() {
     let temp = windows_test_tempdir();
     let source = temp.path().join("object-id-source.bin");
     fs::write(&source, b"payload").unwrap();
-    let source_file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&source)
-        .unwrap();
+    let source_file = fs::OpenOptions::new().read(true).write(true).open(&source).unwrap();
     let mut object_id = FILE_OBJECTID_BUFFER::default();
     let mut returned = 0u32;
     // SAFETY: the live file handle and fixed output structure remain valid for the call.
@@ -2180,10 +1849,7 @@ fn windows_object_id_backup_stream_round_trips_exactly() {
         !diagnostics
             .iter()
             .flat_map(|(_, diagnostics)| diagnostics)
-            .any(|diagnostic| {
-                diagnostic.metadata_class == "windows.object-id"
-                    && diagnostic.status == MetadataDiagnosticStatus::Failed
-            }),
+            .any(|diagnostic| { diagnostic.metadata_class == "windows.object-id" && diagnostic.status == MetadataDiagnosticStatus::Failed }),
         "object-ID restoration degraded: {diagnostics:#?}"
     );
     let restored = output.join("object-id-source.bin");
@@ -2212,16 +1878,8 @@ fn windows_raw_efs_round_trips_without_plaintext_substitution() {
     let plaintext = b"raw EFS must be archived and restored through the native callback APIs";
     fs::write(&source, plaintext).unwrap();
     let alternate_plaintext = b"encrypted alternate stream";
-    fs::write(
-        PathBuf::from(format!("{}:efs-alternate", source.display())),
-        alternate_plaintext,
-    )
-    .unwrap();
-    let source_wide = source
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
+    fs::write(PathBuf::from(format!("{}:efs-alternate", source.display())), alternate_plaintext).unwrap();
+    let source_wide = source.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
     // SAFETY: the path is NUL-terminated and remains live for the synchronous call.
     if unsafe { EncryptFileW(source_wide.as_ptr()) } == 0 {
         let error = std::io::Error::last_os_error();
@@ -2233,13 +1891,9 @@ fn windows_raw_efs_round_trips_without_plaintext_substitution() {
         }
         panic!("failed to create raw EFS fixture: {error}");
     }
-    assert_ne!(
-        fs::metadata(&source).unwrap().file_attributes() & FILE_ATTRIBUTE_ENCRYPTED,
-        0
-    );
+    assert_ne!(fs::metadata(&source).unwrap().file_attributes() & FILE_ATTRIBUTE_ENCRYPTED, 0);
 
-    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()])
-        .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     let raw = specs[0]
         .portable_metadata
         .native
@@ -2288,33 +1942,18 @@ fn windows_raw_efs_round_trips_without_plaintext_substitution() {
     let restored = output.join("encrypted.txt");
     assert_eq!(fs::read(&restored).unwrap(), plaintext);
     assert_eq!(
-        fs::read(PathBuf::from(format!(
-            "{}:efs-alternate",
-            restored.display()
-        )))
-        .unwrap(),
+        fs::read(PathBuf::from(format!("{}:efs-alternate", restored.display()))).unwrap(),
         alternate_plaintext
     );
-    assert_ne!(
-        fs::metadata(&restored).unwrap().file_attributes() & FILE_ATTRIBUTE_ENCRYPTED,
-        0
-    );
-    assert_eq!(
-        hash_windows_raw_efs(&restored).unwrap(),
-        (expected_raw_size, expected_raw_hash)
-    );
+    assert_ne!(fs::metadata(&restored).unwrap().file_attributes() & FILE_ATTRIBUTE_ENCRYPTED, 0);
+    assert_eq!(hash_windows_raw_efs(&restored).unwrap(), (expected_raw_size, expected_raw_hash));
 
     let encrypted_directory = temp.path().join("encrypted-directory");
     fs::create_dir(&encrypted_directory).unwrap();
-    let directory_wide = encrypted_directory
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
+    let directory_wide = encrypted_directory.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
     // SAFETY: the directory path is NUL-terminated and remains live for the call.
     assert_ne!(unsafe { EncryptFileW(directory_wide.as_ptr()) }, 0);
-    let error =
-        collect_input_specs(&[encrypted_directory.to_string_lossy().into_owned()]).unwrap_err();
+    let error = collect_input_specs(&[encrypted_directory.to_string_lossy().into_owned()]).unwrap_err();
     assert!(format!("{error:#}").contains("CREATE_FOR_DIR"));
 }
 
@@ -2324,14 +1963,9 @@ fn standalone_windows_directory_alternate_data_round_trips() {
     let temp = windows_test_tempdir();
     let source = temp.path().join("native-directory");
     fs::create_dir(&source).unwrap();
-    fs::write(
-        PathBuf::from(format!("{}:tzap-directory", source.display())),
-        b"directory alternate metadata",
-    )
-    .unwrap();
+    fs::write(PathBuf::from(format!("{}:tzap-directory", source.display())), b"directory alternate metadata").unwrap();
 
-    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()])
-        .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     assert_eq!(specs.len(), 1);
     assert_eq!(specs[0].entry_kind, SourceEntryKind::Directory);
     assert!(specs[0]
@@ -2374,11 +2008,7 @@ fn standalone_windows_directory_alternate_data_round_trips() {
     let restored = output.join("native-directory");
     assert!(restored.is_dir());
     assert_eq!(
-        fs::read(PathBuf::from(format!(
-            "{}:tzap-directory",
-            restored.display()
-        )))
-        .unwrap(),
+        fs::read(PathBuf::from(format!("{}:tzap-directory", restored.display()))).unwrap(),
         b"directory alternate metadata"
     );
 }
@@ -2390,8 +2020,7 @@ fn windows_directory_case_sensitive_state_round_trips() {
     use std::os::windows::fs::OpenOptionsExt as _;
     use std::os::windows::io::AsRawHandle as _;
     use windows_sys::Win32::Storage::FileSystem::{
-        FileCaseSensitiveInfo, SetFileInformationByHandle, FILE_CASE_SENSITIVE_INFO,
-        FILE_FLAG_BACKUP_SEMANTICS, FILE_READ_ATTRIBUTES, FILE_WRITE_ATTRIBUTES,
+        FileCaseSensitiveInfo, SetFileInformationByHandle, FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_READ_ATTRIBUTES, FILE_WRITE_ATTRIBUTES,
     };
     use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
 
@@ -2420,10 +2049,7 @@ fn windows_directory_case_sensitive_state_round_trips() {
         "{}",
         io::Error::last_os_error()
     );
-    assert_eq!(
-        query_windows_directory_case_sensitive(&source_file).unwrap(),
-        Some(true)
-    );
+    assert_eq!(query_windows_directory_case_sensitive(&source_file).unwrap(), Some(true));
     drop(source_file);
 
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap();
@@ -2471,16 +2097,9 @@ fn windows_directory_case_sensitive_state_round_trips() {
     assert!(same_os_diagnostics
         .iter()
         .flat_map(|(_, diagnostics)| diagnostics)
-        .any(|diagnostic| {
-            diagnostic.metadata_class == "directory-case-sensitive"
-                && diagnostic.status == MetadataDiagnosticStatus::Unsupported
-        }));
-    let same_os_restored =
-        open_windows_metadata_handle(&same_os_output.join("case-sensitive-directory")).unwrap();
-    assert_eq!(
-        query_windows_directory_case_sensitive(&same_os_restored).unwrap(),
-        Some(false)
-    );
+        .any(|diagnostic| { diagnostic.metadata_class == "directory-case-sensitive" && diagnostic.status == MetadataDiagnosticStatus::Unsupported }));
+    let same_os_restored = open_windows_metadata_handle(&same_os_output.join("case-sensitive-directory")).unwrap();
+    assert_eq!(query_windows_directory_case_sensitive(&same_os_restored).unwrap(), Some(false));
     let output = temp.path().join("case-output");
     fs::create_dir(&output).unwrap();
     opened
@@ -2495,10 +2114,7 @@ fn windows_directory_case_sensitive_state_round_trips() {
         )
         .unwrap();
     let restored = open_windows_metadata_handle(&output.join("case-sensitive-directory")).unwrap();
-    assert_eq!(
-        query_windows_directory_case_sensitive(&restored).unwrap(),
-        Some(true)
-    );
+    assert_eq!(query_windows_directory_case_sensitive(&restored).unwrap(), Some(true));
 }
 
 #[cfg(windows)]
@@ -2513,12 +2129,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
     let source = temp.path().join("sparse-ads.bin");
     fs::write(&source, b"base payload").unwrap();
     let stream_path = PathBuf::from(format!("{}:sparse-test", source.display()));
-    let mut stream = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create_new(true)
-        .open(&stream_path)
-        .unwrap();
+    let mut stream = fs::OpenOptions::new().read(true).write(true).create_new(true).open(&stream_path).unwrap();
     let mut bytes_returned = 0u32;
     // SAFETY: the stream handle is live and FSCTL_SET_SPARSE accepts empty buffers.
     assert_ne!(
@@ -2546,8 +2157,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
     let source_ranges = query_windows_allocated_ranges(&stream, logical_size).unwrap();
     drop(stream);
 
-    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()])
-        .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     let sparse_record = specs[0]
         .portable_metadata
         .native
@@ -2595,10 +2205,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
             },
         )
         .unwrap();
-    let restored_stream_path = PathBuf::from(format!(
-        "{}:sparse-test",
-        output.join("sparse-ads.bin").display()
-    ));
+    let restored_stream_path = PathBuf::from(format!("{}:sparse-test", output.join("sparse-ads.bin").display()));
     let restored_stream = File::open(&restored_stream_path).unwrap();
     assert_eq!(restored_stream.metadata().unwrap().len(), logical_size);
     let restored_ranges = query_windows_allocated_ranges(&restored_stream, logical_size).unwrap();
@@ -2606,10 +2213,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
         assert_eq!(restored_ranges, captured_ranges);
     }
     let logical = fs::read(restored_stream_path).unwrap();
-    assert_eq!(
-        &logical[64 * 1024..64 * 1024 + 25],
-        b"sparse ADS leading extent"
-    );
+    assert_eq!(&logical[64 * 1024..64 * 1024 + 25], b"sparse ADS leading extent");
     assert_eq!(
         &logical[logical_size as usize - 4096..logical_size as usize - 4096 + 26],
         b"sparse ADS trailing extent"
@@ -2626,12 +2230,7 @@ fn windows_sparse_file_round_trips_logical_bytes_and_allocated_ranges() {
 
     let temp = windows_test_tempdir();
     let path = temp.path().join("sparse.bin");
-    let mut file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .unwrap();
+    let mut file = fs::OpenOptions::new().read(true).write(true).create_new(true).open(&path).unwrap();
     let mut bytes_returned = 0u32;
     // SAFETY: the file handle is live and FSCTL_SET_SPARSE accepts empty synchronous buffers.
     assert_ne!(
@@ -2661,13 +2260,9 @@ fn windows_sparse_file_round_trips_logical_bytes_and_allocated_ranges() {
     assert!(!source_ranges.is_empty());
     drop(file);
 
-    let specs = collect_input_specs(&[path.to_string_lossy().into_owned()])
-        .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[path.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     assert_eq!(specs.len(), 1);
-    assert_eq!(
-        specs[0].sparse_extents.as_deref(),
-        Some(source_ranges.as_slice())
-    );
+    assert_eq!(specs[0].sparse_extents.as_deref(), Some(source_ranges.as_slice()));
     let master_key = MasterKey::from_raw_key(&[9u8; 32]).unwrap();
     let mut sink = MemoryArchiveSink::default();
     write_archive_sources_to_sink(
@@ -2705,16 +2300,10 @@ fn windows_sparse_file_round_trips_logical_bytes_and_allocated_ranges() {
     let restored_path = output.join("sparse.bin");
     let restored = File::open(&restored_path).unwrap();
     assert_eq!(restored.metadata().unwrap().len(), logical_size);
-    assert_eq!(
-        query_windows_allocated_ranges(&restored, logical_size).unwrap(),
-        source_ranges
-    );
+    assert_eq!(query_windows_allocated_ranges(&restored, logical_size).unwrap(), source_ranges);
     let logical = fs::read(restored_path).unwrap();
     assert_eq!(&logical[64 * 1024..64 * 1024 + 14], b"leading extent");
-    assert_eq!(
-        &logical[logical_size as usize - 4096..logical_size as usize - 4096 + 15],
-        b"trailing extent"
-    );
+    assert_eq!(&logical[logical_size as usize - 4096..logical_size as usize - 4096 + 15], b"trailing extent");
 }
 
 #[cfg(windows)]
@@ -2722,9 +2311,7 @@ fn windows_sparse_file_round_trips_logical_bytes_and_allocated_ranges() {
 fn windows_basic_attributes_and_all_four_times_round_trip() {
     use std::mem::size_of;
     use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FileBasicInfo, GetFileInformationByHandleEx, SetFileInformationByHandle, FILE_BASIC_INFO,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{FileBasicInfo, GetFileInformationByHandleEx, SetFileInformationByHandle, FILE_BASIC_INFO};
 
     const READONLY: u32 = 0x0000_0001;
     const HIDDEN: u32 = 0x0000_0002;
@@ -2736,11 +2323,7 @@ fn windows_basic_attributes_and_all_four_times_round_trip() {
     let temp = windows_test_tempdir();
     let source = temp.path().join("basic.bin");
     fs::write(&source, b"windows basic metadata").unwrap();
-    let source_file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&source)
-        .unwrap();
+    let source_file = fs::OpenOptions::new().read(true).write(true).open(&source).unwrap();
     let expected = FILE_BASIC_INFO {
         CreationTime: WINDOWS_EPOCH_OFFSET - 12_345_678_000_000,
         LastAccessTime: WINDOWS_EPOCH_OFFSET - 11_111_111_000_000,
@@ -2814,10 +2397,7 @@ fn windows_basic_attributes_and_all_four_times_round_trip() {
     assert_eq!(actual.LastAccessTime, expected.LastAccessTime);
     assert_eq!(actual.LastWriteTime, expected.LastWriteTime);
     assert_eq!(actual.ChangeTime, expected.ChangeTime);
-    assert_eq!(
-        actual.FileAttributes & MUTABLE_MASK,
-        expected.FileAttributes & MUTABLE_MASK
-    );
+    assert_eq!(actual.FileAttributes & MUTABLE_MASK, expected.FileAttributes & MUTABLE_MASK);
 }
 
 #[cfg(windows)]
@@ -2826,9 +2406,7 @@ fn windows_native_compression_round_trips_on_supported_filesystems() {
     use std::mem::size_of;
     use std::os::windows::io::AsRawHandle;
     use std::ptr;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FileBasicInfo, GetFileInformationByHandleEx, COMPRESSION_FORMAT_DEFAULT, FILE_BASIC_INFO,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{FileBasicInfo, GetFileInformationByHandleEx, COMPRESSION_FORMAT_DEFAULT, FILE_BASIC_INFO};
     use windows_sys::Win32::System::Ioctl::FSCTL_SET_COMPRESSION;
     use windows_sys::Win32::System::IO::DeviceIoControl;
 
@@ -2839,11 +2417,7 @@ fn windows_native_compression_round_trips_on_supported_filesystems() {
     let destination_temp = windows_test_tempdir();
     let source = source_temp.path().join("compressed.bin");
     fs::write(&source, vec![b'z'; 256 * 1024]).unwrap();
-    let source_file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&source)
-        .unwrap();
+    let source_file = fs::OpenOptions::new().read(true).write(true).open(&source).unwrap();
     let mut compression = COMPRESSION_FORMAT_DEFAULT;
     let mut returned = 0u32;
     // SAFETY: the live file handle and initialized two-byte format input remain valid.
@@ -2860,10 +2434,7 @@ fn windows_native_compression_round_trips_on_supported_filesystems() {
         )
     } == 0
     {
-        panic!(
-            "NTFS compression fixture failed: {}",
-            io::Error::last_os_error()
-        );
+        panic!("NTFS compression fixture failed: {}", io::Error::last_os_error());
     }
     let mut source_basic = FILE_BASIC_INFO::default();
     // SAFETY: the handle is live and `source_basic` is correctly sized and writable.
@@ -2888,8 +2459,7 @@ fn windows_native_compression_round_trips_on_supported_filesystems() {
         .primary_pax_records
         .get("TZAP.windows.file-attributes")
         .unwrap();
-    let captured_attributes =
-        u32::from_str_radix(std::str::from_utf8(captured_attributes).unwrap(), 16).unwrap();
+    let captured_attributes = u32::from_str_radix(std::str::from_utf8(captured_attributes).unwrap(), 16).unwrap();
     assert_ne!(captured_attributes & FILE_ATTRIBUTE_COMPRESSED, 0);
 
     let master_key = MasterKey::from_raw_key(&[23u8; 32]).unwrap();
@@ -2940,14 +2510,8 @@ fn windows_native_compression_round_trips_on_supported_filesystems() {
         },
         0
     );
-    assert_eq!(
-        restored_basic.FileAttributes & FILE_ATTRIBUTE_COMPRESSED != 0,
-        !destination_refs
-    );
-    assert_eq!(
-        fs::read(output.join("compressed.bin")).unwrap(),
-        vec![b'z'; 256 * 1024]
-    );
+    assert_eq!(restored_basic.FileAttributes & FILE_ATTRIBUTE_COMPRESSED != 0, !destination_refs);
+    assert_eq!(fs::read(output.join("compressed.bin")).unwrap(), vec![b'z'; 256 * 1024]);
 }
 
 #[cfg(windows)]
@@ -2966,8 +2530,7 @@ fn windows_relative_symlink_round_trips_portable_and_exact_reparse_data() {
         WindowsKnownReparse::RelativeSymlink { .. }
     ));
 
-    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()])
-        .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     assert_eq!(specs.len(), 1);
     assert_eq!(specs[0].entry_kind, SourceEntryKind::Symlink);
     assert!(specs[0]
@@ -3000,13 +2563,8 @@ fn windows_relative_symlink_round_trips_portable_and_exact_reparse_data() {
 
     let portable_output = temp.path().join("portable-links");
     fs::create_dir(&portable_output).unwrap();
-    opened
-        .extract_all_to(&portable_output, SafeExtractionOptions::default())
-        .unwrap();
-    assert_eq!(
-        fs::read_link(portable_output.join("link.txt")).unwrap(),
-        PathBuf::from("target.txt")
-    );
+    opened.extract_all_to(&portable_output, SafeExtractionOptions::default()).unwrap();
+    assert_eq!(fs::read_link(portable_output.join("link.txt")).unwrap(), PathBuf::from("target.txt"));
 
     let exact_output = temp.path().join("exact-links");
     fs::create_dir(&exact_output).unwrap();
@@ -3022,10 +2580,7 @@ fn windows_relative_symlink_round_trips_portable_and_exact_reparse_data() {
         )
         .unwrap();
     let exact_handle = open_windows_metadata_handle(&exact_output.join("link.txt")).unwrap();
-    assert_eq!(
-        query_windows_reparse_data(&exact_handle).unwrap(),
-        expected_reparse
-    );
+    assert_eq!(query_windows_reparse_data(&exact_handle).unwrap(), expected_reparse);
 }
 
 #[cfg(windows)]
@@ -3035,10 +2590,7 @@ fn windows_junction_round_trips_as_skipped_placeholder_and_exact_reparse_data() 
     use std::os::windows::fs::OpenOptionsExt as _;
     use std::os::windows::io::AsRawHandle as _;
     use std::ptr;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
-        FILE_GENERIC_WRITE,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE};
     use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
     use windows_sys::Win32::System::IO::DeviceIoControl;
 
@@ -3096,8 +2648,7 @@ fn windows_junction_round_trips_as_skipped_placeholder_and_exact_reparse_data() 
     let expected_reparse = query_windows_reparse_data(&source_handle).unwrap();
     assert_eq!(expected_reparse, reparse);
 
-    let specs = collect_input_specs(&[junction.to_string_lossy().into_owned()])
-        .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[junction.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     assert_eq!(specs.len(), 1);
     assert_eq!(specs[0].entry_kind, SourceEntryKind::ReparseDirectory);
     let master_key = MasterKey::from_raw_key(&[12u8; 32]).unwrap();
@@ -3123,9 +2674,7 @@ fn windows_junction_round_trips_as_skipped_placeholder_and_exact_reparse_data() 
 
     let portable_output = temp.path().join("portable-junction");
     fs::create_dir(&portable_output).unwrap();
-    opened
-        .extract_all_to(&portable_output, SafeExtractionOptions::default())
-        .unwrap();
+    opened.extract_all_to(&portable_output, SafeExtractionOptions::default()).unwrap();
     assert!(!portable_output.join("junction").exists());
 
     let exact_output = temp.path().join("exact-junction");
@@ -3141,12 +2690,8 @@ fn windows_junction_round_trips_as_skipped_placeholder_and_exact_reparse_data() 
             },
         )
         .unwrap();
-    let exact_handle = open_windows_metadata_handle(&exact_output.join("junction"))
-        .unwrap_or_else(|error| panic!("{error}; report={exact_report:#?}"));
-    assert_eq!(
-        query_windows_reparse_data(&exact_handle).unwrap(),
-        expected_reparse
-    );
+    let exact_handle = open_windows_metadata_handle(&exact_output.join("junction")).unwrap_or_else(|error| panic!("{error}; report={exact_report:#?}"));
+    assert_eq!(query_windows_reparse_data(&exact_handle).unwrap(), expected_reparse);
 }
 
 #[cfg(windows)]
@@ -3155,9 +2700,7 @@ fn windows_opaque_reparse_tag_round_trips_as_skipped_placeholder_and_exact_data(
     use std::os::windows::fs::OpenOptionsExt as _;
     use std::os::windows::io::AsRawHandle as _;
     use std::ptr;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE};
     use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
     use windows_sys::Win32::System::IO::DeviceIoControl;
 
@@ -3170,10 +2713,7 @@ fn windows_opaque_reparse_tag_round_trips_as_skipped_placeholder_and_exact_data(
     reparse.extend_from_slice(&0x0000_0042u32.to_le_bytes());
     reparse.extend_from_slice(&4u16.to_le_bytes());
     reparse.extend_from_slice(&0u16.to_le_bytes());
-    reparse.extend_from_slice(&[
-        0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88,
-    ]);
+    reparse.extend_from_slice(&[0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]);
     reparse.extend_from_slice(b"tzap");
     let handle = fs::OpenOptions::new()
         .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE)
@@ -3203,13 +2743,9 @@ fn windows_opaque_reparse_tag_round_trips_as_skipped_placeholder_and_exact_data(
     let source_handle = open_windows_metadata_handle(&source).unwrap();
     let expected_reparse = query_windows_reparse_data(&source_handle).unwrap();
     assert_eq!(expected_reparse, reparse);
-    assert_eq!(
-        validate_windows_known_reparse_data(&expected_reparse).unwrap(),
-        WindowsKnownReparse::Opaque
-    );
+    assert_eq!(validate_windows_known_reparse_data(&expected_reparse).unwrap(), WindowsKnownReparse::Opaque);
 
-    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()])
-        .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     assert_eq!(specs.len(), 1);
     assert_eq!(specs[0].entry_kind, SourceEntryKind::ReparseRegular);
     let master_key = MasterKey::from_raw_key(&[22u8; 32]).unwrap();
@@ -3235,9 +2771,7 @@ fn windows_opaque_reparse_tag_round_trips_as_skipped_placeholder_and_exact_data(
 
     let portable_output = temp.path().join("opaque-portable");
     fs::create_dir(&portable_output).unwrap();
-    opened
-        .extract_all_to(&portable_output, SafeExtractionOptions::default())
-        .unwrap();
+    opened.extract_all_to(&portable_output, SafeExtractionOptions::default()).unwrap();
     assert!(!portable_output.join("opaque-reparse.bin").exists());
 
     let exact_output = temp.path().join("opaque-exact");
@@ -3253,12 +2787,8 @@ fn windows_opaque_reparse_tag_round_trips_as_skipped_placeholder_and_exact_data(
             },
         )
         .unwrap();
-    let exact_handle =
-        open_windows_metadata_handle(&exact_output.join("opaque-reparse.bin")).unwrap();
-    assert_eq!(
-        query_windows_reparse_data(&exact_handle).unwrap(),
-        expected_reparse
-    );
+    let exact_handle = open_windows_metadata_handle(&exact_output.join("opaque-reparse.bin")).unwrap();
+    assert_eq!(query_windows_reparse_data(&exact_handle).unwrap(), expected_reparse);
 }
 
 #[cfg(windows)]
@@ -3270,19 +2800,12 @@ fn windows_selected_hardlinks_store_data_once_and_restore_shared_file_identity()
     fs::write(&alpha, b"one physical file").unwrap();
     fs::hard_link(&alpha, &beta).unwrap();
 
-    let specs = collect_input_specs(&[
-        beta.to_string_lossy().into_owned(),
-        alpha.to_string_lossy().into_owned(),
-    ])
-    .unwrap_or_else(|error| panic!("{error:#}"));
+    let specs = collect_input_specs(&[beta.to_string_lossy().into_owned(), alpha.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     assert_eq!(specs.len(), 2);
     assert_eq!(specs[0].archive_path, "alpha.bin");
     assert_eq!(specs[0].entry_kind, SourceEntryKind::Regular);
     assert_eq!(specs[1].entry_kind, SourceEntryKind::Hardlink);
-    assert_eq!(
-        specs[1].link_target.as_deref(),
-        Some(b"alpha.bin".as_slice())
-    );
+    assert_eq!(specs[1].link_target.as_deref(), Some(b"alpha.bin".as_slice()));
 
     let master_key = MasterKey::from_raw_key(&[13u8; 32]).unwrap();
     let mut sink = MemoryArchiveSink::default();
@@ -3305,31 +2828,15 @@ fn windows_selected_hardlinks_store_data_once_and_restore_shared_file_identity()
     let opened = tzap_core::open_archive(&sink.volumes[0], &master_key).unwrap();
     opened.verify().unwrap();
     assert_eq!(
-        opened
-            .lookup_index_entry("alpha.bin")
-            .unwrap()
-            .unwrap()
-            .file_data_size,
+        opened.lookup_index_entry("alpha.bin").unwrap().unwrap().file_data_size,
         b"one physical file".len() as u64
     );
-    assert_eq!(
-        opened
-            .lookup_index_entry("beta.bin")
-            .unwrap()
-            .unwrap()
-            .file_data_size,
-        0
-    );
+    assert_eq!(opened.lookup_index_entry("beta.bin").unwrap().unwrap().file_data_size, 0);
 
     let output = temp.path().join("hardlink-output");
     fs::create_dir(&output).unwrap();
-    opened
-        .extract_all_to(&output, SafeExtractionOptions::default())
-        .unwrap();
-    assert_eq!(
-        fs::read(output.join("beta.bin")).unwrap(),
-        b"one physical file"
-    );
+    opened.extract_all_to(&output, SafeExtractionOptions::default()).unwrap();
+    assert_eq!(fs::read(output.join("beta.bin")).unwrap(), b"one physical file");
     let alpha_file = File::open(output.join("alpha.bin")).unwrap();
     let beta_file = File::open(output.join("beta.bin")).unwrap();
     let mut alpha_identity = input_identity(&alpha_file.metadata().unwrap()).unwrap();

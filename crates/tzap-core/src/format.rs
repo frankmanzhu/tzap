@@ -237,11 +237,7 @@ impl BlockKind {
     pub const fn is_data(self) -> bool {
         matches!(
             self,
-            Self::PayloadData
-                | Self::IndexRootData
-                | Self::IndexShardData
-                | Self::DictionaryData
-                | Self::DirectoryHintData
+            Self::PayloadData | Self::IndexRootData | Self::IndexShardData | Self::DictionaryData | Self::DirectoryHintData
         )
     }
 
@@ -268,11 +264,7 @@ pub enum FormatError {
     UnknownBlockKind(u8),
 
     #[error("invalid length for {structure}: expected {expected}, actual {actual}")]
-    InvalidLength {
-        structure: &'static str,
-        expected: usize,
-        actual: usize,
-    },
+    InvalidLength { structure: &'static str, expected: usize, actual: usize },
 
     #[error("bad magic for {structure}")]
     BadMagic { structure: &'static str },
@@ -302,14 +294,9 @@ pub enum FormatError {
     ZeroStripeWidth,
 
     #[error("volume index {volume_index} is outside stripe width {stripe_width}")]
-    VolumeIndexOutOfRange {
-        volume_index: u32,
-        stripe_width: u32,
-    },
+    VolumeIndexOutOfRange { volume_index: u32, stripe_width: u32 },
 
-    #[error(
-        "CryptoHeader length mismatch: fixed header says {fixed}, volume header says {volume}"
-    )]
+    #[error("CryptoHeader length mismatch: fixed header says {fixed}, volume header says {volume}")]
     CryptoHeaderLengthMismatch { fixed: u32, volume: u32 },
 
     #[error("compression algorithm {0:?} is not valid for v0.45")]
@@ -319,19 +306,13 @@ pub enum FormatError {
     UnsupportedFec(FecAlgo),
 
     #[error("invalid v0.45 protection mode: aead_algo={aead_algo:?}, kdf_algo={kdf_algo:?}")]
-    InvalidProtectionMode {
-        aead_algo: AeadAlgo,
-        kdf_algo: KdfAlgo,
-    },
+    InvalidProtectionMode { aead_algo: AeadAlgo, kdf_algo: KdfAlgo },
 
     #[error("invalid boolean field {field}={value}")]
     InvalidBoolean { field: &'static str, value: u8 },
 
     #[error("volume loss tolerance {volume_loss_tolerance} must be less than stripe width {stripe_width}")]
-    VolumeLossToleranceOutOfRange {
-        volume_loss_tolerance: u8,
-        stripe_width: u32,
-    },
+    VolumeLossToleranceOutOfRange { volume_loss_tolerance: u8, stripe_width: u32 },
 
     #[error("bit rot buffer pct {0} exceeds 100")]
     BitRotBufferPctTooLarge(u8),
@@ -346,10 +327,7 @@ pub enum FormatError {
     ZeroEnvelopeTargetSize,
 
     #[error("chunk_size {chunk_size} exceeds envelope_target_size {envelope_target_size}")]
-    ChunkSizeExceedsEnvelopeTarget {
-        chunk_size: u32,
-        envelope_target_size: u32,
-    },
+    ChunkSizeExceedsEnvelopeTarget { chunk_size: u32, envelope_target_size: u32 },
 
     #[error("block_size {0} is below the v0.45 minimum")]
     BlockSizeTooSmall(u32),
@@ -358,11 +336,7 @@ pub enum FormatError {
     OddBlockSize(u32),
 
     #[error("reader resource cap exceeded for {field}: cap {cap}, actual {actual}")]
-    ReaderResourceLimitExceeded {
-        field: &'static str,
-        cap: u64,
-        actual: u64,
-    },
+    ReaderResourceLimitExceeded { field: &'static str, cap: u64, actual: u64 },
 
     #[error("invalid block flags 0x{0:02x}")]
     InvalidBlockFlags(u8),
@@ -476,11 +450,7 @@ pub enum FormatError {
     DomainTooLong,
 
     #[error("invalid nonce length for {algo:?}: expected {expected}, actual {actual}")]
-    InvalidNonceLength {
-        algo: AeadAlgo,
-        expected: usize,
-        actual: usize,
-    },
+    InvalidNonceLength { algo: AeadAlgo, expected: usize, actual: usize },
 
     #[error("invalid AEAD key length")]
     InvalidAeadKeyLength,
@@ -525,10 +495,7 @@ pub enum FormatError {
     FecSingularMatrix,
 
     #[error("invalid metadata in {structure}: {reason}")]
-    InvalidMetadata {
-        structure: &'static str,
-        reason: &'static str,
-    },
+    InvalidMetadata { structure: &'static str, reason: &'static str },
 
     #[error("metadata arithmetic overflow in {structure}")]
     MetadataArithmeticOverflow { structure: &'static str },
@@ -558,10 +525,7 @@ pub enum FormatError {
     InvalidArchive(&'static str),
 }
 
-pub fn root_auth_spec_id_for_revision(
-    format_version: u16,
-    volume_format_rev: u16,
-) -> Result<[u8; 24], FormatError> {
+pub fn root_auth_spec_id_for_revision(format_version: u16, volume_format_rev: u16) -> Result<[u8; 24], FormatError> {
     if format_version != FORMAT_VERSION {
         return Err(FormatError::UnsupportedFormatVersion(format_version));
     }

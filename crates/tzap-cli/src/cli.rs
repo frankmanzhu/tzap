@@ -127,17 +127,10 @@ pub(crate) enum Command {
         )]
         no_encryption: bool,
 
-        #[arg(
-            long = "insecure-zero-key",
-            hide = true,
-            help = "Removed in v43; use --no-encryption for plaintext archives."
-        )]
+        #[arg(long = "insecure-zero-key", hide = true, help = "Removed in v43; use --no-encryption for plaintext archives.")]
         insecure_zero_key: bool,
 
-        #[arg(
-            long = "force",
-            help = "Overwrite existing output files and bootstrap sidecar."
-        )]
+        #[arg(long = "force", help = "Overwrite existing output files and bootstrap sidecar.")]
         force: bool,
 
         #[arg(
@@ -164,11 +157,7 @@ pub(crate) enum Command {
         )]
         argon2_parallelism: u32,
 
-        #[arg(
-            long = "dictionary",
-            value_name = "FILE",
-            help = "Read compression dictionary from FILE."
-        )]
+        #[arg(long = "dictionary", value_name = "FILE", help = "Read compression dictionary from FILE.")]
         dictionary: Option<String>,
 
         #[arg(
@@ -221,58 +210,28 @@ pub(crate) enum Command {
         )]
         bootstrap_out: Option<String>,
 
-        #[arg(
-            long = "tar-stdin",
-            help = "Treat PATH '-' as a tar stream read from stdin."
-        )]
+        #[arg(long = "tar-stdin", help = "Treat PATH '-' as a tar stream read from stdin.")]
         tar_stdin: bool,
 
-        #[arg(
-            long = "raw-stdin",
-            help = "Treat PATH '-' as one raw stdin member named by --stdin-name."
-        )]
+        #[arg(long = "raw-stdin", help = "Treat PATH '-' as one raw stdin member named by --stdin-name.")]
         raw_stdin: bool,
 
-        #[arg(
-            long = "stdin-name",
-            value_name = "PATH",
-            help = "Archive member path for --raw-stdin."
-        )]
+        #[arg(long = "stdin-name", value_name = "PATH", help = "Archive member path for --raw-stdin.")]
         stdin_name: Option<String>,
 
-        #[arg(
-            long = "stdin-size",
-            value_name = "SIZE",
-            help = "Expected byte size for known-size --raw-stdin."
-        )]
+        #[arg(long = "stdin-size", value_name = "SIZE", help = "Expected byte size for known-size --raw-stdin.")]
         stdin_size: Option<String>,
 
-        #[arg(
-            long = "spool-stdin",
-            help = "Spool unknown-size raw stdin to a restrictive temporary file before archiving."
-        )]
+        #[arg(long = "spool-stdin", help = "Spool unknown-size raw stdin to a restrictive temporary file before archiving.")]
         spool_stdin: bool,
 
-        #[arg(
-            long = "compression-level",
-            value_name = "LEVEL",
-            default_value_t = 3,
-            help = "zstd compression level."
-        )]
+        #[arg(long = "compression-level", value_name = "LEVEL", default_value_t = 3, help = "zstd compression level.")]
         compression_level: i32,
 
-        #[arg(
-            long = "chunk-size",
-            value_name = "SIZE",
-            help = "Compression chunk size (default: auto by input size)."
-        )]
+        #[arg(long = "chunk-size", value_name = "SIZE", help = "Compression chunk size (default: auto by input size).")]
         chunk_size: Option<String>,
 
-        #[arg(
-            long = "envelope-size",
-            value_name = "SIZE",
-            help = "Archive envelope size (default: auto by input size)."
-        )]
+        #[arg(long = "envelope-size", value_name = "SIZE", help = "Archive envelope size (default: auto by input size).")]
         envelope_size: Option<String>,
 
         #[arg(
@@ -282,30 +241,16 @@ pub(crate) enum Command {
         )]
         block_size: Option<String>,
 
-        #[arg(
-            long = "jobs",
-            value_name = "N",
-            help = "Worker jobs for reader/writer CPU work (default: logical CPU count)."
-        )]
+        #[arg(long = "jobs", value_name = "N", help = "Worker jobs for reader/writer CPU work (default: logical CPU count).")]
         jobs: Option<usize>,
 
-        #[arg(
-            long = "timings",
-            help = "Print create-stage timing breakdown to stderr."
-        )]
+        #[arg(long = "timings", help = "Print create-stage timing breakdown to stderr.")]
         timings: bool,
 
-        #[arg(
-            long = "dry-run",
-            help = "Print a create plan and file summary without writing archive bytes."
-        )]
+        #[arg(long = "dry-run", help = "Print a create plan and file summary without writing archive bytes.")]
         dry_run: bool,
 
-        #[arg(
-            required = true,
-            value_name = "PATH",
-            help = "One or more input files or directories."
-        )]
+        #[arg(required = true, value_name = "PATH", help = "One or more input files or directories.")]
         paths: Vec<String>,
     },
     #[command(
@@ -324,10 +269,7 @@ pub(crate) enum Command {
         )]
         archive: String,
 
-        #[arg(
-            value_name = "PATH",
-            help = "Optional archive member paths to extract."
-        )]
+        #[arg(value_name = "PATH", help = "Optional archive member paths to extract.")]
         paths: Vec<String>,
 
         #[arg(
@@ -339,17 +281,10 @@ pub(crate) enum Command {
         )]
         directory: String,
 
-        #[arg(
-            long = "stdout",
-            conflicts_with = "dry_run",
-            help = "Write a single selected member to stdout."
-        )]
+        #[arg(long = "stdout", conflicts_with = "dry_run", help = "Write a single selected member to stdout.")]
         stdout: bool,
 
-        #[arg(
-            long = "dry-run",
-            help = "Show what would be extracted without writing files."
-        )]
+        #[arg(long = "dry-run", help = "Show what would be extracted without writing files.")]
         dry_run: bool,
 
         #[arg(long = "overwrite", help = "Allow overwriting existing output files.")]
@@ -414,32 +349,16 @@ pub(crate) enum Command {
         )]
         recipient_key: Option<String>,
 
-        #[arg(
-            long = "insecure-zero-key",
-            hide = true,
-            help = "Removed in v43; plaintext archives need no key source."
-        )]
+        #[arg(long = "insecure-zero-key", hide = true, help = "Removed in v43; plaintext archives need no key source.")]
         insecure_zero_key: bool,
 
-        #[arg(
-            long = "bootstrap",
-            value_name = "FILE",
-            help = "Use bootstrap sidecar FILE for single-volume archive input."
-        )]
+        #[arg(long = "bootstrap", value_name = "FILE", help = "Use bootstrap sidecar FILE for single-volume archive input.")]
         bootstrap: Option<String>,
 
-        #[arg(
-            long = "volume",
-            value_name = "FILE",
-            help = "Explicit additional volume path."
-        )]
+        #[arg(long = "volume", value_name = "FILE", help = "Explicit additional volume path.")]
         volumes: Vec<String>,
 
-        #[arg(
-            long = "jobs",
-            value_name = "N",
-            help = "Worker jobs for reader CPU work (default: logical CPU count)."
-        )]
+        #[arg(long = "jobs", value_name = "N", help = "Worker jobs for reader CPU work (default: logical CPU count).")]
         jobs: Option<usize>,
     },
     #[command(
@@ -497,46 +416,22 @@ pub(crate) enum Command {
         )]
         recipient_key: Option<String>,
 
-        #[arg(
-            long = "insecure-zero-key",
-            hide = true,
-            help = "Removed in v43; plaintext archives need no key source."
-        )]
+        #[arg(long = "insecure-zero-key", hide = true, help = "Removed in v43; plaintext archives need no key source.")]
         insecure_zero_key: bool,
 
-        #[arg(
-            long = "bootstrap",
-            value_name = "FILE",
-            help = "Use bootstrap sidecar FILE for single-volume archive input."
-        )]
+        #[arg(long = "bootstrap", value_name = "FILE", help = "Use bootstrap sidecar FILE for single-volume archive input.")]
         bootstrap: Option<String>,
 
-        #[arg(
-            long = "volume",
-            value_name = "FILE",
-            help = "Explicit additional volume path."
-        )]
+        #[arg(long = "volume", value_name = "FILE", help = "Explicit additional volume path.")]
         volumes: Vec<String>,
 
-        #[arg(
-            long = "long",
-            conflicts_with = "json",
-            help = "Use verbose listing output."
-        )]
+        #[arg(long = "long", conflicts_with = "json", help = "Use verbose listing output.")]
         long: bool,
 
-        #[arg(
-            long = "json",
-            conflicts_with = "long",
-            help = "Emit stable machine-readable JSON output."
-        )]
+        #[arg(long = "json", conflicts_with = "long", help = "Emit stable machine-readable JSON output.")]
         json: bool,
 
-        #[arg(
-            long = "jobs",
-            value_name = "N",
-            help = "Worker jobs for reader CPU work (default: logical CPU count)."
-        )]
+        #[arg(long = "jobs", value_name = "N", help = "Worker jobs for reader CPU work (default: logical CPU count).")]
         jobs: Option<usize>,
     },
     #[command(
@@ -591,37 +486,19 @@ pub(crate) enum Command {
         )]
         recipient_key: Option<String>,
 
-        #[arg(
-            long = "insecure-zero-key",
-            hide = true,
-            help = "Removed in v43; plaintext archives need no key source."
-        )]
+        #[arg(long = "insecure-zero-key", hide = true, help = "Removed in v43; plaintext archives need no key source.")]
         insecure_zero_key: bool,
 
-        #[arg(
-            long = "trusted-public-key",
-            value_name = "FILE",
-            help = "Verify Ed25519 RootAuth with trusted public key FILE."
-        )]
+        #[arg(long = "trusted-public-key", value_name = "FILE", help = "Verify Ed25519 RootAuth with trusted public key FILE.")]
         trusted_public_key: Option<String>,
 
-        #[arg(
-            long = "trusted-ca-cert",
-            value_name = "FILE",
-            help = "Verify X.509 RootAuth with trusted CA certificate FILE."
-        )]
+        #[arg(long = "trusted-ca-cert", value_name = "FILE", help = "Verify X.509 RootAuth with trusted CA certificate FILE.")]
         trusted_ca_cert: Vec<String>,
 
-        #[arg(
-            long = "trusted-system-roots",
-            help = "Allow X.509 RootAuth verification with OpenSSL default trust roots."
-        )]
+        #[arg(long = "trusted-system-roots", help = "Allow X.509 RootAuth verification with OpenSSL default trust roots.")]
         trusted_system_roots: bool,
 
-        #[arg(
-            long = "public-no-key",
-            help = "Verify public RootAuth commitments without the archive key."
-        )]
+        #[arg(long = "public-no-key", help = "Verify public RootAuth commitments without the archive key.")]
         public_no_key: bool,
 
         #[arg(
@@ -630,18 +507,10 @@ pub(crate) enum Command {
         )]
         fast: bool,
 
-        #[arg(
-            long = "bootstrap",
-            value_name = "FILE",
-            help = "Use bootstrap sidecar FILE for single-volume archive input."
-        )]
+        #[arg(long = "bootstrap", value_name = "FILE", help = "Use bootstrap sidecar FILE for single-volume archive input.")]
         bootstrap: Option<String>,
 
-        #[arg(
-            long = "json",
-            conflicts_with = "quiet",
-            help = "Emit stable machine-readable JSON output."
-        )]
+        #[arg(long = "json", conflicts_with = "quiet", help = "Emit stable machine-readable JSON output.")]
         json: bool,
 
         #[arg(
@@ -650,11 +519,7 @@ pub(crate) enum Command {
         )]
         write_repaired: bool,
 
-        #[arg(
-            long = "jobs",
-            value_name = "N",
-            help = "Worker jobs for reader CPU work (default: logical CPU count)."
-        )]
+        #[arg(long = "jobs", value_name = "N", help = "Worker jobs for reader CPU work (default: logical CPU count).")]
         jobs: Option<usize>,
     },
     #[command(
@@ -688,18 +553,10 @@ pub(crate) enum Command {
         long_about = "Generate an Ed25519 RootAuth signing keypair. The secret output is a 32-byte signing seed encoded as 64 lowercase hex characters; the public output is a 32-byte Ed25519 verifying key encoded the same way."
     )]
     SigningKeygen {
-        #[arg(
-            long = "secret-output",
-            value_name = "FILE",
-            help = "Write the generated Ed25519 signing seed to FILE."
-        )]
+        #[arg(long = "secret-output", value_name = "FILE", help = "Write the generated Ed25519 signing seed to FILE.")]
         secret_output: String,
 
-        #[arg(
-            long = "public-output",
-            value_name = "FILE",
-            help = "Write the generated Ed25519 public key to FILE."
-        )]
+        #[arg(long = "public-output", value_name = "FILE", help = "Write the generated Ed25519 public key to FILE.")]
         public_output: String,
 
         #[arg(long = "force", help = "Overwrite existing keypair output files.")]

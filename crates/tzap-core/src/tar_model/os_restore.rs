@@ -1,8 +1,6 @@
 use super::restore::{plan_restore, PreparedDestination, StagedAuxiliary};
 #[cfg(windows)]
-use super::sparse::{
-    prepare_windows_sparse_file, query_windows_sparse_ranges, windows_file_system_is_refs,
-};
+use super::sparse::{prepare_windows_sparse_file, query_windows_sparse_ranges, windows_file_system_is_refs};
 use super::*;
 
 #[cfg(windows)]
@@ -11,9 +9,8 @@ use cap_std::fs::OpenOptionsExt as _;
 use std::os::windows::io::AsRawHandle;
 #[cfg(windows)]
 use windows_sys::Win32::Storage::FileSystem::{
-    FileBasicInfo, GetFileInformationByHandleEx, SetFileInformationByHandle, DELETE,
-    FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
-    FILE_GENERIC_WRITE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FileBasicInfo, GetFileInformationByHandleEx, SetFileInformationByHandle, DELETE, FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
 
 const MACOS_SETTABLE_ORDINARY_FLAGS: u32 = 0x0000_800f;
@@ -22,8 +19,7 @@ const MACOS_SETTABLE_SYSTEM_FLAGS: u32 = 0x0007_0000;
 // Darwin SF_SUPPORTED bit have System-class restore semantics even when this
 // reader deliberately does not register the bit for built-in application.
 const MACOS_SYSTEM_CLASS_FLAGS: u32 = 0x009f_0086;
-pub(crate) const MACOS_KNOWN_SETTABLE_FLAGS: u32 =
-    MACOS_SETTABLE_ORDINARY_FLAGS | MACOS_SETTABLE_SYSTEM_FLAGS;
+pub(crate) const MACOS_KNOWN_SETTABLE_FLAGS: u32 = MACOS_SETTABLE_ORDINARY_FLAGS | MACOS_SETTABLE_SYSTEM_FLAGS;
 
 pub(crate) fn parse_macos_flags(encoded: &[u8]) -> Result<u32, FormatError> {
     std::str::from_utf8(encoded)
@@ -78,26 +74,22 @@ pub(crate) fn validate_darwin_acl_external(value: &[u8]) -> Result<(), FormatErr
     const DARWIN_EXTERNAL_ACE_SIZE: usize = 28;
     const DARWIN_EXTERNAL_ACL_MAGIC: [u8; 4] = [0x01, 0x2c, 0xc1, 0x6d];
     if value.get(..4) != Some(DARWIN_EXTERNAL_ACL_MAGIC.as_slice()) {
-        return Err(FormatError::InvalidArchive(
-            "macOS ACL external form has an invalid magic value",
-        ));
+        return Err(FormatError::InvalidArchive("macOS ACL external form has an invalid magic value"));
     }
     let entry_count = value
         .get(36..40)
         .and_then(|bytes| bytes.try_into().ok())
         .map(u32::from_be_bytes)
-        .ok_or(FormatError::InvalidArchive(
-            "macOS ACL external form is truncated",
-        ))? as usize;
+        .ok_or(FormatError::InvalidArchive("macOS ACL external form is truncated"))? as usize;
     let expected = DARWIN_EXTERNAL_ACL_HEADER
-        .checked_add(entry_count.checked_mul(DARWIN_EXTERNAL_ACE_SIZE).ok_or(
-            FormatError::InvalidArchive("macOS ACL entry count overflows"),
-        )?)
+        .checked_add(
+            entry_count
+                .checked_mul(DARWIN_EXTERNAL_ACE_SIZE)
+                .ok_or(FormatError::InvalidArchive("macOS ACL entry count overflows"))?,
+        )
         .ok_or(FormatError::InvalidArchive("macOS ACL size overflows"))?;
     if entry_count > ACL_MAX_ENTRIES || expected != value.len() {
-        return Err(FormatError::InvalidArchive(
-            "macOS ACL external form has an invalid size",
-        ));
+        return Err(FormatError::InvalidArchive("macOS ACL external form has an invalid size"));
     }
     Ok(())
 }
@@ -131,11 +123,7 @@ const LINUX_KNOWN_FSFLAGS: u64 = (linux_raw_sys::general::FS_SECRM_FL
     | linux_raw_sys::general::FS_INLINE_DATA_FL
     | linux_raw_sys::general::FS_PROJINHERIT_FL
     | linux_raw_sys::general::FS_CASEFOLD_FL) as u64;
-pub(crate) fn native_auxiliary_restore_supported(
-    record: &AuxiliaryRecord,
-    include_system: bool,
-    kind: Option<TarEntryKind>,
-) -> bool {
+pub(crate) fn native_auxiliary_restore_supported(record: &AuxiliaryRecord, include_system: bool, kind: Option<TarEntryKind>) -> bool {
     if cfg!(target_os = "macos") {
         return match record.kind.as_str() {
             "macos.resource-fork" => {
@@ -154,16 +142,12 @@ pub(crate) fn native_auxiliary_restore_supported(
                         .get("TZAP.aux.meta.acl-format")
                         .is_some_and(|value| value == b"darwin-acl-external-v1")
             }
-            "generic.xattr" => {
-                record.restore_class == RestoreClass::SameOs
-                    || include_system && record.restore_class == RestoreClass::System
-            }
+            "generic.xattr" => record.restore_class == RestoreClass::SameOs || include_system && record.restore_class == RestoreClass::System,
             _ => false,
         };
     }
     if cfg!(target_os = "linux") && record.kind == "generic.xattr" {
-        return record.restore_class == RestoreClass::SameOs
-            || (include_system && record.restore_class == RestoreClass::System);
+        return record.restore_class == RestoreClass::SameOs || (include_system && record.restore_class == RestoreClass::System);
     }
     if !cfg!(windows) {
         return false;
@@ -173,52 +157,35 @@ pub(crate) fn native_auxiliary_restore_supported(
             && record
                 .meta
                 .get("TZAP.aux.meta.stream-attributes")
-                .is_some_and(|value| {
-                    value == b"00000000" && record.flags == 0
-                        || value == b"00000008" && record.flags == 1
-                });
+                .is_some_and(|value| value == b"00000000" && record.flags == 0 || value == b"00000008" && record.flags == 1);
     }
-    if matches!(
-        record.kind.as_str(),
-        "windows.ea-data" | "windows.property-data" | "windows.object-id"
-    ) {
+    if matches!(record.kind.as_str(), "windows.ea-data" | "windows.property-data" | "windows.object-id") {
         let expected_type = match record.kind.as_str() {
             "windows.ea-data" => b"00000002".as_slice(),
             "windows.property-data" => b"00000006".as_slice(),
             "windows.object-id" => b"00000007".as_slice(),
             _ => unreachable!(),
         };
-        return (record.restore_class == RestoreClass::SameOs
-            || include_system && record.restore_class == RestoreClass::System)
-            && (record.restore_class != RestoreClass::System
-                || windows_security_restore_privileges_available(0))
+        return (record.restore_class == RestoreClass::SameOs || include_system && record.restore_class == RestoreClass::System)
+            && (record.restore_class != RestoreClass::System || windows_security_restore_privileges_available(0))
             && record.flags == 0
             && record.name_encoding == "none"
             && record.decoded_name.is_empty()
-            && record
-                .meta
-                .get("TZAP.aux.meta.stream-type")
-                .is_some_and(|value| value == expected_type)
+            && record.meta.get("TZAP.aux.meta.stream-type").is_some_and(|value| value == expected_type)
             && record
                 .meta
                 .get("TZAP.aux.meta.stream-attributes")
                 .and_then(|value| parse_lower_hex_u32(value, "Windows stream attributes").ok())
                 .is_some_and(|attributes| {
                     attributes & !(STREAM_MODIFIED_WHEN_READ | STREAM_CONTAINS_SECURITY) == 0
-                        && (record.kind == "windows.object-id"
-                            || attributes & STREAM_CONTAINS_SECURITY != 0)
-                            == (record.restore_class == RestoreClass::System)
+                        && (record.kind == "windows.object-id" || attributes & STREAM_CONTAINS_SECURITY != 0) == (record.restore_class == RestoreClass::System)
                 });
     }
     if !include_system {
         return false;
     }
     if record.kind == "windows.efs-raw" {
-        return record.restore_class == RestoreClass::System
-            && record
-                .meta
-                .get("TZAP.aux.meta.efs-version")
-                .is_some_and(|value| value == b"1");
+        return record.restore_class == RestoreClass::System && record.meta.get("TZAP.aux.meta.efs-version").is_some_and(|value| value == b"1");
     }
     if record.kind == "windows.reparse-data" {
         return record
@@ -242,21 +209,14 @@ pub(super) fn windows_security_restore_privileges_available(security_information
     use std::ptr;
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, SetLastError, ERROR_SUCCESS};
     use windows_sys::Win32::Security::{
-        AdjustTokenPrivileges, LookupPrivilegeValueW, SE_BACKUP_NAME, SE_PRIVILEGE_ENABLED,
-        SE_RESTORE_NAME, SE_SECURITY_NAME, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
+        AdjustTokenPrivileges, LookupPrivilegeValueW, SE_BACKUP_NAME, SE_PRIVILEGE_ENABLED, SE_RESTORE_NAME, SE_SECURITY_NAME, TOKEN_ADJUST_PRIVILEGES,
+        TOKEN_PRIVILEGES, TOKEN_QUERY,
     };
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
     let mut token = ptr::null_mut();
     // SAFETY: `token` is a valid output slot and the process pseudo-handle is live.
-    if unsafe {
-        OpenProcessToken(
-            GetCurrentProcess(),
-            TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES,
-            &mut token,
-        )
-    } == 0
-    {
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, &mut token) } == 0 {
         return false;
     }
     let enable = |name| {
@@ -265,22 +225,15 @@ pub(super) fn windows_security_restore_privileges_available(security_information
             ..Default::default()
         };
         // SAFETY: the one-element privilege array provides valid input/output storage.
-        if unsafe { LookupPrivilegeValueW(ptr::null(), name, &mut privileges.Privileges[0].Luid) }
-            == 0
-        {
+        if unsafe { LookupPrivilegeValueW(ptr::null(), name, &mut privileges.Privileges[0].Luid) } == 0 {
             return false;
         }
         privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
         unsafe { SetLastError(ERROR_SUCCESS) };
         // SAFETY: `token` is live and the initialized one-entry structure is readable.
-        unsafe {
-            AdjustTokenPrivileges(token, 0, &privileges, 0, ptr::null_mut(), ptr::null_mut()) != 0
-                && GetLastError() == ERROR_SUCCESS
-        }
+        unsafe { AdjustTokenPrivileges(token, 0, &privileges, 0, ptr::null_mut(), ptr::null_mut()) != 0 && GetLastError() == ERROR_SUCCESS }
     };
-    let available = enable(SE_BACKUP_NAME)
-        && enable(SE_RESTORE_NAME)
-        && (security_information & 0x0000_0008 == 0 || enable(SE_SECURITY_NAME));
+    let available = enable(SE_BACKUP_NAME) && enable(SE_RESTORE_NAME) && (security_information & 0x0000_0008 == 0 || enable(SE_SECURITY_NAME));
     // SAFETY: `token` was returned by OpenProcessToken and is closed once.
     unsafe { CloseHandle(token) };
     available
@@ -300,10 +253,7 @@ pub(crate) fn windows_reparse_metadata_supported(metadata: &MemberMetadata) -> b
             .is_some_and(|record| native_auxiliary_restore_supported(record, true, None))
 }
 
-pub(crate) fn native_primary_restore_unsupported(
-    metadata: &MemberMetadata,
-    include_system: bool,
-) -> bool {
+pub(crate) fn native_primary_restore_unsupported(metadata: &MemberMetadata, include_system: bool) -> bool {
     metadata.primary_records.keys().any(|key| {
         let native = key.starts_with("TZAP.linux.")
             || key.starts_with("TZAP.macos.")
@@ -319,9 +269,7 @@ pub(crate) fn native_primary_restore_unsupported(
             return false;
         }
         if key == "TZAP.linux.fsflags" {
-            return linux_inode_flags_restore_unsupported(
-                metadata.primary_records.get(key).map(Vec::as_slice),
-            );
+            return linux_inode_flags_restore_unsupported(metadata.primary_records.get(key).map(Vec::as_slice));
         }
         if key == "TZAP.linux.project-id" {
             return !cfg!(target_os = "linux") || !include_system;
@@ -341,11 +289,7 @@ pub(crate) fn native_primary_restore_unsupported(
                 .get(key)
                 .and_then(|value| parse_lower_hex_u32(value, "Windows file attributes").ok())
                 .is_none_or(|attributes| {
-                    attributes
-                        & !(WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES
-                            | WINDOWS_ESSENTIAL_INTRINSIC_ATTRIBUTES
-                            | FILE_ATTRIBUTE_NORMAL)
-                        != 0
+                    attributes & !(WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES | WINDOWS_ESSENTIAL_INTRINSIC_ATTRIBUTES | FILE_ATTRIBUTE_NORMAL) != 0
                 });
         }
         if key == "TZAP.windows.change-time" {
@@ -360,13 +304,10 @@ pub(crate) fn native_primary_restore_unsupported(
                     .is_none_or(|value| value != b"00000000" && value != b"00000008");
         }
         if key == "TZAP.windows.reparse-placeholder" {
-            return !cfg!(windows)
-                || !include_system
-                || !windows_reparse_metadata_supported(metadata);
+            return !cfg!(windows) || !include_system || !windows_reparse_metadata_supported(metadata);
         }
         if key == "TZAP.windows.directory-case-sensitive" {
-            return include_system
-                && (!cfg!(windows) || metadata.declaration.source_os != "windows");
+            return include_system && (!cfg!(windows) || metadata.declaration.source_os != "windows");
         }
         if key == "LIBARCHIVE.creationtime" && metadata.declaration.source_os == "windows" {
             return !cfg!(windows);
@@ -375,18 +316,14 @@ pub(crate) fn native_primary_restore_unsupported(
             return !cfg!(target_os = "macos");
         }
         if key == "TZAP.macos.st-flags" {
-            let flags = metadata
-                .primary_records
-                .get(key)
-                .and_then(|value| parse_macos_flags(value).ok());
+            let flags = metadata.primary_records.get(key).and_then(|value| parse_macos_flags(value).ok());
             return !cfg!(target_os = "macos")
                 || metadata.declaration.source_os != "macos"
                 || flags.is_none_or(|flags| {
                     if macos_flags_require_system(flags) && !include_system {
                         false
                     } else {
-                        !macos_flags_supported(flags)
-                            || include_system && !macos_system_flags_privileges_available(flags)
+                        !macos_flags_supported(flags) || include_system && !macos_system_flags_privileges_available(flags)
                     }
                 });
         }
@@ -477,16 +414,8 @@ fn current_host_os() -> &'static str {
 
 #[cfg(unix)]
 pub(crate) fn numeric_ownership_supported(metadata: &MemberMetadata) -> bool {
-    metadata
-        .portable_mirror
-        .uid
-        .and_then(|uid| libc::uid_t::try_from(uid).ok())
-        .is_some()
-        && metadata
-            .portable_mirror
-            .gid
-            .and_then(|gid| libc::gid_t::try_from(gid).ok())
-            .is_some()
+    metadata.portable_mirror.uid.and_then(|uid| libc::uid_t::try_from(uid).ok()).is_some()
+        && metadata.portable_mirror.gid.and_then(|gid| libc::gid_t::try_from(gid).ok()).is_some()
 }
 
 #[cfg(not(unix))]
@@ -494,9 +423,7 @@ pub(crate) fn numeric_ownership_supported(_metadata: &MemberMetadata) -> bool {
     false
 }
 
-pub(crate) fn metadata_verification_report(
-    members: &[TarStreamMemberSummary],
-) -> Result<MetadataVerificationReport, FormatError> {
+pub(crate) fn metadata_verification_report(members: &[TarStreamMemberSummary]) -> Result<MetadataVerificationReport, FormatError> {
     let mut profiles_present = std::collections::BTreeSet::new();
     let mut auxiliary_kinds_present = std::collections::BTreeSet::new();
     let mut entries = Vec::with_capacity(members.len());
@@ -505,35 +432,20 @@ pub(crate) fn metadata_verification_report(
         let metadata = &member.v45_metadata;
         profiles_present.extend(metadata.declaration.required_profiles.iter().cloned());
         profiles_present.extend(metadata.declaration.optional_profiles.iter().cloned());
-        let mut auxiliary_kinds = metadata
-            .auxiliary
-            .iter()
-            .map(|record| record.kind.clone())
-            .collect::<Vec<_>>();
+        let mut auxiliary_kinds = metadata.auxiliary.iter().map(|record| record.kind.clone()).collect::<Vec<_>>();
         auxiliary_kinds.sort();
         auxiliary_kinds.dedup();
         auxiliary_kinds_present.extend(auxiliary_kinds.iter().cloned());
 
         let mut policy_capabilities = Vec::with_capacity(4);
-        for policy in [
-            RestorePolicy::Content,
-            RestorePolicy::Portable,
-            RestorePolicy::SameOs,
-            RestorePolicy::System,
-        ] {
+        for policy in [RestorePolicy::Content, RestorePolicy::Portable, RestorePolicy::SameOs, RestorePolicy::System] {
             let strict = SafeExtractionOptions {
                 restore_policy: policy,
                 allow_degraded: false,
                 system_authorized: policy == RestorePolicy::System,
                 ..SafeExtractionOptions::default()
             };
-            let (policy_complete, reason) = match plan_restore(
-                &member.path,
-                metadata,
-                member.kind,
-                member.reparse_placeholder,
-                strict,
-            ) {
+            let (policy_complete, reason) = match plan_restore(&member.path, metadata, member.kind, member.reparse_placeholder, strict) {
                 Ok(_) => (true, None),
                 Err(FormatError::ReaderUnsupported(reason)) => (false, Some(reason)),
                 Err(error) => return Err(error),
@@ -581,9 +493,7 @@ pub(crate) fn metadata_verification_report(
             && !diagnostics.iter().any(|diagnostic| {
                 matches!(
                     diagnostic.status,
-                    MetadataDiagnosticStatus::Materialized
-                        | MetadataDiagnosticStatus::Unsupported
-                        | MetadataDiagnosticStatus::Failed
+                    MetadataDiagnosticStatus::Materialized | MetadataDiagnosticStatus::Unsupported | MetadataDiagnosticStatus::Failed
                 )
             });
         entries.push(EntryMetadataVerification {
@@ -599,9 +509,7 @@ pub(crate) fn metadata_verification_report(
     }
 
     Ok(MetadataVerificationReport {
-        all_capture_complete: entries
-            .iter()
-            .all(|entry| entry.capture_status == CaptureStatus::Complete),
+        all_capture_complete: entries.iter().all(|entry| entry.capture_status == CaptureStatus::Complete),
         full_fidelity_possible: entries.iter().all(|entry| entry.full_fidelity_possible),
         profiles_present: profiles_present.into_iter().collect(),
         auxiliary_kinds_present: auxiliary_kinds_present.into_iter().collect(),
@@ -614,16 +522,12 @@ pub(crate) fn restore_regular_file_metadata_to_open_file(
     options: SafeExtractionOptions,
 ) -> Result<Vec<MetadataDiagnostic>, FormatError> {
     if member.kind != TarEntryKind::Regular {
-        return Err(FormatError::ReaderUnsupported(
-            "open-file metadata restore requires a regular archive member",
-        ));
+        return Err(FormatError::ReaderUnsupported("open-file metadata restore requires a regular archive member"));
     }
     let metadata = member
         .v45_metadata
         .as_ref()
-        .ok_or(FormatError::InvalidArchive(
-            "revision-45 member metadata is missing",
-        ))?;
+        .ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
     let mut diagnostics = plan_owned_member_restore(member, options)?;
     if options.restore_policy != RestorePolicy::Content {
         apply_restored_regular_file_metadata_parts(
@@ -647,9 +551,7 @@ pub(crate) fn apply_restored_regular_file_metadata(
     diagnostics: &mut Vec<MetadataDiagnostic>,
 ) -> Result<(), FormatError> {
     if member.v45_metadata.is_some() {
-        diagnostics.extend(restore_regular_file_metadata_to_open_file(
-            file, member, options,
-        )?);
+        diagnostics.extend(restore_regular_file_metadata_to_open_file(file, member, options)?);
         return Ok(());
     }
     apply_restored_regular_file_metadata_parts(
@@ -725,21 +627,10 @@ pub(crate) fn apply_restored_regular_file_metadata_parts(
         }
         apply_regular_file_xattrs(file, path, member_metadata, options, diagnostics)?;
     }
-    if member_metadata.is_some_and(|metadata| {
-        metadata.declaration.source_os == "macos"
-            && matches!(
-                options.restore_policy,
-                RestorePolicy::SameOs | RestorePolicy::System
-            )
-    }) {
-        apply_macos_file_timestamps(
-            file,
-            path,
-            member_metadata.unwrap(),
-            mtime,
-            options,
-            diagnostics,
-        )?;
+    if member_metadata
+        .is_some_and(|metadata| metadata.declaration.source_os == "macos" && matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System))
+    {
+        apply_macos_file_timestamps(file, path, member_metadata.unwrap(), mtime, options, diagnostics)?;
     } else {
         apply_regular_file_mtime(file, path, mtime, options, diagnostics)?;
     }
@@ -793,33 +684,17 @@ impl Drop for WindowsRawEfsContext {
 
 #[cfg(windows)]
 fn windows_final_path(file: &fs::File, description: &'static str) -> Result<Vec<u16>, FormatError> {
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED, VOLUME_NAME_DOS,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED, VOLUME_NAME_DOS};
 
     let handle = file.as_raw_handle().cast();
     // SAFETY: the handle is live; the zero-length query returns the required UTF-16 count.
-    let required = unsafe {
-        GetFinalPathNameByHandleW(
-            handle,
-            std::ptr::null_mut(),
-            0,
-            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
-        )
-    };
+    let required = unsafe { GetFinalPathNameByHandleW(handle, std::ptr::null_mut(), 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS) };
     if required == 0 {
         return Err(FormatError::FilesystemExtractionFailed(description));
     }
     let mut path = vec![0u16; required as usize + 1];
     // SAFETY: `path` provides the queried capacity and remains writable for the call.
-    let written = unsafe {
-        GetFinalPathNameByHandleW(
-            handle,
-            path.as_mut_ptr(),
-            path.len() as u32,
-            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
-        )
-    };
+    let written = unsafe { GetFinalPathNameByHandleW(handle, path.as_mut_ptr(), path.len() as u32, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS) };
     if written == 0 || written as usize >= path.len() {
         return Err(FormatError::FilesystemExtractionFailed(description));
     }
@@ -836,9 +711,7 @@ fn open_windows_raw_efs(path: &[u16], flags: u32) -> Result<WindowsRawEfsContext
     // SAFETY: `path` is NUL-terminated and `context` is a writable output slot.
     let status = unsafe { OpenEncryptedFileRawW(path.as_ptr(), flags, &mut context) };
     if status != 0 {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "failed to open Windows raw EFS stream",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("failed to open Windows raw EFS stream"));
     }
     Ok(WindowsRawEfsContext(context))
 }
@@ -851,11 +724,7 @@ struct WindowsRawEfsImport<'a> {
 }
 
 #[cfg(windows)]
-unsafe extern "system" fn windows_raw_efs_import_callback(
-    buffer: *mut u8,
-    context: *const std::ffi::c_void,
-    length: *mut u32,
-) -> u32 {
+unsafe extern "system" fn windows_raw_efs_import_callback(buffer: *mut u8, context: *const std::ffi::c_void, length: *mut u32) -> u32 {
     use windows_sys::Win32::Foundation::{ERROR_READ_FAULT, ERROR_SUCCESS};
 
     if buffer.is_null() || context.is_null() || length.is_null() {
@@ -887,11 +756,7 @@ struct WindowsRawEfsDigest {
 }
 
 #[cfg(windows)]
-unsafe extern "system" fn windows_raw_efs_digest_callback(
-    bytes: *const u8,
-    context: *const std::ffi::c_void,
-    length: u32,
-) -> u32 {
+unsafe extern "system" fn windows_raw_efs_digest_callback(bytes: *const u8, context: *const std::ffi::c_void, length: u32) -> u32 {
     use windows_sys::Win32::Foundation::{ERROR_READ_FAULT, ERROR_SUCCESS};
 
     if length == 0 {
@@ -928,14 +793,10 @@ fn verify_windows_raw_efs(path: &[u16], record: &AuxiliaryRecord) -> Result<(), 
         )
     };
     if status != 0 {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "failed to verify restored Windows raw EFS stream",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("failed to verify restored Windows raw EFS stream"));
     }
     if digest.bytes != record.stored_size || digest.hasher.finalize().as_slice() != record.sha256 {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "restored Windows raw EFS stream did not verify",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("restored Windows raw EFS stream did not verify"));
     }
     Ok(())
 }
@@ -952,10 +813,7 @@ pub(crate) fn restore_windows_efs_temp(
     use windows_sys::Win32::Storage::FileSystem::WriteEncryptedFileRaw;
     use windows_sys::Win32::System::WindowsProgramming::CREATE_FOR_IMPORT;
 
-    let Some(index) = staged
-        .iter()
-        .position(|item| item.record.kind == "windows.efs-raw")
-    else {
+    let Some(index) = staged.iter().position(|item| item.record.kind == "windows.efs-raw") else {
         return Ok(output);
     };
     if options.restore_policy != RestorePolicy::System || !options.system_authorized {
@@ -963,38 +821,27 @@ pub(crate) fn restore_windows_efs_temp(
             "Windows raw EFS restoration requires authorized system policy",
         ));
     }
-    output.flush().map_err(|_| {
-        FormatError::FilesystemExtractionFailed("failed to flush Windows raw EFS temporary file")
-    })?;
+    output
+        .flush()
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to flush Windows raw EFS temporary file"))?;
     let raw_path = windows_final_path(&output, "failed to resolve Windows raw EFS temporary file")?;
     drop(output);
     destination
         .parent
         .remove_file_or_symlink(temp_leaf)
-        .map_err(|_| {
-            FormatError::FilesystemExtractionFailed(
-                "failed to replace temporary file with Windows raw EFS data",
-            )
-        })?;
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to replace temporary file with Windows raw EFS data"))?;
 
-    let StagedAuxiliary {
-        record,
-        file: mut staged_file,
-    } = staged.remove(index);
+    let StagedAuxiliary { record, file: mut staged_file } = staged.remove(index);
     let staged_len = staged_file
         .metadata()
-        .map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to inspect staged Windows raw EFS data")
-        })?
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect staged Windows raw EFS data"))?
         .len();
     if staged_len != record.stored_size {
-        return Err(FormatError::InvalidArchive(
-            "staged Windows raw EFS size is inconsistent",
-        ));
+        return Err(FormatError::InvalidArchive("staged Windows raw EFS size is inconsistent"));
     }
-    staged_file.seek(SeekFrom::Start(0)).map_err(|_| {
-        FormatError::FilesystemExtractionFailed("failed to rewind staged Windows raw EFS data")
-    })?;
+    staged_file
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged Windows raw EFS data"))?;
 
     let context = open_windows_raw_efs(&raw_path, CREATE_FOR_IMPORT)?;
     let mut import = WindowsRawEfsImport {
@@ -1012,9 +859,7 @@ pub(crate) fn restore_windows_efs_temp(
         )
     };
     if status != 0 || import.error.is_some() || import.bytes != record.stored_size {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "failed to restore Windows raw EFS data",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("failed to restore Windows raw EFS data"));
     }
     drop(context);
     verify_windows_raw_efs(&raw_path, &record)?;
@@ -1030,21 +875,12 @@ pub(crate) fn restore_windows_efs_temp(
         .parent
         .open_with(temp_leaf, &reopen)
         .map(cap_std::fs::File::into_std)
-        .map_err(|_| {
-            FormatError::FilesystemExtractionFailed(
-                "failed to reopen restored Windows raw EFS temporary file",
-            )
-        })?;
-    let metadata = output.metadata().map_err(|_| {
-        FormatError::FilesystemExtractionFailed("failed to inspect restored Windows raw EFS file")
-    })?;
-    if !metadata.is_file()
-        || metadata.file_type().is_symlink()
-        || metadata.file_attributes() & FILE_ATTRIBUTE_ENCRYPTED == 0
-    {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "restored Windows raw EFS file is not encrypted",
-        ));
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to reopen restored Windows raw EFS temporary file"))?;
+    let metadata = output
+        .metadata()
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect restored Windows raw EFS file"))?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.file_attributes() & FILE_ATTRIBUTE_ENCRYPTED == 0 {
+        return Err(FormatError::FilesystemExtractionFailed("restored Windows raw EFS file is not encrypted"));
     }
     Ok(output)
 }
@@ -1057,13 +893,8 @@ pub(crate) fn restore_windows_efs_temp(
     staged: &mut [StagedAuxiliary],
     _options: SafeExtractionOptions,
 ) -> Result<fs::File, FormatError> {
-    if staged
-        .iter()
-        .any(|item| item.record.kind == "windows.efs-raw")
-    {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "Windows raw EFS restore is unavailable on this host",
-        ));
+    if staged.iter().any(|item| item.record.kind == "windows.efs-raw") {
+        return Err(FormatError::FilesystemExtractionFailed("Windows raw EFS restore is unavailable on this host"));
     }
     Ok(output)
 }
@@ -1078,30 +909,19 @@ pub(crate) fn apply_windows_alternate_streams(
 ) -> Result<(), FormatError> {
     use std::os::windows::io::FromRawHandle as _;
     use windows_sys::Win32::Storage::FileSystem::{
-        CreateFileW, GetFinalPathNameByHandleW, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
-        FILE_NAME_NORMALIZED, VOLUME_NAME_DOS,
+        CreateFileW, GetFinalPathNameByHandleW, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, FILE_NAME_NORMALIZED, VOLUME_NAME_DOS,
     };
 
     if staged.is_empty() {
         return Ok(());
     }
-    if !matches!(
-        options.restore_policy,
-        RestorePolicy::SameOs | RestorePolicy::System
-    ) {
+    if !matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System) {
         staged.clear();
         return Ok(());
     }
     let handle = base_file.as_raw_handle().cast();
     // SAFETY: the handle is live; the zero-length query returns the required UTF-16 count.
-    let required = unsafe {
-        GetFinalPathNameByHandleW(
-            handle,
-            std::ptr::null_mut(),
-            0,
-            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
-        )
-    };
+    let required = unsafe { GetFinalPathNameByHandleW(handle, std::ptr::null_mut(), 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS) };
     if required == 0 {
         return Err(FormatError::FilesystemExtractionFailed(
             "failed to resolve restored object for alternate-stream creation",
@@ -1109,14 +929,7 @@ pub(crate) fn apply_windows_alternate_streams(
     }
     let mut base_path = vec![0u16; required as usize + 1];
     // SAFETY: `base_path` provides the queried capacity and remains writable for the call.
-    let written = unsafe {
-        GetFinalPathNameByHandleW(
-            handle,
-            base_path.as_mut_ptr(),
-            base_path.len() as u32,
-            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
-        )
-    };
+    let written = unsafe { GetFinalPathNameByHandleW(handle, base_path.as_mut_ptr(), base_path.len() as u32, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS) };
     if written == 0 || written as usize >= base_path.len() {
         return Err(FormatError::FilesystemExtractionFailed(
             "failed to resolve restored object for alternate-stream creation",
@@ -1131,20 +944,11 @@ pub(crate) fn apply_windows_alternate_streams(
     for staged_record in std::mem::take(staged) {
         let StagedAuxiliary { record, mut file } = staged_record;
         if record.kind != "windows.alternate-data" {
-            restore_windows_backup_metadata_stream(
-                base_file,
-                path,
-                &record,
-                &mut file,
-                options,
-                diagnostics,
-            )?;
+            restore_windows_backup_metadata_stream(base_file, path, &record, &mut file, options, diagnostics)?;
             continue;
         }
         if record.decoded_name.len() % 2 != 0 {
-            return Err(FormatError::InvalidArchive(
-                "Windows alternate stream name is not UTF-16LE",
-            ));
+            return Err(FormatError::InvalidArchive("Windows alternate stream name is not UTF-16LE"));
         }
         let stream_name = record
             .decoded_name
@@ -1207,42 +1011,29 @@ fn restore_windows_backup_metadata_stream(
     use std::os::windows::io::{AsRawHandle, FromRawHandle};
     use std::ptr;
     use windows_sys::Win32::Storage::FileSystem::{
-        BackupWrite, ReOpenFile, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
-        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        BackupWrite, ReOpenFile, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
 
     let stream_type = record
         .meta
         .get("TZAP.aux.meta.stream-type")
-        .ok_or(FormatError::InvalidArchive(
-            "Windows backup metadata stream type is missing",
-        ))
+        .ok_or(FormatError::InvalidArchive("Windows backup metadata stream type is missing"))
         .and_then(|value| parse_lower_hex_u32(value, "Windows backup stream type"))?;
     let stream_attributes = record
         .meta
         .get("TZAP.aux.meta.stream-attributes")
-        .ok_or(FormatError::InvalidArchive(
-            "Windows backup metadata stream attributes are missing",
-        ))
+        .ok_or(FormatError::InvalidArchive("Windows backup metadata stream attributes are missing"))
         .and_then(|value| parse_lower_hex_u32(value, "Windows backup stream attributes"))?;
     let expected_type = match record.kind.as_str() {
         "windows.ea-data" => 2,
         "windows.property-data" => 6,
         "windows.object-id" => 7,
         _ => {
-            return Err(FormatError::InvalidArchive(
-                "staged Windows backup metadata stream has unsupported framing",
-            ));
+            return Err(FormatError::InvalidArchive("staged Windows backup metadata stream has unsupported framing"));
         }
     };
-    if stream_type != expected_type
-        || record.flags != 0
-        || record.logical_size != record.stored_size
-        || !record.decoded_name.is_empty()
-    {
-        return Err(FormatError::InvalidArchive(
-            "Windows backup metadata stream declaration is inconsistent",
-        ));
+    if stream_type != expected_type || record.flags != 0 || record.logical_size != record.stored_size || !record.decoded_name.is_empty() {
+        return Err(FormatError::InvalidArchive("Windows backup metadata stream declaration is inconsistent"));
     }
     if record.kind == "windows.object-id" {
         return restore_windows_object_id(base_file, path, record, payload, options, diagnostics);
@@ -1278,31 +1069,23 @@ fn restore_windows_backup_metadata_stream(
     // SAFETY: ownership of the newly reopened handle transfers to `destination` once.
     let destination = unsafe { fs::File::from_raw_handle(reopened.cast()) };
     let mut context = ptr::null_mut();
-    let signed_size = i64::try_from(record.logical_size).map_err(|_| {
-        FormatError::ReaderUnsupported("Windows backup metadata stream exceeds i64")
-    })?;
+    let signed_size = i64::try_from(record.logical_size).map_err(|_| FormatError::ReaderUnsupported("Windows backup metadata stream exceeds i64"))?;
     let mut header = [0u8; 20];
     header[0..4].copy_from_slice(&stream_type.to_le_bytes());
     header[4..8].copy_from_slice(&stream_attributes.to_le_bytes());
     header[8..16].copy_from_slice(&signed_size.to_le_bytes());
     let result = (|| {
         windows_backup_write_all(&destination, &mut context, &header)?;
-        payload.seek(SeekFrom::Start(0)).map_err(|_| {
-            FormatError::FilesystemExtractionFailed(
-                "failed to rewind staged Windows backup metadata stream",
-            )
-        })?;
+        payload
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged Windows backup metadata stream"))?;
         let mut buffer = [0u8; 64 * 1024];
         let mut remaining = record.logical_size;
         while remaining != 0 {
-            let count = buffer
-                .len()
-                .min(usize::try_from(remaining).unwrap_or(usize::MAX));
-            payload.read_exact(&mut buffer[..count]).map_err(|_| {
-                FormatError::FilesystemExtractionFailed(
-                    "staged Windows backup metadata stream ended early",
-                )
-            })?;
+            let count = buffer.len().min(usize::try_from(remaining).unwrap_or(usize::MAX));
+            payload
+                .read_exact(&mut buffer[..count])
+                .map_err(|_| FormatError::FilesystemExtractionFailed("staged Windows backup metadata stream ended early"))?;
             windows_backup_write_all(&destination, &mut context, &buffer[..count])?;
             remaining -= count as u64;
         }
@@ -1310,17 +1093,7 @@ fn restore_windows_backup_metadata_stream(
     })();
     let mut ignored = 0u32;
     // SAFETY: aborting with an empty buffer releases exactly this BackupWrite context.
-    let abort_ok = unsafe {
-        BackupWrite(
-            destination.as_raw_handle().cast(),
-            ptr::null(),
-            0,
-            &mut ignored,
-            1,
-            0,
-            &mut context,
-        )
-    } != 0;
+    let abort_ok = unsafe { BackupWrite(destination.as_raw_handle().cast(), ptr::null(), 0, &mut ignored, 1, 0, &mut context) } != 0;
     let result = if result.is_ok() && !abort_ok {
         Err(FormatError::FilesystemExtractionFailed(
             "failed to finalize Windows backup metadata stream restoration",
@@ -1330,22 +1103,20 @@ fn restore_windows_backup_metadata_stream(
     };
     match result {
         Ok(()) => Ok(()),
-        Err(error @ FormatError::FilesystemExtractionFailed(_)) => {
-            record_metadata_application_failure(
-                diagnostics,
-                MetadataDiagnostic::new(
-                    path,
-                    "windows-backup-v1",
-                    &record.kind,
-                    MetadataOperation::Restore,
-                    MetadataDiagnosticStatus::Failed,
-                    error.to_string(),
-                )
-                .for_restore(options.restore_policy, 2),
-                options,
-                "failed to restore Windows backup metadata stream",
+        Err(error @ FormatError::FilesystemExtractionFailed(_)) => record_metadata_application_failure(
+            diagnostics,
+            MetadataDiagnostic::new(
+                path,
+                "windows-backup-v1",
+                &record.kind,
+                MetadataOperation::Restore,
+                MetadataDiagnosticStatus::Failed,
+                error.to_string(),
             )
-        }
+            .for_restore(options.restore_policy, 2),
+            options,
+            "failed to restore Windows backup metadata stream",
+        ),
         Err(error) => Err(error),
     }
 }
@@ -1362,36 +1133,26 @@ fn restore_windows_object_id(
     use std::mem::size_of;
     use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _};
     use windows_sys::Win32::Storage::FileSystem::{
-        ReOpenFile, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
-        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        ReOpenFile, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
-    use windows_sys::Win32::System::Ioctl::{
-        FILE_OBJECTID_BUFFER, FSCTL_GET_OBJECT_ID, FSCTL_SET_OBJECT_ID,
-    };
+    use windows_sys::Win32::System::Ioctl::{FILE_OBJECTID_BUFFER, FSCTL_GET_OBJECT_ID, FSCTL_SET_OBJECT_ID};
     use windows_sys::Win32::System::IO::DeviceIoControl;
 
     let size = size_of::<FILE_OBJECTID_BUFFER>();
     if record.logical_size != size as u64 {
-        return Err(FormatError::InvalidArchive(
-            "Windows object-ID backup stream is not exactly 64 bytes",
-        ));
+        return Err(FormatError::InvalidArchive("Windows object-ID backup stream is not exactly 64 bytes"));
     }
     let mut desired = FILE_OBJECTID_BUFFER::default();
-    payload.seek(SeekFrom::Start(0)).map_err(|_| {
-        FormatError::FilesystemExtractionFailed("failed to rewind staged Windows object ID")
-    })?;
+    payload
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged Windows object ID"))?;
     {
         // SAFETY: `desired` is live and writable, and the slice covers exactly its object
         // representation so the authenticated 64-byte stream can be copied without alignment loss.
-        let desired_bytes = unsafe {
-            std::slice::from_raw_parts_mut(
-                (&mut desired as *mut FILE_OBJECTID_BUFFER).cast::<u8>(),
-                size,
-            )
-        };
-        payload.read_exact(desired_bytes).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("staged Windows object ID ended early")
-        })?;
+        let desired_bytes = unsafe { std::slice::from_raw_parts_mut((&mut desired as *mut FILE_OBJECTID_BUFFER).cast::<u8>(), size) };
+        payload
+            .read_exact(desired_bytes)
+            .map_err(|_| FormatError::FilesystemExtractionFailed("staged Windows object ID ended early"))?;
     }
 
     let reopened_handle = unsafe {
@@ -1456,12 +1217,8 @@ fn restore_windows_object_id(
     } != 0;
     // SAFETY: both initialized structures remain live and are viewed over their exact object
     // representations solely for byte-for-byte verification.
-    let actual_bytes = unsafe {
-        std::slice::from_raw_parts((&actual as *const FILE_OBJECTID_BUFFER).cast::<u8>(), size)
-    };
-    let desired_bytes = unsafe {
-        std::slice::from_raw_parts((&desired as *const FILE_OBJECTID_BUFFER).cast::<u8>(), size)
-    };
+    let actual_bytes = unsafe { std::slice::from_raw_parts((&actual as *const FILE_OBJECTID_BUFFER).cast::<u8>(), size) };
+    let desired_bytes = unsafe { std::slice::from_raw_parts((&desired as *const FILE_OBJECTID_BUFFER).cast::<u8>(), size) };
     if get_ok && returned as usize == size && actual_bytes == desired_bytes {
         return Ok(());
     }
@@ -1484,11 +1241,7 @@ fn restore_windows_object_id(
 }
 
 #[cfg(windows)]
-fn windows_backup_write_all(
-    destination: &fs::File,
-    context: &mut *mut std::ffi::c_void,
-    mut bytes: &[u8],
-) -> Result<(), FormatError> {
+fn windows_backup_write_all(destination: &fs::File, context: &mut *mut std::ffi::c_void, mut bytes: &[u8]) -> Result<(), FormatError> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::BackupWrite;
 
@@ -1497,26 +1250,11 @@ fn windows_backup_write_all(
         let mut written = 0u32;
         // SAFETY: the destination and context are live, and the input slice is readable for the
         // exact requested byte count during this synchronous call.
-        if unsafe {
-            BackupWrite(
-                destination.as_raw_handle().cast(),
-                bytes.as_ptr(),
-                count as u32,
-                &mut written,
-                0,
-                0,
-                context,
-            )
-        } == 0
-        {
-            return Err(FormatError::FilesystemExtractionFailed(
-                "failed to restore Windows backup metadata stream",
-            ));
+        if unsafe { BackupWrite(destination.as_raw_handle().cast(), bytes.as_ptr(), count as u32, &mut written, 0, 0, context) } == 0 {
+            return Err(FormatError::FilesystemExtractionFailed("failed to restore Windows backup metadata stream"));
         }
         if written == 0 || written as usize > count {
-            return Err(FormatError::FilesystemExtractionFailed(
-                "Windows BackupWrite made no progress",
-            ));
+            return Err(FormatError::FilesystemExtractionFailed("Windows BackupWrite made no progress"));
         }
         bytes = &bytes[written as usize..];
     }
@@ -1524,126 +1262,81 @@ fn windows_backup_write_all(
 }
 
 #[cfg(windows)]
-fn restore_windows_alternate_stream_payload(
-    staged: &mut fs::File,
-    stream: &mut fs::File,
-    record: &AuxiliaryRecord,
-) -> Result<(), FormatError> {
+fn restore_windows_alternate_stream_payload(staged: &mut fs::File, stream: &mut fs::File, record: &AuxiliaryRecord) -> Result<(), FormatError> {
     let sparse_layout = record.sparse_layout.as_ref();
     let extents = sparse_layout.map(|layout| layout.extents.as_slice());
     let extent_bytes = extents
         .unwrap_or_default()
         .iter()
         .try_fold(0u64, |sum, extent| sum.checked_add(extent.length))
-        .ok_or(FormatError::InvalidArchive(
-            "sparse Windows alternate stream extent size overflow",
-        ))?;
+        .ok_or(FormatError::InvalidArchive("sparse Windows alternate stream extent size overflow"))?;
     let data_offset = if let Some(extents) = extents {
-        let map_size = sparse_layout
-            .expect("sparse extents require a layout")
-            .map_and_padding_size as u64;
+        let map_size = sparse_layout.expect("sparse extents require a layout").map_and_padding_size as u64;
         if map_size.checked_add(extent_bytes) != Some(record.stored_size) {
-            return Err(FormatError::InvalidArchive(
-                "sparse Windows alternate stream stored size is inconsistent",
-            ));
+            return Err(FormatError::InvalidArchive("sparse Windows alternate stream stored size is inconsistent"));
         }
         prepare_windows_sparse_file(stream, record.logical_size)?;
-        staged.seek(SeekFrom::Start(map_size)).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to seek staged sparse alternate stream")
-        })?;
+        staged
+            .seek(SeekFrom::Start(map_size))
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to seek staged sparse alternate stream"))?;
         for extent in extents {
-            stream.seek(SeekFrom::Start(extent.offset)).map_err(|_| {
-                FormatError::FilesystemExtractionFailed("failed to seek sparse alternate stream")
-            })?;
-            copy_exact_bytes(
-                staged,
-                stream,
-                extent.length,
-                "Windows sparse alternate stream",
-            )?;
+            stream
+                .seek(SeekFrom::Start(extent.offset))
+                .map_err(|_| FormatError::FilesystemExtractionFailed("failed to seek sparse alternate stream"))?;
+            copy_exact_bytes(staged, stream, extent.length, "Windows sparse alternate stream")?;
         }
         map_size
     } else {
-        staged.seek(SeekFrom::Start(0)).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to rewind staged alternate stream")
-        })?;
-        copy_exact_bytes(
-            staged,
-            stream,
-            record.logical_size,
-            "Windows alternate stream",
-        )?;
+        staged
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged alternate stream"))?;
+        copy_exact_bytes(staged, stream, record.logical_size, "Windows alternate stream")?;
         0
     };
-    stream.flush().map_err(|_| {
-        FormatError::FilesystemExtractionFailed("failed to flush Windows alternate stream")
-    })?;
+    stream
+        .flush()
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to flush Windows alternate stream"))?;
     if stream
         .metadata()
-        .map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to inspect Windows alternate stream")
-        })?
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect Windows alternate stream"))?
         .len()
         != record.logical_size
     {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "Windows alternate stream logical size did not verify",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("Windows alternate stream logical size did not verify"));
     }
     if let Some(extents) = extents {
         let actual_extents = query_windows_sparse_ranges(stream, record.logical_size)?;
         if actual_extents != extents && !windows_file_system_is_refs(stream)? {
-            return Err(FormatError::FilesystemExtractionFailed(
-                "Windows sparse alternate stream ranges did not verify",
-            ));
+            return Err(FormatError::FilesystemExtractionFailed("Windows sparse alternate stream ranges did not verify"));
         }
     }
-    staged.seek(SeekFrom::Start(data_offset)).map_err(|_| {
-        FormatError::FilesystemExtractionFailed("failed to rewind staged alternate stream data")
-    })?;
+    staged
+        .seek(SeekFrom::Start(data_offset))
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged alternate stream data"))?;
     if let Some(extents) = extents {
         for extent in extents {
-            stream.seek(SeekFrom::Start(extent.offset)).map_err(|_| {
-                FormatError::FilesystemExtractionFailed(
-                    "failed to seek restored sparse alternate stream",
-                )
-            })?;
-            compare_exact_bytes(
-                staged,
-                stream,
-                extent.length,
-                "Windows sparse alternate stream",
-            )?;
+            stream
+                .seek(SeekFrom::Start(extent.offset))
+                .map_err(|_| FormatError::FilesystemExtractionFailed("failed to seek restored sparse alternate stream"))?;
+            compare_exact_bytes(staged, stream, extent.length, "Windows sparse alternate stream")?;
         }
     } else {
-        stream.seek(SeekFrom::Start(0)).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to rewind Windows alternate stream")
-        })?;
-        compare_exact_bytes(
-            staged,
-            stream,
-            record.logical_size,
-            "Windows alternate stream",
-        )?;
+        stream
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind Windows alternate stream"))?;
+        compare_exact_bytes(staged, stream, record.logical_size, "Windows alternate stream")?;
     }
     Ok(())
 }
 
 #[cfg(windows)]
-fn copy_exact_bytes(
-    input: &mut fs::File,
-    output: &mut fs::File,
-    mut remaining: u64,
-    description: &'static str,
-) -> Result<(), FormatError> {
+fn copy_exact_bytes(input: &mut fs::File, output: &mut fs::File, mut remaining: u64, description: &'static str) -> Result<(), FormatError> {
     let mut buffer = [0u8; 64 * 1024];
     while remaining > 0 {
-        let count = buffer
-            .len()
-            .min(usize::try_from(remaining).unwrap_or(usize::MAX));
-        input.read_exact(&mut buffer[..count]).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("staged auxiliary payload ended early")
-        })?;
+        let count = buffer.len().min(usize::try_from(remaining).unwrap_or(usize::MAX));
+        input
+            .read_exact(&mut buffer[..count])
+            .map_err(|_| FormatError::FilesystemExtractionFailed("staged auxiliary payload ended early"))?;
         output
             .write_all(&buffer[..count])
             .map_err(|_| FormatError::FilesystemExtractionFailed(description))?;
@@ -1653,28 +1346,17 @@ fn copy_exact_bytes(
 }
 
 #[cfg(windows)]
-fn compare_exact_bytes(
-    expected: &mut fs::File,
-    actual: &mut fs::File,
-    mut remaining: u64,
-    description: &'static str,
-) -> Result<(), FormatError> {
+fn compare_exact_bytes(expected: &mut fs::File, actual: &mut fs::File, mut remaining: u64, description: &'static str) -> Result<(), FormatError> {
     let mut expected_buffer = [0u8; 64 * 1024];
     let mut actual_buffer = [0u8; 64 * 1024];
     while remaining > 0 {
-        let count = expected_buffer
-            .len()
-            .min(usize::try_from(remaining).unwrap_or(usize::MAX));
+        let count = expected_buffer.len().min(usize::try_from(remaining).unwrap_or(usize::MAX));
         expected
             .read_exact(&mut expected_buffer[..count])
-            .map_err(|_| {
-                FormatError::FilesystemExtractionFailed("failed to read staged auxiliary payload")
-            })?;
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged auxiliary payload"))?;
         actual
             .read_exact(&mut actual_buffer[..count])
-            .map_err(|_| {
-                FormatError::FilesystemExtractionFailed("failed to read restored auxiliary payload")
-            })?;
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to read restored auxiliary payload"))?;
         if expected_buffer[..count] != actual_buffer[..count] {
             return Err(FormatError::FilesystemExtractionFailed(description));
         }
@@ -1701,21 +1383,17 @@ pub(crate) fn apply_generic_xattr_auxiliaries(
             remaining.push(item);
             continue;
         }
-        if item.record.restore_class == RestoreClass::System
-            && !(options.restore_policy == RestorePolicy::System && options.system_authorized)
-        {
+        if item.record.restore_class == RestoreClass::System && !(options.restore_policy == RestorePolicy::System && options.system_authorized) {
             continue;
         }
-        item.file.seek(SeekFrom::Start(0)).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to rewind staged extended attribute")
-        })?;
-        let value_len = usize::try_from(item.record.logical_size).map_err(|_| {
-            FormatError::ReaderUnsupported("extended attribute exceeds platform limits")
-        })?;
+        item.file
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged extended attribute"))?;
+        let value_len = usize::try_from(item.record.logical_size).map_err(|_| FormatError::ReaderUnsupported("extended attribute exceeds platform limits"))?;
         let mut value = vec![0u8; value_len];
-        item.file.read_exact(&mut value).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to read staged extended attribute")
-        })?;
+        item.file
+            .read_exact(&mut value)
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged extended attribute"))?;
         let name = OsStr::from_bytes(&item.record.decoded_name);
         if let Err(error) = base_file.set_xattr(name, &value) {
             record_metadata_application_failure(
@@ -1767,12 +1445,10 @@ fn open_macos_resource_fork(file: &fs::File, write: bool) -> std::io::Result<fs:
     if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, path.as_mut_ptr()) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    let length = path.iter().position(|byte| *byte == 0).ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "macOS returned an unterminated descriptor path",
-        )
-    })?;
+    let length = path
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "macOS returned an unterminated descriptor path"))?;
     path.truncate(length);
     path.extend_from_slice(b"/..namedfork/rsrc");
     let path = PathBuf::from(OsString::from_vec(path));
@@ -1786,9 +1462,7 @@ fn open_macos_resource_fork(file: &fs::File, write: bool) -> std::io::Result<fs:
     let fork_metadata = fork.metadata()?;
     #[allow(clippy::unnecessary_cast)]
     if owner.dev() != fork_metadata.dev() || owner.ino() != fork_metadata.ino() {
-        return Err(std::io::Error::other(
-            "resource fork path no longer identifies the pinned file",
-        ));
+        return Err(std::io::Error::other("resource fork path no longer identifies the pinned file"));
     }
     Ok(fork)
 }
@@ -1806,22 +1480,13 @@ fn apply_macos_native_metadata(
     use std::os::unix::ffi::OsStrExt as _;
     use xattr::FileExt as _;
 
-    if metadata.declaration.source_os != "macos"
-        || !matches!(
-            options.restore_policy,
-            RestorePolicy::SameOs | RestorePolicy::System
-        )
-    {
+    if metadata.declaration.source_os != "macos" || !matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System) {
         return Ok(());
     }
 
     extern "C" {
         fn acl_copy_int(buffer: *const c_void) -> *mut c_void;
-        fn acl_copy_ext(
-            buffer: *mut c_void,
-            acl: *mut c_void,
-            size: libc::ssize_t,
-        ) -> libc::ssize_t;
+        fn acl_copy_ext(buffer: *mut c_void, acl: *mut c_void, size: libc::ssize_t) -> libc::ssize_t;
         fn acl_size(acl: *mut c_void) -> libc::ssize_t;
         fn acl_set_fd_np(fd: c_int, acl: *mut c_void, acl_type: c_int) -> c_int;
         fn acl_get_fd_np(fd: c_int, acl_type: c_int) -> *mut c_void;
@@ -1830,10 +1495,7 @@ fn apply_macos_native_metadata(
 
     const ACL_TYPE_EXTENDED: c_int = 0x0000_0100;
 
-    let fail = |diagnostics: &mut Vec<MetadataDiagnostic>,
-                class: &'static str,
-                message: &'static str,
-                error: Option<&std::io::Error>| {
+    let fail = |diagnostics: &mut Vec<MetadataDiagnostic>, class: &'static str, message: &'static str, error: Option<&std::io::Error>| {
         let mut diagnostic = MetadataDiagnostic::new(
             path,
             "macos-backup-v1",
@@ -1861,53 +1523,30 @@ fn apply_macos_native_metadata(
         match item.record.kind.as_str() {
             "macos.finder-info" => {
                 if item.record.logical_size != 32 {
-                    return Err(FormatError::InvalidArchive(
-                        "macOS FinderInfo is not exactly 32 bytes",
-                    ));
+                    return Err(FormatError::InvalidArchive("macOS FinderInfo is not exactly 32 bytes"));
                 }
                 let mut value = [0u8; 32];
-                item.file.seek(SeekFrom::Start(0)).map_err(|_| {
-                    FormatError::FilesystemExtractionFailed(
-                        "failed to rewind staged macOS FinderInfo",
-                    )
-                })?;
-                item.file.read_exact(&mut value).map_err(|_| {
-                    FormatError::FilesystemExtractionFailed(
-                        "failed to read staged macOS FinderInfo",
-                    )
-                })?;
+                item.file
+                    .seek(SeekFrom::Start(0))
+                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged macOS FinderInfo"))?;
+                item.file
+                    .read_exact(&mut value)
+                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged macOS FinderInfo"))?;
                 let name = OsStr::from_bytes(b"com.apple.FinderInfo");
                 if let Err(error) = file.set_xattr(name, &value) {
-                    fail(
-                        diagnostics,
-                        "finder-info",
-                        "failed to apply macOS FinderInfo",
-                        Some(&error),
-                    )?;
+                    fail(diagnostics, "finder-info", "failed to apply macOS FinderInfo", Some(&error))?;
                 } else if file.get_xattr(name).ok().flatten().as_deref() != Some(value.as_slice()) {
-                    fail(
-                        diagnostics,
-                        "finder-info",
-                        "macOS FinderInfo did not verify after restoration",
-                        None,
-                    )?;
+                    fail(diagnostics, "finder-info", "macOS FinderInfo did not verify after restoration", None)?;
                 }
             }
             "macos.resource-fork" => {
-                item.file.seek(SeekFrom::Start(0)).map_err(|_| {
-                    FormatError::FilesystemExtractionFailed(
-                        "failed to rewind staged macOS resource fork",
-                    )
-                })?;
+                item.file
+                    .seek(SeekFrom::Start(0))
+                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged macOS resource fork"))?;
                 let mut fork = match open_macos_resource_fork(file, true) {
                     Ok(fork) => fork,
                     Err(error) => {
-                        fail(
-                            diagnostics,
-                            "resource-fork",
-                            "failed to open macOS resource fork",
-                            Some(&error),
-                        )?;
+                        fail(diagnostics, "resource-fork", "failed to open macOS resource fork", Some(&error))?;
                         continue;
                     }
                 };
@@ -1916,32 +1555,20 @@ fn apply_macos_native_metadata(
                     .is_none_or(|copied| copied != item.record.logical_size)
                     || fork.sync_all().is_err()
                 {
-                    fail(
-                        diagnostics,
-                        "resource-fork",
-                        "failed to write macOS resource fork",
-                        None,
-                    )?;
+                    fail(diagnostics, "resource-fork", "failed to write macOS resource fork", None)?;
                 } else {
                     drop(fork);
-                    let mut fork = open_macos_resource_fork(file, false).map_err(|_| {
-                        FormatError::FilesystemExtractionFailed(
-                            "failed to reopen macOS resource fork for verification",
-                        )
-                    })?;
-                    item.file.seek(SeekFrom::Start(0)).map_err(|_| {
-                        FormatError::FilesystemExtractionFailed(
-                            "failed to rewind staged macOS resource fork",
-                        )
-                    })?;
+                    let mut fork = open_macos_resource_fork(file, false)
+                        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to reopen macOS resource fork for verification"))?;
+                    item.file
+                        .seek(SeekFrom::Start(0))
+                        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged macOS resource fork"))?;
                     let mut expected = vec![0u8; 1024 * 1024];
                     let mut actual = vec![0u8; 1024 * 1024];
                     let mut remaining = item.record.logical_size;
                     let mut verified = true;
                     while remaining > 0 {
-                        let count = expected
-                            .len()
-                            .min(usize::try_from(remaining).unwrap_or(usize::MAX));
+                        let count = expected.len().min(usize::try_from(remaining).unwrap_or(usize::MAX));
                         if item.file.read_exact(&mut expected[..count]).is_err()
                             || fork.read_exact(&mut actual[..count]).is_err()
                             || expected[..count] != actual[..count]
@@ -1966,16 +1593,14 @@ fn apply_macos_native_metadata(
                 }
             }
             "macos.acl-native" => {
-                let size = usize::try_from(item.record.logical_size).map_err(|_| {
-                    FormatError::ReaderUnsupported("macOS ACL exceeds platform limits")
-                })?;
+                let size = usize::try_from(item.record.logical_size).map_err(|_| FormatError::ReaderUnsupported("macOS ACL exceeds platform limits"))?;
                 let mut value = vec![0u8; size];
-                item.file.seek(SeekFrom::Start(0)).map_err(|_| {
-                    FormatError::FilesystemExtractionFailed("failed to rewind staged macOS ACL")
-                })?;
-                item.file.read_exact(&mut value).map_err(|_| {
-                    FormatError::FilesystemExtractionFailed("failed to read staged macOS ACL")
-                })?;
+                item.file
+                    .seek(SeekFrom::Start(0))
+                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged macOS ACL"))?;
+                item.file
+                    .read_exact(&mut value)
+                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged macOS ACL"))?;
                 validate_darwin_acl_external(&value)?;
                 // SAFETY: the external form was structurally bounded above; returned ACLs are freed.
                 let acl = unsafe { acl_copy_int(value.as_ptr().cast()) };
@@ -1983,19 +1608,12 @@ fn apply_macos_native_metadata(
                     if !acl.is_null() {
                         unsafe { acl_free(acl) };
                     }
-                    return Err(FormatError::InvalidArchive(
-                        "macOS ACL external form is invalid",
-                    ));
+                    return Err(FormatError::InvalidArchive("macOS ACL external form is invalid"));
                 }
                 if unsafe { acl_set_fd_np(file.as_raw_fd(), acl, ACL_TYPE_EXTENDED) } != 0 {
                     let error = std::io::Error::last_os_error();
                     unsafe { acl_free(acl) };
-                    fail(
-                        diagnostics,
-                        "acl-native",
-                        "failed to apply native macOS ACL",
-                        Some(&error),
-                    )?;
+                    fail(diagnostics, "acl-native", "failed to apply native macOS ACL", Some(&error))?;
                     continue;
                 }
                 unsafe { acl_free(acl) };
@@ -2004,26 +1622,14 @@ fn apply_macos_native_metadata(
                     if !restored.is_null() {
                         unsafe { acl_free(restored) };
                     }
-                    fail(
-                        diagnostics,
-                        "acl-native",
-                        "native macOS ACL did not verify after restoration",
-                        None,
-                    )?;
+                    fail(diagnostics, "acl-native", "native macOS ACL did not verify after restoration", None)?;
                     continue;
                 }
                 let mut actual = vec![0u8; size];
-                let copied = unsafe {
-                    acl_copy_ext(actual.as_mut_ptr().cast(), restored, size as libc::ssize_t)
-                };
+                let copied = unsafe { acl_copy_ext(actual.as_mut_ptr().cast(), restored, size as libc::ssize_t) };
                 unsafe { acl_free(restored) };
                 if copied != size as libc::ssize_t || actual != value {
-                    fail(
-                        diagnostics,
-                        "acl-native",
-                        "native macOS ACL did not verify after restoration",
-                        None,
-                    )?;
+                    fail(diagnostics, "acl-native", "native macOS ACL did not verify after restoration", None)?;
                 }
             }
             _ => remaining.push(item),
@@ -2069,13 +1675,7 @@ fn apply_macos_file_timestamps(
         fork_attr: u32,
     }
     extern "C" {
-        fn fsetattrlist(
-            fd: c_int,
-            attributes: *const c_void,
-            buffer: *const c_void,
-            size: usize,
-            options: u32,
-        ) -> c_int;
+        fn fsetattrlist(fd: c_int, attributes: *const c_void, buffer: *const c_void, size: usize, options: u32) -> c_int;
     }
     let mut common_attr = 0x0000_0400;
     let mut times = Vec::<libc::timespec>::new();
@@ -2131,13 +1731,11 @@ fn apply_macos_file_timestamps(
             "failed to apply macOS timestamps",
         );
     }
-    let actual = file.metadata().map_err(|_| {
-        FormatError::FilesystemExtractionFailed("failed to inspect restored macOS timestamps")
-    })?;
+    let actual = file
+        .metadata()
+        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect restored macOS timestamps"))?;
     if (actual.st_mtime(), actual.st_mtime_nsec() as u32) != mtime
-        || creation_time.is_some_and(|creation| {
-            (actual.st_birthtime(), actual.st_birthtime_nsec() as u32) != creation
-        })
+        || creation_time.is_some_and(|creation| (actual.st_birthtime(), actual.st_birthtime_nsec() as u32) != creation)
     {
         return record_metadata_application_failure(
             diagnostics,
@@ -2179,27 +1777,17 @@ fn apply_macos_file_flags(
 ) -> Result<(), FormatError> {
     use std::os::macos::fs::MetadataExt as _;
 
-    if metadata.declaration.source_os != "macos"
-        || !matches!(
-            options.restore_policy,
-            RestorePolicy::SameOs | RestorePolicy::System
-        )
-    {
+    if metadata.declaration.source_os != "macos" || !matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System) {
         return Ok(());
     }
     let Some(encoded) = metadata.primary_records.get("TZAP.macos.st-flags") else {
         return Ok(());
     };
     let desired = parse_macos_flags(encoded)? & MACOS_KNOWN_SETTABLE_FLAGS;
-    if macos_flags_require_system(desired)
-        && !(options.restore_policy == RestorePolicy::System && options.system_authorized)
-    {
+    if macos_flags_require_system(desired) && !(options.restore_policy == RestorePolicy::System && options.system_authorized) {
         return Ok(());
     }
-    let retained_unknown = file
-        .metadata()
-        .map(|value| value.st_flags() & !MACOS_KNOWN_SETTABLE_FLAGS)
-        .unwrap_or(0);
+    let retained_unknown = file.metadata().map(|value| value.st_flags() & !MACOS_KNOWN_SETTABLE_FLAGS).unwrap_or(0);
     let applied = retained_unknown | desired;
     // SAFETY: `file` owns a live descriptor and the desired value was range checked.
     if unsafe { libc::fchflags(file.as_raw_fd(), applied) } != 0 {
@@ -2220,12 +1808,7 @@ fn apply_macos_file_flags(
             "failed to apply macOS file flags",
         );
     }
-    if file
-        .metadata()
-        .map(|value| value.st_flags() & MACOS_KNOWN_SETTABLE_FLAGS)
-        .ok()
-        != Some(desired)
-    {
+    if file.metadata().map(|value| value.st_flags() & MACOS_KNOWN_SETTABLE_FLAGS).ok() != Some(desired) {
         return record_metadata_application_failure(
             diagnostics,
             MetadataDiagnostic::new(
@@ -2273,21 +1856,17 @@ pub(crate) fn apply_generic_xattr_auxiliaries_to_path(
             remaining.push(item);
             continue;
         }
-        if item.record.restore_class == RestoreClass::System
-            && !(options.restore_policy == RestorePolicy::System && options.system_authorized)
-        {
+        if item.record.restore_class == RestoreClass::System && !(options.restore_policy == RestorePolicy::System && options.system_authorized) {
             continue;
         }
-        item.file.seek(SeekFrom::Start(0)).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to rewind staged extended attribute")
-        })?;
-        let value_len = usize::try_from(item.record.logical_size).map_err(|_| {
-            FormatError::ReaderUnsupported("extended attribute exceeds platform limits")
-        })?;
+        item.file
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged extended attribute"))?;
+        let value_len = usize::try_from(item.record.logical_size).map_err(|_| FormatError::ReaderUnsupported("extended attribute exceeds platform limits"))?;
         let mut value = vec![0u8; value_len];
-        item.file.read_exact(&mut value).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to read staged extended attribute")
-        })?;
+        item.file
+            .read_exact(&mut value)
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged extended attribute"))?;
         let name = OsStr::from_bytes(&item.record.decoded_name);
         let set_result = if dereference {
             xattr::set_deref(base_path, name, &value)
@@ -2372,57 +1951,36 @@ pub(crate) fn apply_windows_security_descriptor(
     use windows_sys::Win32::Foundation::{CloseHandle, ERROR_INSUFFICIENT_BUFFER};
     use windows_sys::Win32::Security::Authorization::{SetSecurityInfo, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
-        GetKernelObjectSecurity, GetSecurityDescriptorDacl, GetSecurityDescriptorGroup,
-        GetSecurityDescriptorOwner, GetSecurityDescriptorSacl, SetKernelObjectSecurity,
+        GetKernelObjectSecurity, GetSecurityDescriptorDacl, GetSecurityDescriptorGroup, GetSecurityDescriptorOwner, GetSecurityDescriptorSacl,
+        SetKernelObjectSecurity,
     };
-    use windows_sys::Win32::Storage::FileSystem::{
-        ReOpenFile, READ_CONTROL, WRITE_DAC, WRITE_OWNER,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{ReOpenFile, READ_CONTROL, WRITE_DAC, WRITE_OWNER};
     use windows_sys::Win32::System::SystemServices::ACCESS_SYSTEM_SECURITY;
 
-    if metadata.declaration.source_os != "windows"
-        || options.restore_policy != RestorePolicy::System
-        || !options.system_authorized
-    {
+    if metadata.declaration.source_os != "windows" || options.restore_policy != RestorePolicy::System || !options.system_authorized {
         return Ok(());
     }
-    let Some(record) = metadata
-        .auxiliary
-        .iter()
-        .find(|record| record.kind == "windows.security-descriptor")
-    else {
+    let Some(record) = metadata.auxiliary.iter().find(|record| record.kind == "windows.security-descriptor") else {
         return Ok(());
     };
     let payload = record
         .capture_report_payload
         .as_deref()
-        .ok_or(FormatError::InvalidArchive(
-            "Windows security descriptor was not retained",
-        ))?;
+        .ok_or(FormatError::InvalidArchive("Windows security descriptor was not retained"))?;
     let security_information = record
         .meta
         .get("TZAP.aux.meta.security-information")
         .map(|value| parse_lower_hex_u32(value, "Windows security information"))
         .transpose()?
-        .ok_or(FormatError::InvalidArchive(
-            "Windows security descriptor lacks its information mask",
-        ))?;
+        .ok_or(FormatError::InvalidArchive("Windows security descriptor lacks its information mask"))?;
     let query_security_information = security_information & 0x0000_000f;
     let control = u16::from_le_bytes([payload[2], payload[3]]);
     let mut application_security_information = security_information;
     if security_information & 0x0000_0004 != 0 && security_information & 0xa000_0000 == 0 {
-        application_security_information |= if control & 0x1000 != 0 {
-            0x8000_0000
-        } else {
-            0x2000_0000
-        };
+        application_security_information |= if control & 0x1000 != 0 { 0x8000_0000 } else { 0x2000_0000 };
     }
     if security_information & 0x0000_0008 != 0 && security_information & 0x5000_0000 == 0 {
-        application_security_information |= if control & 0x2000 != 0 {
-            0x4000_0000
-        } else {
-            0x1000_0000
-        };
+        application_security_information |= if control & 0x2000 != 0 { 0x4000_0000 } else { 0x1000_0000 };
     }
     if !windows_security_restore_privileges_available(security_information) {
         let diagnostic = MetadataDiagnostic::new(
@@ -2442,14 +2000,7 @@ pub(crate) fn apply_windows_security_descriptor(
             "Windows security restoration requires SeBackupPrivilege, SeRestorePrivilege, and optional SeSecurityPrivilege",
         ));
     }
-    let desired_access = READ_CONTROL
-        | WRITE_DAC
-        | WRITE_OWNER
-        | if security_information & 0x0000_0008 != 0 {
-            ACCESS_SYSTEM_SECURITY
-        } else {
-            0
-        };
+    let desired_access = READ_CONTROL | WRITE_DAC | WRITE_OWNER | if security_information & 0x0000_0008 != 0 { ACCESS_SYSTEM_SECURITY } else { 0 };
     // SAFETY: the original handle is live and flags preserve no-follow access to its object.
     let reopened_security_handle = unsafe {
         ReOpenFile(
@@ -2459,20 +2010,19 @@ pub(crate) fn apply_windows_security_descriptor(
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
         )
     };
-    let (security_handle, owns_security_handle) =
-        if reopened_security_handle.is_null() || reopened_security_handle as isize == -1 {
-            if file.metadata().is_ok_and(|metadata| metadata.is_dir()) {
-                // Directory finalization opens its pinned handle with the
-                // security access mask up front. ReOpenFile can still reject
-                // directory handles even with backup semantics, so retain the
-                // already-authorized pinned handle.
-                (file.as_raw_handle().cast(), false)
-            } else {
-                (reopened_security_handle, true)
-            }
+    let (security_handle, owns_security_handle) = if reopened_security_handle.is_null() || reopened_security_handle as isize == -1 {
+        if file.metadata().is_ok_and(|metadata| metadata.is_dir()) {
+            // Directory finalization opens its pinned handle with the
+            // security access mask up front. ReOpenFile can still reject
+            // directory handles even with backup semantics, so retain the
+            // already-authorized pinned handle.
+            (file.as_raw_handle().cast(), false)
         } else {
             (reopened_security_handle, true)
-        };
+        }
+    } else {
+        (reopened_security_handle, true)
+    };
     if security_handle.is_null() || security_handle as isize == -1 {
         let error = std::io::Error::last_os_error();
         return record_metadata_application_failure(
@@ -2507,26 +2057,14 @@ pub(crate) fn apply_windows_security_descriptor(
     let descriptor_components_ok = unsafe {
         GetSecurityDescriptorOwner(descriptor, &mut owner, &mut owner_defaulted) != 0
             && GetSecurityDescriptorGroup(descriptor, &mut group, &mut group_defaulted) != 0
-            && GetSecurityDescriptorDacl(
-                descriptor,
-                &mut dacl_present,
-                &mut dacl,
-                &mut dacl_defaulted,
-            ) != 0
-            && GetSecurityDescriptorSacl(
-                descriptor,
-                &mut sacl_present,
-                &mut sacl,
-                &mut sacl_defaulted,
-            ) != 0
+            && GetSecurityDescriptorDacl(descriptor, &mut dacl_present, &mut dacl, &mut dacl_defaulted) != 0
+            && GetSecurityDescriptorSacl(descriptor, &mut sacl_present, &mut sacl, &mut sacl_defaulted) != 0
     };
     if !descriptor_components_ok {
         if owns_security_handle {
             unsafe { CloseHandle(security_handle) };
         }
-        return Err(FormatError::InvalidArchive(
-            "Windows security descriptor components are invalid",
-        ));
+        return Err(FormatError::InvalidArchive("Windows security descriptor components are invalid"));
     }
     let mut set_error = None;
     let owner_group_information = application_security_information & 0x0000_0003;
@@ -2612,30 +2150,14 @@ pub(crate) fn apply_windows_security_descriptor(
 
     let mut needed = 0u32;
     // SAFETY: the null-buffer query returns the descriptor size through `needed`.
-    let first = unsafe {
-        GetKernelObjectSecurity(
-            security_handle,
-            query_security_information,
-            ptr::null_mut(),
-            0,
-            &mut needed,
-        )
-    };
+    let first = unsafe { GetKernelObjectSecurity(security_handle, query_security_information, ptr::null_mut(), 0, &mut needed) };
     let first_error = std::io::Error::last_os_error();
     let mut actual = vec![0u8; needed as usize];
     // SAFETY: `actual` has the queried size and remains writable for the call.
     let get_ok = first == 0
         && first_error.raw_os_error() == Some(ERROR_INSUFFICIENT_BUFFER as i32)
         && needed != 0
-        && unsafe {
-            GetKernelObjectSecurity(
-                security_handle,
-                query_security_information,
-                actual.as_mut_ptr().cast(),
-                needed,
-                &mut needed,
-            )
-        } != 0;
+        && unsafe { GetKernelObjectSecurity(security_handle, query_security_information, actual.as_mut_ptr().cast(), needed, &mut needed) } != 0;
     if owns_security_handle {
         unsafe { CloseHandle(security_handle) };
     }
@@ -2688,8 +2210,7 @@ pub(super) fn windows_security_descriptors_equivalent(expected: &[u8], actual: &
     }
     let expected_control = u16::from_le_bytes([expected[2], expected[3]]);
     let actual_control = u16::from_le_bytes([actual[2], actual[3]]);
-    let mut ignorable =
-        DACL_AUTO_INHERIT_REQ | SACL_AUTO_INHERIT_REQ | DACL_AUTO_INHERITED | SACL_AUTO_INHERITED;
+    let mut ignorable = DACL_AUTO_INHERIT_REQ | SACL_AUTO_INHERIT_REQ | DACL_AUTO_INHERITED | SACL_AUTO_INHERITED;
     if expected_control & DACL_PRESENT == 0 && actual_control & DACL_PRESENT == 0 {
         ignorable |= DACL_PROTECTED;
     }
@@ -2711,13 +2232,10 @@ pub(super) fn windows_security_descriptors_equivalent(expected: &[u8], actual: &
         (16, true, expected_control & DACL_PRESENT != 0),
     ] {
         if represented {
-            let Some(expected_component) =
-                security_descriptor_component(expected, offset_field, acl)
-            else {
+            let Some(expected_component) = security_descriptor_component(expected, offset_field, acl) else {
                 return false;
             };
-            let Some(actual_component) = security_descriptor_component(actual, offset_field, acl)
-            else {
+            let Some(actual_component) = security_descriptor_component(actual, offset_field, acl) else {
                 return false;
             };
             if expected_component != actual_component {
@@ -2729,11 +2247,7 @@ pub(super) fn windows_security_descriptors_equivalent(expected: &[u8], actual: &
 }
 
 #[cfg(windows)]
-fn security_descriptor_component(
-    descriptor: &[u8],
-    offset_field: usize,
-    acl: bool,
-) -> Option<&[u8]> {
+fn security_descriptor_component(descriptor: &[u8], offset_field: usize, acl: bool) -> Option<&[u8]> {
     let offset_bytes = descriptor.get(offset_field..offset_field.checked_add(4)?)?;
     let offset = u32::from_le_bytes(offset_bytes.try_into().ok()?) as usize;
     if offset == 0 {
@@ -2774,13 +2288,9 @@ fn pax_timestamp_to_windows_filetime(timestamp: (i64, u32)) -> Result<i64, Forma
         .and_then(|value| value.checked_add(i128::from(nanoseconds / 100)))
         .and_then(|value| value.checked_add(WINDOWS_TO_UNIX_EPOCH_100NS))
         .and_then(|value| i64::try_from(value).ok())
-        .ok_or(FormatError::FilesystemExtractionFailed(
-            "Windows timestamp is outside the FILETIME range",
-        ))?;
+        .ok_or(FormatError::FilesystemExtractionFailed("Windows timestamp is outside the FILETIME range"))?;
     if ticks < 0 {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "Windows timestamp predates the FILETIME epoch",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("Windows timestamp predates the FILETIME epoch"));
     }
     Ok(ticks)
 }
@@ -2793,12 +2303,7 @@ pub(crate) fn apply_windows_basic_metadata(
     options: SafeExtractionOptions,
     diagnostics: &mut Vec<MetadataDiagnostic>,
 ) -> Result<(), FormatError> {
-    if metadata.declaration.source_os != "windows"
-        || !matches!(
-            options.restore_policy,
-            RestorePolicy::SameOs | RestorePolicy::System
-        )
-    {
+    if metadata.declaration.source_os != "windows" || !matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System) {
         return Ok(());
     }
 
@@ -2810,13 +2315,7 @@ pub(crate) fn apply_windows_basic_metadata(
         .map(|value| parse_lower_hex_u32(value, "Windows file attributes"))
         .transpose()?;
     let compression_exact = if let Some(desired) = desired_attributes {
-        apply_windows_compression(
-            file,
-            path,
-            desired & FILE_ATTRIBUTE_COMPRESSED != 0,
-            options,
-            diagnostics,
-        )?
+        apply_windows_compression(file, path, desired & FILE_ATTRIBUTE_COMPRESSED != 0, options, diagnostics)?
     } else {
         true
     };
@@ -2826,13 +2325,8 @@ pub(crate) fn apply_windows_basic_metadata(
         } else {
             !FILE_ATTRIBUTE_ENCRYPTED
         }
-        & if compression_exact {
-            u32::MAX
-        } else {
-            !FILE_ATTRIBUTE_COMPRESSED
-        };
-    let attribute_verification_mask =
-        WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES | intrinsic_verification_mask;
+        & if compression_exact { u32::MAX } else { !FILE_ATTRIBUTE_COMPRESSED };
+    let attribute_verification_mask = WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES | intrinsic_verification_mask;
     let parse_optional_timestamp = |key: &str| {
         metadata
             .primary_records
@@ -2842,9 +2336,7 @@ pub(crate) fn apply_windows_basic_metadata(
     };
     let creation_time = parse_optional_timestamp("LIBARCHIVE.creationtime")?;
     let access_time = parse_optional_timestamp("atime")?;
-    let write_time = Some(pax_timestamp_to_windows_filetime(
-        metadata.portable_mirror.mtime,
-    )?);
+    let write_time = Some(pax_timestamp_to_windows_filetime(metadata.portable_mirror.mtime)?);
     let change_time = parse_optional_timestamp("TZAP.windows.change-time")?;
 
     let mut current = FILE_BASIC_INFO::default();
@@ -2891,10 +2383,7 @@ pub(crate) fn apply_windows_basic_metadata(
         restored.ChangeTime = value;
     }
     if let Some(desired) = desired_attributes {
-        let unsupported = desired
-            & !(WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES
-                | WINDOWS_ESSENTIAL_INTRINSIC_ATTRIBUTES
-                | FILE_ATTRIBUTE_NORMAL);
+        let unsupported = desired & !(WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES | WINDOWS_ESSENTIAL_INTRINSIC_ATTRIBUTES | FILE_ATTRIBUTE_NORMAL);
         if unsupported != 0 {
             let diagnostic = MetadataDiagnostic::new(
                 path,
@@ -2908,9 +2397,7 @@ pub(crate) fn apply_windows_basic_metadata(
             if options.allow_degraded {
                 diagnostics.push(diagnostic);
             } else {
-                return Err(FormatError::ReaderUnsupported(
-                    "Windows file attributes contain unsupported bits",
-                ));
+                return Err(FormatError::ReaderUnsupported("Windows file attributes contain unsupported bits"));
             }
         }
         let intrinsic_mismatch = (current.FileAttributes ^ desired) & intrinsic_verification_mask;
@@ -2923,21 +2410,15 @@ pub(crate) fn apply_windows_basic_metadata(
                     "file-attributes",
                     MetadataOperation::Restore,
                     MetadataDiagnosticStatus::Failed,
-                    format!(
-                        "restored Windows object has mismatched intrinsic attributes: {intrinsic_mismatch:08x}"
-                    ),
+                    format!("restored Windows object has mismatched intrinsic attributes: {intrinsic_mismatch:08x}"),
                 )
                 .for_restore(options.restore_policy, 4),
                 options,
                 "restored Windows object has mismatched intrinsic attributes",
             )?;
         }
-        restored.FileAttributes = (current.FileAttributes & !WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES)
-            | (desired & WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES);
-        if restored.FileAttributes
-            & (WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES | WINDOWS_ESSENTIAL_INTRINSIC_ATTRIBUTES)
-            == 0
-        {
+        restored.FileAttributes = (current.FileAttributes & !WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES) | (desired & WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES);
+        if restored.FileAttributes & (WINDOWS_ESSENTIAL_SETTABLE_ATTRIBUTES | WINDOWS_ESSENTIAL_INTRINSIC_ATTRIBUTES) == 0 {
             restored.FileAttributes |= FILE_ATTRIBUTE_NORMAL;
         } else {
             restored.FileAttributes &= !FILE_ATTRIBUTE_NORMAL;
@@ -2986,8 +2467,7 @@ pub(crate) fn apply_windows_basic_metadata(
         || actual.LastAccessTime != restored.LastAccessTime
         || actual.LastWriteTime != restored.LastWriteTime
         || actual.ChangeTime != restored.ChangeTime
-        || actual.FileAttributes & attribute_verification_mask
-            != restored.FileAttributes & attribute_verification_mask
+        || actual.FileAttributes & attribute_verification_mask != restored.FileAttributes & attribute_verification_mask
     {
         let error = std::io::Error::last_os_error();
         return record_metadata_application_failure(
@@ -3020,8 +2500,7 @@ fn apply_windows_compression(
     use std::os::windows::io::AsRawHandle;
     use std::ptr;
     use windows_sys::Win32::Storage::FileSystem::{
-        FileBasicInfo, GetFileInformationByHandleEx, COMPRESSION_FORMAT_DEFAULT,
-        COMPRESSION_FORMAT_NONE, FILE_BASIC_INFO,
+        FileBasicInfo, GetFileInformationByHandleEx, COMPRESSION_FORMAT_DEFAULT, COMPRESSION_FORMAT_NONE, FILE_BASIC_INFO,
     };
     use windows_sys::Win32::System::Ioctl::FSCTL_SET_COMPRESSION;
     use windows_sys::Win32::System::IO::DeviceIoControl;
@@ -3038,18 +2517,12 @@ fn apply_windows_compression(
         )
     } == 0
     {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "failed to inspect Windows compression state",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("failed to inspect Windows compression state"));
     }
     if (current.FileAttributes & FILE_ATTRIBUTE_COMPRESSED != 0) == compressed {
         return Ok(true);
     }
-    let mut format = if compressed {
-        COMPRESSION_FORMAT_DEFAULT
-    } else {
-        COMPRESSION_FORMAT_NONE
-    };
+    let mut format = if compressed { COMPRESSION_FORMAT_DEFAULT } else { COMPRESSION_FORMAT_NONE };
     let mut ignored = 0u32;
     // SAFETY: the handle is live, the compression-format input is initialized, and this
     // synchronous FSCTL has no output buffer.
@@ -3100,25 +2573,17 @@ fn apply_windows_directory_case_sensitive(
     diagnostics: &mut Vec<MetadataDiagnostic>,
 ) -> Result<(), FormatError> {
     use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FileCaseSensitiveInfo, GetFileInformationByHandleEx, SetFileInformationByHandle,
-        FILE_CASE_SENSITIVE_INFO,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{FileCaseSensitiveInfo, GetFileInformationByHandleEx, SetFileInformationByHandle, FILE_CASE_SENSITIVE_INFO};
     use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
 
-    let Some(encoded) = metadata
-        .primary_records
-        .get("TZAP.windows.directory-case-sensitive")
-    else {
+    let Some(encoded) = metadata.primary_records.get("TZAP.windows.directory-case-sensitive") else {
         return Ok(());
     };
     let desired = match encoded.as_slice() {
         b"0" => 0,
         b"1" => FILE_CS_FLAG_CASE_SENSITIVE_DIR,
         _ => {
-            return Err(FormatError::InvalidArchive(
-                "invalid Windows directory case-sensitivity state",
-            ));
+            return Err(FormatError::InvalidArchive("invalid Windows directory case-sensitivity state"));
         }
     };
     let handle = file.as_raw_handle().cast();
@@ -3254,18 +2719,11 @@ pub(crate) fn apply_linux_inode_flags(
     let Some(encoded) = metadata.primary_records.get("TZAP.linux.fsflags") else {
         return Ok(());
     };
-    let text = std::str::from_utf8(encoded)
-        .map_err(|_| FormatError::InvalidArchive("Linux inode flags are not ASCII"))?;
-    let desired = u64::from_str_radix(text, 16)
-        .map_err(|_| FormatError::InvalidArchive("Linux inode flags are invalid"))?;
-    let no_change = desired
-        & u64::from(linux_raw_sys::general::FS_IMMUTABLE_FL | linux_raw_sys::general::FS_APPEND_FL)
-        != 0;
-    if !matches!(
-        options.restore_policy,
-        RestorePolicy::SameOs | RestorePolicy::System
-    ) || (no_change
-        && !(options.restore_policy == RestorePolicy::System && options.system_authorized))
+    let text = std::str::from_utf8(encoded).map_err(|_| FormatError::InvalidArchive("Linux inode flags are not ASCII"))?;
+    let desired = u64::from_str_radix(text, 16).map_err(|_| FormatError::InvalidArchive("Linux inode flags are invalid"))?;
+    let no_change = desired & u64::from(linux_raw_sys::general::FS_IMMUTABLE_FL | linux_raw_sys::general::FS_APPEND_FL) != 0;
+    if !matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System)
+        || (no_change && !(options.restore_policy == RestorePolicy::System && options.system_authorized))
     {
         return Ok(());
     }
@@ -3283,8 +2741,7 @@ pub(crate) fn apply_linux_inode_flags(
             return Err(std::io::Error::last_os_error());
         }
         let modifiable = u64::from(linux_raw_sys::general::FS_FL_USER_MODIFIABLE);
-        let mut restored =
-            ((current as u64 & !modifiable) | (desired & modifiable)) as libc::c_long;
+        let mut restored = ((current as u64 & !modifiable) | (desired & modifiable)) as libc::c_long;
         // SAFETY: as above, SETFLAGS reads the initialized c_long value.
         if unsafe { libc::ioctl(file.as_raw_fd(), libc::FS_IOC_SETFLAGS, &mut restored) } != 0 {
             return Err(std::io::Error::last_os_error());
@@ -3330,10 +2787,7 @@ pub(crate) fn apply_linux_project_id(
     options: SafeExtractionOptions,
     diagnostics: &mut Vec<MetadataDiagnostic>,
 ) -> Result<(), FormatError> {
-    if metadata.declaration.source_os != "linux"
-        || options.restore_policy != RestorePolicy::System
-        || !options.system_authorized
-    {
+    if metadata.declaration.source_os != "linux" || options.restore_policy != RestorePolicy::System || !options.system_authorized {
         return Ok(());
     }
     let Some(encoded) = metadata.primary_records.get("TZAP.linux.project-id") else {
@@ -3345,31 +2799,12 @@ pub(crate) fn apply_linux_project_id(
         .ok_or(FormatError::InvalidArchive("Linux project ID is invalid"))?;
     // fsxattr consists only of integer and reserved-byte fields; zero is valid initialization.
     let mut attributes: linux_raw_sys::general::fsxattr = unsafe { std::mem::zeroed() };
-    let get_result = unsafe {
-        libc::ioctl(
-            file.as_raw_fd(),
-            linux_raw_sys::ioctl::FS_IOC_FSGETXATTR as libc::Ioctl,
-            &mut attributes,
-        )
-    };
+    let get_result = unsafe { libc::ioctl(file.as_raw_fd(), linux_raw_sys::ioctl::FS_IOC_FSGETXATTR as libc::Ioctl, &mut attributes) };
     if get_result == 0 {
         attributes.fsx_projid = desired;
-        if unsafe {
-            libc::ioctl(
-                file.as_raw_fd(),
-                linux_raw_sys::ioctl::FS_IOC_FSSETXATTR as libc::Ioctl,
-                &attributes,
-            )
-        } == 0
-        {
+        if unsafe { libc::ioctl(file.as_raw_fd(), linux_raw_sys::ioctl::FS_IOC_FSSETXATTR as libc::Ioctl, &attributes) } == 0 {
             let mut actual: linux_raw_sys::general::fsxattr = unsafe { std::mem::zeroed() };
-            if unsafe {
-                libc::ioctl(
-                    file.as_raw_fd(),
-                    linux_raw_sys::ioctl::FS_IOC_FSGETXATTR as libc::Ioctl,
-                    &mut actual,
-                )
-            } == 0
+            if unsafe { libc::ioctl(file.as_raw_fd(), linux_raw_sys::ioctl::FS_IOC_FSGETXATTR as libc::Ioctl, &mut actual) } == 0
                 && actual.fsx_projid == desired
             {
                 return Ok(());
@@ -3426,12 +2861,7 @@ fn apply_regular_file_posix_acl(
 ) -> Result<(), FormatError> {
     use xattr::FileExt as _;
 
-    if !source_os_matches_current_host(&metadata.declaration.source_os)
-        || !matches!(
-            options.restore_policy,
-            RestorePolicy::SameOs | RestorePolicy::System
-        )
-    {
+    if !source_os_matches_current_host(&metadata.declaration.source_os) || !matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System) {
         return Ok(());
     }
     for (key, name) in [
@@ -3503,23 +2933,13 @@ fn apply_regular_file_xattrs(
     use std::os::unix::ffi::OsStrExt;
     use xattr::FileExt as _;
 
-    if !source_os_matches_current_host(&metadata.declaration.source_os)
-        || !matches!(
-            options.restore_policy,
-            RestorePolicy::SameOs | RestorePolicy::System
-        )
-    {
+    if !source_os_matches_current_host(&metadata.declaration.source_os) || !matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System) {
         return Ok(());
     }
-    for (key, encoded) in metadata
-        .primary_records
-        .iter()
-        .filter(|(key, _)| key.starts_with("LIBARCHIVE.xattr."))
-    {
+    for (key, encoded) in metadata.primary_records.iter().filter(|(key, _)| key.starts_with("LIBARCHIVE.xattr.")) {
         let name = decode_percent_name(&key.as_bytes()["LIBARCHIVE.xattr.".len()..])?;
         let system = system_xattr_name(&name, &metadata.declaration.source_os);
-        if system && !(options.restore_policy == RestorePolicy::System && options.system_authorized)
-        {
+        if system && !(options.restore_policy == RestorePolicy::System && options.system_authorized) {
             continue;
         }
         let value = canonical_base64_decode(encoded)?;
@@ -3547,13 +2967,7 @@ fn apply_regular_file_xattrs(
             )?;
             continue;
         }
-        if file
-            .get_xattr(OsStr::from_bytes(&name))
-            .ok()
-            .flatten()
-            .as_deref()
-            != Some(value.as_slice())
-        {
+        if file.get_xattr(OsStr::from_bytes(&name)).ok().flatten().as_deref() != Some(value.as_slice()) {
             record_metadata_application_failure(
                 diagnostics,
                 MetadataDiagnostic::new(
@@ -3612,10 +3026,8 @@ fn apply_regular_file_ownership(
     let (Some(uid), Some(gid)) = (uid, gid) else {
         return Ok(());
     };
-    let uid = libc::uid_t::try_from(uid)
-        .map_err(|_| FormatError::FilesystemExtractionFailed("archived UID exceeds host uid_t"))?;
-    let gid = libc::gid_t::try_from(gid)
-        .map_err(|_| FormatError::FilesystemExtractionFailed("archived GID exceeds host gid_t"))?;
+    let uid = libc::uid_t::try_from(uid).map_err(|_| FormatError::FilesystemExtractionFailed("archived UID exceeds host uid_t"))?;
+    let gid = libc::gid_t::try_from(gid).map_err(|_| FormatError::FilesystemExtractionFailed("archived GID exceeds host gid_t"))?;
 
     // SAFETY: fchown only observes the valid descriptor owned by `file`; both
     // numeric arguments were range-checked for this host ABI.

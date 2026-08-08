@@ -11,13 +11,7 @@ fn cli_insecure_zero_key_is_removed() {
     fs::write(&input, b"hello\n").unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--insecure-zero-key",
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--insecure-zero-key", "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("--insecure-zero-key was removed"));
@@ -50,12 +44,7 @@ fn cli_reports_wrong_key_with_stable_category_and_exit_code() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            bad_keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", bad_keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .code(10)
         .stderr(predicate::str::contains("wrong-key"));
@@ -92,12 +81,7 @@ fn cli_reports_corrupt_header_magic() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .code(11)
         .stderr(predicate::str::contains("corrupt-header"));
@@ -132,12 +116,7 @@ fn cli_reports_corrupt_archive_after_header_authentication_succeeds() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .code(11)
         .stderr(predicate::str::contains("corrupt-payload"));
@@ -173,9 +152,7 @@ fn cli_reports_wrong_key_for_password_mode_on_raw_key_archive() {
         .assert()
         .code(10)
         .stderr(predicate::str::contains("wrong-key"))
-        .stderr(predicate::str::contains(
-            "raw-key archives require --keyfile",
-        ));
+        .stderr(predicate::str::contains("raw-key archives require --keyfile"));
 }
 
 #[test]
@@ -248,12 +225,7 @@ fn cli_reports_unsupported_revision_with_stable_category_and_exit_code() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .code(12)
         .stderr(predicate::str::contains("unsupported-revision"));
@@ -312,9 +284,7 @@ fn cli_reports_invalid_size_suffix_with_bad_value_in_message() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains("invalid-arguments"))
-        .stderr(predicate::str::contains(
-            "invalid size '10Q': unsupported suffix 'Q'",
-        ))
+        .stderr(predicate::str::contains("invalid size '10Q': unsupported suffix 'Q'"))
         .stderr(predicate::str::contains("supported: K/KB/KiB"));
 }
 
@@ -343,9 +313,7 @@ fn cli_reports_invalid_layout_size_flags_with_usage_exit_code() {
             .assert()
             .code(2)
             .stderr(predicate::str::contains("invalid-arguments"))
-            .stderr(predicate::str::contains(
-                "invalid size '10Q': unsupported suffix 'Q'",
-            ));
+            .stderr(predicate::str::contains("invalid size '10Q': unsupported suffix 'Q'"));
     }
 }
 
@@ -423,13 +391,7 @@ fn cli_verify_json_failure_reports_unsupported_revision_shape() {
 
     let output = Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--json",
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), "--json", archive.to_str().unwrap()])
         .assert()
         .code(12)
         .get_output()
@@ -439,28 +401,10 @@ fn cli_verify_json_failure_reports_unsupported_revision_shape() {
 
     assert!(!value.get("ok").unwrap().as_bool().unwrap());
     let error = value.get("error").unwrap();
+    assert_eq!(error.get("label").unwrap().as_str().unwrap(), "unsupported-revision");
+    assert_eq!(error.get("observed").unwrap().get("volume_format_rev").unwrap().as_u64().unwrap(), 35);
     assert_eq!(
-        error.get("label").unwrap().as_str().unwrap(),
-        "unsupported-revision"
-    );
-    assert_eq!(
-        error
-            .get("observed")
-            .unwrap()
-            .get("volume_format_rev")
-            .unwrap()
-            .as_u64()
-            .unwrap(),
-        35
-    );
-    assert_eq!(
-        error
-            .get("supported")
-            .unwrap()
-            .get("max_volume_format_rev")
-            .unwrap()
-            .as_u64()
-            .unwrap(),
+        error.get("supported").unwrap().get("max_volume_format_rev").unwrap().as_u64().unwrap(),
         u64::from(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
     );
     assert!(

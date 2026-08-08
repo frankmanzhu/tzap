@@ -30,13 +30,7 @@ fn member(path: &[u8], kind: u8, data: &[u8], link: &[u8]) -> Vec<u8> {
     member_with_declared_size(path, kind, data.len(), data, link)
 }
 
-fn member_with_declared_size(
-    path: &[u8],
-    kind: u8,
-    declared_size: usize,
-    data: &[u8],
-    link: &[u8],
-) -> Vec<u8> {
+fn member_with_declared_size(path: &[u8], kind: u8, declared_size: usize, data: &[u8], link: &[u8]) -> Vec<u8> {
     let records = crate::entry_metadata::portable_primary_pax(path, 0o644, "other", false).unwrap();
     let pax = crate::entry_metadata::encode_canonical_pax(&records).unwrap();
     let mut pax_header = header(b"TZAP-PAX/PRIMARY", b'x', pax.len(), b"");
@@ -58,8 +52,7 @@ fn member_with_prefix(prefix: &[u8], path: &[u8], kind: u8, data: &[u8]) -> Vec<
     let mut full_path = prefix.to_vec();
     full_path.push(b'/');
     full_path.extend_from_slice(path);
-    let records =
-        crate::entry_metadata::portable_primary_pax(&full_path, 0o644, "other", false).unwrap();
+    let records = crate::entry_metadata::portable_primary_pax(&full_path, 0o644, "other", false).unwrap();
     let pax = crate::entry_metadata::encode_canonical_pax(&records).unwrap();
     let mut pax_header = header(b"TZAP-PAX/PRIMARY", b'x', pax.len(), b"");
     write_octal(&mut pax_header[100..108], 0);
@@ -126,28 +119,13 @@ fn security_descriptor_equivalence_only_normalizes_protection_on_absent_acls() {
         bytes
     };
     let base = 0x8004u16;
-    assert!(windows_security_descriptors_equivalent(
-        &descriptor(base | 0x2000),
-        &descriptor(base)
-    ));
-    assert!(windows_security_descriptors_equivalent(
-        &descriptor(base | 0x0400),
-        &descriptor(base | 0x0100)
-    ));
-    assert!(!windows_security_descriptors_equivalent(
-        &descriptor(base | 0x1000),
-        &descriptor(base)
-    ));
-    assert!(!windows_security_descriptors_equivalent(
-        &descriptor(base),
-        &descriptor(base | 0x0008)
-    ));
+    assert!(windows_security_descriptors_equivalent(&descriptor(base | 0x2000), &descriptor(base)));
+    assert!(windows_security_descriptors_equivalent(&descriptor(base | 0x0400), &descriptor(base | 0x0100)));
+    assert!(!windows_security_descriptors_equivalent(&descriptor(base | 0x1000), &descriptor(base)));
+    assert!(!windows_security_descriptors_equivalent(&descriptor(base), &descriptor(base | 0x0008)));
     let mut changed_body = descriptor(base | 0x2000);
     changed_body[10] = 1;
-    assert!(!windows_security_descriptors_equivalent(
-        &changed_body,
-        &descriptor(base)
-    ));
+    assert!(!windows_security_descriptors_equivalent(&changed_body, &descriptor(base)));
 }
 
 #[cfg(windows)]
@@ -182,10 +160,7 @@ fn security_descriptor_equivalence_ignores_self_relative_component_layout() {
     let mut changed_dacl = actual;
     let dacl_offset = u32::from_le_bytes(changed_dacl[16..20].try_into().unwrap()) as usize;
     changed_dacl[dacl_offset] = 4;
-    assert!(!windows_security_descriptors_equivalent(
-        &expected,
-        &changed_dacl
-    ));
+    assert!(!windows_security_descriptors_equivalent(&expected, &changed_dacl));
 }
 
 #[test]
@@ -205,10 +180,7 @@ fn canonicalizes_one_directory_trailing_slash_only_for_directories() {
     assert_eq!(parse_tar_member_group(&dir, 4096).unwrap().path, b"dir");
 
     let file = member(b"dir/", b'0', b"", b"");
-    assert_eq!(
-        parse_tar_member_group(&file, 4096).unwrap_err(),
-        FormatError::UnsafeArchivePath
-    );
+    assert_eq!(parse_tar_member_group(&file, 4096).unwrap_err(), FormatError::UnsafeArchivePath);
 }
 
 #[test]
@@ -327,85 +299,38 @@ fn supported_tar_metadata_profile_matrix_matches_buffered_and_streaming_parsers(
     ];
 
     for case in cases {
-        let parsed = parse_tar_member_group(&case.bytes, 4096).unwrap_or_else(|err| {
-            panic!("{} should parse in buffered tar parser: {err:?}", case.name)
-        });
+        let parsed = parse_tar_member_group(&case.bytes, 4096).unwrap_or_else(|err| panic!("{} should parse in buffered tar parser: {err:?}", case.name));
         assert_eq!(parsed.path, case.expected_path, "{}", case.name);
         assert_eq!(parsed.kind, case.expected_kind, "{}", case.name);
         assert_eq!(parsed.data, case.expected_data, "{}", case.name);
-        assert_eq!(
-            parsed.link_target.as_deref(),
-            case.expected_link_target,
-            "{}",
-            case.name
-        );
-        assert_eq!(
-            parsed.logical_size, case.expected_logical_size,
-            "{}",
-            case.name
-        );
+        assert_eq!(parsed.link_target.as_deref(), case.expected_link_target, "{}", case.name);
+        assert_eq!(parsed.logical_size, case.expected_logical_size, "{}", case.name);
 
-        let mut streaming = TarStreamSummaryValidator::with_observer(
-            4096,
-            u64::MAX,
-            4096,
-            16,
-            NoopTarStreamObserver,
-        );
-        streaming.observe(&case.bytes).unwrap_or_else(|err| {
-            panic!(
-                "{} should parse in streaming tar parser: {err:?}",
-                case.name
-            )
-        });
-        let summary = streaming.finish().unwrap_or_else(|err| {
-            panic!(
-                "{} should finish in streaming tar parser: {err:?}",
-                case.name
-            )
-        });
+        let mut streaming = TarStreamSummaryValidator::with_observer(4096, u64::MAX, 4096, 16, NoopTarStreamObserver);
+        streaming
+            .observe(&case.bytes)
+            .unwrap_or_else(|err| panic!("{} should parse in streaming tar parser: {err:?}", case.name));
+        let summary = streaming
+            .finish()
+            .unwrap_or_else(|err| panic!("{} should finish in streaming tar parser: {err:?}", case.name));
         assert_eq!(summary.members.len(), 1, "{}", case.name);
         let member = &summary.members[0];
         assert_eq!(member.path, case.expected_path, "{}", case.name);
         assert_eq!(member.kind, case.expected_kind, "{}", case.name);
-        assert_eq!(
-            member.link_target.as_deref(),
-            case.expected_link_target,
-            "{}",
-            case.name
-        );
-        assert_eq!(
-            member.logical_size, case.expected_logical_size,
-            "{}",
-            case.name
-        );
+        assert_eq!(member.link_target.as_deref(), case.expected_link_target, "{}", case.name);
+        assert_eq!(member.logical_size, case.expected_logical_size, "{}", case.name);
     }
 }
 
 #[test]
 fn tar_metadata_rejects_unsafe_or_inconsistent_overrides_matrix() {
-    let mut pax_absolute_path = member(
-        b"PaxHeaders/file",
-        b'x',
-        &pax_record("path", b"/absolute"),
-        b"",
-    );
+    let mut pax_absolute_path = member(b"PaxHeaders/file", b'x', &pax_record("path", b"/absolute"), b"");
     pax_absolute_path.extend_from_slice(&member(b"fallback", b'0', b"abc", b""));
 
-    let mut pax_parent_path = member(
-        b"PaxHeaders/file",
-        b'x',
-        &pax_record("path", b"../escape"),
-        b"",
-    );
+    let mut pax_parent_path = member(b"PaxHeaders/file", b'x', &pax_record("path", b"../escape"), b"");
     pax_parent_path.extend_from_slice(&member(b"fallback", b'0', b"abc", b""));
 
-    let mut pax_absolute_link = member(
-        b"PaxHeaders/link",
-        b'x',
-        &pax_record("linkpath", b"/target"),
-        b"",
-    );
+    let mut pax_absolute_link = member(b"PaxHeaders/link", b'x', &pax_record("linkpath", b"/target"), b"");
     pax_absolute_link.extend_from_slice(&member(b"links/link", b'2', b"", b"safe"));
 
     let mut gnu_unsafe_name = member(b"././@LongLink", b'L', b"bad:name.txt\0", b"");
@@ -427,13 +352,7 @@ fn tar_metadata_rejects_unsafe_or_inconsistent_overrides_matrix() {
     ] {
         assert!(parse_tar_member_group(&bytes, 4096).is_err(), "{name}");
 
-        let mut streaming = TarStreamSummaryValidator::with_observer(
-            4096,
-            u64::MAX,
-            4096,
-            16,
-            NoopTarStreamObserver,
-        );
+        let mut streaming = TarStreamSummaryValidator::with_observer(4096, u64::MAX, 4096, 16, NoopTarStreamObserver);
         assert!(streaming.observe(&bytes).is_err(), "{name}");
     }
 }
@@ -445,8 +364,7 @@ fn pax_size_exceeding_available_group_is_rejected_by_buffered_and_streaming_pars
 
     assert!(parse_tar_member_group(&bytes, 4096).is_err());
 
-    let mut streaming =
-        TarStreamSummaryValidator::with_observer(4096, u64::MAX, 4096, 16, NoopTarStreamObserver);
+    let mut streaming = TarStreamSummaryValidator::with_observer(4096, u64::MAX, 4096, 16, NoopTarStreamObserver);
     assert!(streaming.observe(&bytes).is_err());
 }
 
@@ -467,27 +385,12 @@ fn malformed_pax_record_matrix_rejects_before_metadata_is_trusted() {
         bytes.extend_from_slice(&member(b"file", b'0', b"abc", b""));
 
         assert!(
-            matches!(
-                parse_tar_member_group(&bytes, 4096).unwrap_err(),
-                FormatError::InvalidArchive(_)
-            ),
+            matches!(parse_tar_member_group(&bytes, 4096).unwrap_err(), FormatError::InvalidArchive(_)),
             "{name}"
         );
 
-        let mut streaming = TarStreamSummaryValidator::with_observer(
-            4096,
-            u64::MAX,
-            4096,
-            16,
-            NoopTarStreamObserver,
-        );
-        assert!(
-            matches!(
-                streaming.observe(&bytes).unwrap_err(),
-                FormatError::InvalidArchive(_)
-            ),
-            "{name}"
-        );
+        let mut streaming = TarStreamSummaryValidator::with_observer(4096, u64::MAX, 4096, 16, NoopTarStreamObserver);
+        assert!(matches!(streaming.observe(&bytes).unwrap_err(), FormatError::InvalidArchive(_)), "{name}");
     }
 }
 
@@ -552,10 +455,7 @@ fn rejects_platform_escape_paths() {
         b"CON".as_slice(),
     ] {
         let bytes = member(path, b'0', b"", b"");
-        assert_eq!(
-            parse_tar_member_group(&bytes, 4096).unwrap_err(),
-            FormatError::UnsafeArchivePath
-        );
+        assert_eq!(parse_tar_member_group(&bytes, 4096).unwrap_err(), FormatError::UnsafeArchivePath);
     }
 }
 
@@ -594,26 +494,14 @@ fn prepared_regular_file_uses_open_parent_after_parent_path_swap() {
     let held_parent = tmp.path().join("held");
     fs::create_dir(&original_parent).unwrap();
 
-    let destination = prepare_destination(
-        tmp.path(),
-        b"a/file.txt",
-        TarEntryKind::Regular,
-        SafeExtractionOptions::default(),
-    )
-    .unwrap();
+    let destination = prepare_destination(tmp.path(), b"a/file.txt", TarEntryKind::Regular, SafeExtractionOptions::default()).unwrap();
 
     fs::rename(&original_parent, &held_parent).unwrap();
     std::os::unix::fs::symlink(outside.path(), &original_parent).unwrap();
 
     let (temp_leaf, mut file) = create_temp_regular_file(&destination).unwrap();
     file.write_all(b"inside").unwrap();
-    publish_regular_file(
-        &destination,
-        &temp_leaf,
-        file,
-        SafeExtractionOptions::default(),
-    )
-    .unwrap();
+    publish_regular_file(&destination, &temp_leaf, file, SafeExtractionOptions::default()).unwrap();
 
     assert_eq!(fs::read(held_parent.join("file.txt")).unwrap(), b"inside");
     assert!(!outside.path().join("file.txt").exists());
@@ -638,9 +526,7 @@ fn directory_sync_tolerates_filesystems_that_reject_dir_fsync() {
             "errno {code} must remain a hard failure"
         );
     }
-    assert!(!benign_directory_sync_error(&std::io::Error::other(
-        "no errno attached"
-    )));
+    assert!(!benign_directory_sync_error(&std::io::Error::other("no errno attached")));
 }
 
 #[cfg(windows)]
@@ -648,28 +534,13 @@ fn directory_sync_tolerates_filesystems_that_reject_dir_fsync() {
 fn open_file_publication_preserves_even_and_odd_length_names() {
     let tmp = tempdir().unwrap();
     for name in ["a", "bb"] {
-        let destination = prepare_destination(
-            tmp.path(),
-            name.as_bytes(),
-            TarEntryKind::Regular,
-            SafeExtractionOptions::default(),
-        )
-        .unwrap();
+        let destination = prepare_destination(tmp.path(), name.as_bytes(), TarEntryKind::Regular, SafeExtractionOptions::default()).unwrap();
         let (temp_leaf, mut file) = create_temp_regular_file(&destination).unwrap();
         file.write_all(name.as_bytes()).unwrap();
-        publish_regular_file(
-            &destination,
-            &temp_leaf,
-            file,
-            SafeExtractionOptions::default(),
-        )
-        .unwrap();
+        publish_regular_file(&destination, &temp_leaf, file, SafeExtractionOptions::default()).unwrap();
         assert_eq!(fs::read(tmp.path().join(name)).unwrap(), name.as_bytes());
     }
-    let mut names = fs::read_dir(tmp.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name())
-        .collect::<Vec<_>>();
+    let mut names = fs::read_dir(tmp.path()).unwrap().map(|entry| entry.unwrap().file_name()).collect::<Vec<_>>();
     names.sort();
     assert_eq!(names, ["a", "bb"]);
 }
@@ -679,20 +550,11 @@ fn open_file_publication_preserves_even_and_odd_length_names() {
 fn create_directory_rechecks_leaf_without_following_symlink() {
     let tmp = tempdir().unwrap();
     let outside = tempdir().unwrap();
-    let destination = prepare_destination(
-        tmp.path(),
-        b"dir",
-        TarEntryKind::Directory,
-        SafeExtractionOptions::default(),
-    )
-    .unwrap();
+    let destination = prepare_destination(tmp.path(), b"dir", TarEntryKind::Directory, SafeExtractionOptions::default()).unwrap();
 
     std::os::unix::fs::symlink(outside.path(), tmp.path().join("dir")).unwrap();
 
-    assert_eq!(
-        create_directory(&destination).unwrap_err(),
-        FormatError::UnsafeArchivePath
-    );
+    assert_eq!(create_directory(&destination).unwrap_err(), FormatError::UnsafeArchivePath);
     assert!(outside.path().read_dir().unwrap().next().is_none());
 }
 
@@ -734,15 +596,10 @@ fn restore_applies_regular_file_mode_metadata() {
         diagnostics: Vec::new(),
     };
 
-    let diagnostics =
-        restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap();
+    let diagnostics = restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap();
 
     assert!(diagnostics.is_empty());
-    let mode = fs::metadata(tmp.path().join("script.sh"))
-        .unwrap()
-        .permissions()
-        .mode()
-        & 0o777;
+    let mode = fs::metadata(tmp.path().join("script.sh")).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o755);
 }
 
@@ -762,8 +619,7 @@ fn restore_applies_regular_file_mtime_metadata() {
         diagnostics: Vec::new(),
     };
 
-    let diagnostics =
-        restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap();
+    let diagnostics = restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap();
 
     assert!(diagnostics.is_empty());
     let modified = fs::metadata(tmp.path().join("dated.txt"))
@@ -803,11 +659,7 @@ fn restore_revalidates_symlink_targets_from_owned_members() {
 fn skipped_entries_do_not_create_destination_parents() {
     let tmp = tempdir().unwrap();
     for (path, kind, target) in [
-        (
-            b"symlink-parent/link".as_slice(),
-            TarEntryKind::Symlink,
-            Some(b"target".to_vec()),
-        ),
+        (b"symlink-parent/link".as_slice(), TarEntryKind::Symlink, Some(b"target".to_vec())),
         (b"special-parent/fifo".as_slice(), TarEntryKind::Fifo, None),
     ] {
         let member = OwnedTarMember {
@@ -896,10 +748,7 @@ fn hardlink_target_checks_use_component_position_not_value() {
 fn hardlink_targets_obey_max_path_length() {
     let bytes = member(b"link", b'1', b"", b"long/name");
 
-    assert_eq!(
-        parse_tar_member_group(&bytes, 4).unwrap_err(),
-        FormatError::UnsafeArchivePath
-    );
+    assert_eq!(parse_tar_member_group(&bytes, 4).unwrap_err(), FormatError::UnsafeArchivePath);
 }
 
 fn member_summary(bytes: &[u8], group_start: u64) -> TarStreamMemberSummary {
@@ -932,9 +781,7 @@ fn member_graph_accepts_hardlink_target_after_alias_and_rejects_mirror_mismatch(
     mismatched_alias.v45_metadata.portable_mirror.mode = 0o600;
     assert_eq!(
         validate_v45_member_graph(&[mismatched_alias, target]).unwrap_err(),
-        FormatError::InvalidArchive(
-            "hardlink portable metadata mirror differs from canonical target"
-        )
+        FormatError::InvalidArchive("hardlink portable metadata mirror differs from canonical target")
     );
 }
 
@@ -981,8 +828,7 @@ fn partial_capture_diagnostics_preserve_authenticated_omission_details() {
             && diagnostic.metadata_class == "sparse-layout"
             && diagnostic.operation == MetadataOperation::Capture
             && diagnostic.status == MetadataDiagnosticStatus::Partial
-            && diagnostic.message
-                == "capture omission: changed-during-read; detail=extent%20map%20changed"
+            && diagnostic.message == "capture omission: changed-during-read; detail=extent%20map%20changed"
     }));
 }
 
@@ -1018,27 +864,12 @@ fn unsupported_required_profile_needs_explicit_degraded_restore() {
     let bytes = member(b"file.txt", b'0', b"payload", b"");
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     let mut metadata = parsed.v45_metadata;
-    metadata
-        .declaration
-        .required_profiles
-        .push("x.com.example.test-v1".into());
-    metadata
-        .declaration
-        .optional_profiles
-        .push("x.com.example.optional-v1".into());
+    metadata.declaration.required_profiles.push("x.com.example.test-v1".into());
+    metadata.declaration.optional_profiles.push("x.com.example.optional-v1".into());
 
     assert_eq!(
-        plan_restore(
-            b"file.txt",
-            &metadata,
-            TarEntryKind::Regular,
-            false,
-            SafeExtractionOptions::default(),
-        )
-        .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "requested restore policy requires an unsupported required profile"
-        )
+        plan_restore(b"file.txt", &metadata, TarEntryKind::Regular, false, SafeExtractionOptions::default(),).unwrap_err(),
+        FormatError::ReaderUnsupported("requested restore policy requires an unsupported required profile")
     );
     let diagnostics = plan_restore(
         b"file.txt",
@@ -1068,14 +899,7 @@ fn portable_directory_metadata_is_supported_without_degradation() {
     let bytes = member(b"dir", b'5', b"", b"");
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
 
-    let diagnostics = plan_restore(
-        b"dir",
-        &parsed.v45_metadata,
-        TarEntryKind::Directory,
-        false,
-        SafeExtractionOptions::default(),
-    )
-    .unwrap();
+    let diagnostics = plan_restore(b"dir", &parsed.v45_metadata, TarEntryKind::Directory, false, SafeExtractionOptions::default()).unwrap();
     assert!(diagnostics.is_empty());
 }
 
@@ -1086,15 +910,10 @@ fn exact_linux_restore_rejects_unrecognized_inode_flag_bits() {
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     let mut metadata = parsed.v45_metadata;
     metadata.declaration.source_os = "linux".into();
-    metadata
-        .declaration
-        .required_profiles
-        .push("linux-backup-v1".into());
+    metadata.declaration.required_profiles.push("linux-backup-v1".into());
     metadata.declaration.required_profiles.sort();
     metadata.primary_has_native_scalar = true;
-    metadata
-        .primary_records
-        .insert("TZAP.linux.fsflags".into(), b"0000000080000000".to_vec());
+    metadata.primary_records.insert("TZAP.linux.fsflags".into(), b"0000000080000000".to_vec());
 
     assert_eq!(
         plan_restore(
@@ -1109,9 +928,7 @@ fn exact_linux_restore_rejects_unrecognized_inode_flag_bits() {
             },
         )
         .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "requested native metadata is not supported by this conformance class"
-        )
+        FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
     );
 }
 
@@ -1131,9 +948,7 @@ fn macos_restore_plans_unknown_and_system_flags_without_silently_applying_them()
     metadata.primary_has_native_scalar = true;
     // UF_COMPRESSED is retained but deliberately not in the recognized/settable mask;
     // UF_IMMUTABLE is recognized but System-class under the v45 restore policy.
-    metadata
-        .primary_records
-        .insert("TZAP.macos.st-flags".into(), b"0000000000000022".to_vec());
+    metadata.primary_records.insert("TZAP.macos.st-flags".into(), b"0000000000000022".to_vec());
 
     let diagnostics = plan_restore(
         b"file.txt",
@@ -1146,14 +961,12 @@ fn macos_restore_plans_unknown_and_system_flags_without_silently_applying_them()
         },
     )
     .unwrap();
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "unrecognized-file-flags"
-            && diagnostic.status == MetadataDiagnosticStatus::Skipped
-    }));
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "system-file-flags"
-            && diagnostic.status == MetadataDiagnosticStatus::Skipped
-    }));
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.metadata_class == "unrecognized-file-flags" && diagnostic.status == MetadataDiagnosticStatus::Skipped }));
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.metadata_class == "system-file-flags" && diagnostic.status == MetadataDiagnosticStatus::Skipped }));
 }
 
 #[cfg(target_os = "macos")]
@@ -1170,9 +983,7 @@ fn macos_required_unknown_ordinary_flag_needs_explicit_degraded_restore() {
     metadata.declaration.required_profiles.sort();
     metadata.declaration.required_profiles.dedup();
     metadata.primary_has_native_scalar = true;
-    metadata
-        .primary_records
-        .insert("TZAP.macos.st-flags".into(), b"0000000000000020".to_vec());
+    metadata.primary_records.insert("TZAP.macos.st-flags".into(), b"0000000000000020".to_vec());
 
     let strict = plan_restore(
         b"file.txt",
@@ -1186,9 +997,7 @@ fn macos_required_unknown_ordinary_flag_needs_explicit_degraded_restore() {
     );
     assert_eq!(
         strict.unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "requested native metadata is not supported by this conformance class"
-        )
+        FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
     );
     let degraded = plan_restore(
         b"file.txt",
@@ -1202,10 +1011,9 @@ fn macos_required_unknown_ordinary_flag_needs_explicit_degraded_restore() {
         },
     )
     .unwrap();
-    assert!(degraded.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "unrecognized-file-flags"
-            && diagnostic.status == MetadataDiagnosticStatus::Skipped
-    }));
+    assert!(degraded
+        .iter()
+        .any(|diagnostic| { diagnostic.metadata_class == "unrecognized-file-flags" && diagnostic.status == MetadataDiagnosticStatus::Skipped }));
 }
 
 #[cfg(target_os = "macos")]
@@ -1223,9 +1031,7 @@ fn macos_unregistered_superuser_flag_stays_system_class() {
     metadata.declaration.required_profiles.dedup();
     metadata.primary_has_native_scalar = true;
     // SF_NOUNLINK is Darwin System-class but is not registered for built-in application.
-    metadata
-        .primary_records
-        .insert("TZAP.macos.st-flags".into(), b"0000000000100000".to_vec());
+    metadata.primary_records.insert("TZAP.macos.st-flags".into(), b"0000000000100000".to_vec());
 
     let same_os = plan_restore(
         b"file.txt",
@@ -1238,10 +1044,9 @@ fn macos_unregistered_superuser_flag_stays_system_class() {
         },
     )
     .unwrap();
-    assert!(same_os.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "system-file-flags"
-            && diagnostic.status == MetadataDiagnosticStatus::Skipped
-    }));
+    assert!(same_os
+        .iter()
+        .any(|diagnostic| { diagnostic.metadata_class == "system-file-flags" && diagnostic.status == MetadataDiagnosticStatus::Skipped }));
     assert_eq!(
         plan_restore(
             b"file.txt",
@@ -1255,9 +1060,7 @@ fn macos_unregistered_superuser_flag_stays_system_class() {
             },
         )
         .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "requested native metadata is not supported by this conformance class"
-        )
+        FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
     );
 }
 
@@ -1278,9 +1081,7 @@ fn macos_system_file_flags_fail_preflight_without_superuser_privilege() {
     metadata.declaration.required_profiles.sort();
     metadata.declaration.required_profiles.dedup();
     metadata.primary_has_native_scalar = true;
-    metadata
-        .primary_records
-        .insert("TZAP.macos.st-flags".into(), b"0000000000020000".to_vec());
+    metadata.primary_records.insert("TZAP.macos.st-flags".into(), b"0000000000020000".to_vec());
 
     assert_eq!(
         plan_restore(
@@ -1295,9 +1096,7 @@ fn macos_system_file_flags_fail_preflight_without_superuser_privilege() {
             },
         )
         .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "requested native metadata is not supported by this conformance class"
-        )
+        FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
     );
 }
 
@@ -1323,9 +1122,7 @@ fn macos_device_restore_fails_preflight_without_superuser_privilege() {
             },
         )
         .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "requested native metadata is not supported by this conformance class"
-        )
+        FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
     );
 }
 
@@ -1348,21 +1145,9 @@ fn macos_resource_fork_support_is_primary_kind_aware() {
         sparse_layout: None,
         capture_report_payload: None,
     };
-    assert!(native_auxiliary_restore_supported(
-        &record,
-        false,
-        Some(TarEntryKind::Regular)
-    ));
-    assert!(!native_auxiliary_restore_supported(
-        &record,
-        false,
-        Some(TarEntryKind::Symlink)
-    ));
-    assert!(!native_auxiliary_restore_supported(
-        &record,
-        false,
-        Some(TarEntryKind::Fifo)
-    ));
+    assert!(native_auxiliary_restore_supported(&record, false, Some(TarEntryKind::Regular)));
+    assert!(!native_auxiliary_restore_supported(&record, false, Some(TarEntryKind::Symlink)));
+    assert!(!native_auxiliary_restore_supported(&record, false, Some(TarEntryKind::Fifo)));
 }
 
 #[cfg(target_os = "linux")]
@@ -1416,10 +1201,9 @@ fn generic_xattr_auxiliary_failure_is_bound_to_pinned_special_object() {
     .unwrap();
 
     assert!(staged.is_empty());
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "extended-attribute"
-            && diagnostic.status == MetadataDiagnosticStatus::Failed
-    }));
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.metadata_class == "extended-attribute" && diagnostic.status == MetadataDiagnosticStatus::Failed }));
     assert_eq!(xattr::get(&fifo, "user.tzap-aux").unwrap(), None);
 }
 
@@ -1441,9 +1225,7 @@ fn sparse_layout_materialization_requires_explicit_degraded_portable_restore() {
     #[cfg(not(any(windows, target_os = "linux")))]
     assert_eq!(
         strict.unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "sparse layout materialization needs explicit degraded restore"
-        )
+        FormatError::ReaderUnsupported("sparse layout materialization needs explicit degraded restore")
     );
 
     let degraded = plan_restore(
@@ -1477,10 +1259,9 @@ fn sparse_layout_materialization_requires_explicit_degraded_portable_restore() {
         },
     )
     .unwrap();
-    assert!(content.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "sparse-layout"
-            && diagnostic.restore_policy == Some(RestorePolicy::Content)
-    }));
+    assert!(content
+        .iter()
+        .any(|diagnostic| { diagnostic.metadata_class == "sparse-layout" && diagnostic.restore_policy == Some(RestorePolicy::Content) }));
 }
 
 #[test]

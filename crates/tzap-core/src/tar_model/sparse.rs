@@ -1,17 +1,10 @@
 #[cfg(not(windows))]
 use super::restore::sync_directory;
-use super::restore::{
-    create_new_file_options, read_member_bytes, remove_existing_leaf_if_needed,
-    PreparedDestination, TarMemberStreamHandler,
-};
+use super::restore::{create_new_file_options, read_member_bytes, remove_existing_leaf_if_needed, PreparedDestination, TarMemberStreamHandler};
 use super::*;
 
 #[cfg(target_os = "linux")]
-pub(crate) fn punch_linux_sparse_holes(
-    file: &fs::File,
-    logical_size: u64,
-    extents: &[SparseExtent],
-) -> Result<(), FormatError> {
+pub(crate) fn punch_linux_sparse_holes(file: &fs::File, logical_size: u64, extents: &[SparseExtent]) -> Result<(), FormatError> {
     let mut cursor = 0u64;
     for extent in extents {
         if extent.offset > cursor {
@@ -33,23 +26,11 @@ fn punch_linux_sparse_hole(file: &fs::File, offset: u64, length: u64) -> Result<
     if length == 0 {
         return Ok(());
     }
-    let offset = libc::off_t::try_from(offset)
-        .map_err(|_| FormatError::ReaderUnsupported("sparse offset exceeds Linux off_t"))?;
-    let length = libc::off_t::try_from(length)
-        .map_err(|_| FormatError::ReaderUnsupported("sparse length exceeds Linux off_t"))?;
+    let offset = libc::off_t::try_from(offset).map_err(|_| FormatError::ReaderUnsupported("sparse offset exceeds Linux off_t"))?;
+    let length = libc::off_t::try_from(length).map_err(|_| FormatError::ReaderUnsupported("sparse length exceeds Linux off_t"))?;
     // SAFETY: the descriptor is live and the checked range lies within the logical file.
-    if unsafe {
-        libc::fallocate(
-            file.as_raw_fd(),
-            libc::FALLOC_FL_PUNCH_HOLE | libc::FALLOC_FL_KEEP_SIZE,
-            offset,
-            length,
-        )
-    } != 0
-    {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "failed to preserve Linux sparse holes",
-        ));
+    if unsafe { libc::fallocate(file.as_raw_fd(), libc::FALLOC_FL_PUNCH_HOLE | libc::FALLOC_FL_KEEP_SIZE, offset, length) } != 0 {
+        return Err(FormatError::FilesystemExtractionFailed("failed to preserve Linux sparse holes"));
     }
     Ok(())
 }
@@ -70,10 +51,7 @@ where
     let mut validator = SparseStreamValidator::new(logical_size);
     let mut consumed = 0u64;
     let layout = loop {
-        if consumed
-            .checked_add(TAR_BLOCK_LEN as u64)
-            .is_none_or(|value| value > stored_size)
-        {
+        if consumed.checked_add(TAR_BLOCK_LEN as u64).is_none_or(|value| value > stored_size) {
             return Err(FormatError::InvalidArchive("sparse primary map is truncated").into());
         }
         let mut block = [0u8; TAR_BLOCK_LEN];
@@ -88,18 +66,10 @@ where
     };
     let extent_bytes = layout.extents.iter().try_fold(0u64, |sum, extent| {
         sum.checked_add(extent.length)
-            .ok_or(FormatError::InvalidArchive(
-                "sparse extent byte count overflow",
-            ))
+            .ok_or(FormatError::InvalidArchive("sparse extent byte count overflow"))
     })?;
-    if consumed
-        .checked_add(extent_bytes)
-        .is_none_or(|value| value != stored_size)
-    {
-        return Err(FormatError::InvalidArchive(
-            "sparse primary stored size does not match its map",
-        )
-        .into());
+    if consumed.checked_add(extent_bytes).is_none_or(|value| value != stored_size) {
+        return Err(FormatError::InvalidArchive("sparse primary stored size does not match its map").into());
     }
 
     let native_output = handler.begin_sparse_payload(logical_size, &layout.extents)?;
@@ -135,11 +105,7 @@ where
     Ok(())
 }
 
-fn write_zero_run<H: TarMemberStreamHandler>(
-    handler: &mut H,
-    zeros: &[u8],
-    mut len: u64,
-) -> Result<(), ExtractError> {
+fn write_zero_run<H: TarMemberStreamHandler>(handler: &mut H, zeros: &[u8], mut len: u64) -> Result<(), ExtractError> {
     while len > 0 {
         let chunk_len = len.min(zeros.len() as u64) as usize;
         handler.write_regular_payload(&zeros[..chunk_len])?;
@@ -148,36 +114,24 @@ fn write_zero_run<H: TarMemberStreamHandler>(
     Ok(())
 }
 
-pub(crate) fn create_temp_regular_file(
-    destination: &PreparedDestination,
-) -> Result<(PathBuf, fs::File), FormatError> {
+pub(crate) fn create_temp_regular_file(destination: &PreparedDestination) -> Result<(PathBuf, fs::File), FormatError> {
     for _ in 0..1000u32 {
         let mut candidate = destination.leaf.as_os_str().to_os_string();
         candidate.push(format!(".tzap-tmp-{}", uuid::Uuid::new_v4()));
         let leaf = PathBuf::from(candidate);
-        match destination
-            .parent
-            .open_with(&leaf, &create_new_file_options())
-        {
+        match destination.parent.open_with(&leaf, &create_new_file_options()) {
             Ok(file) => return Ok((leaf, file.into_std())),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(_) => {
-                return Err(FormatError::FilesystemExtractionFailed(
-                    "failed to create regular file",
-                ));
+                return Err(FormatError::FilesystemExtractionFailed("failed to create regular file"));
             }
         }
     }
-    Err(FormatError::FilesystemExtractionFailed(
-        "failed to create regular file",
-    ))
+    Err(FormatError::FilesystemExtractionFailed("failed to create regular file"))
 }
 
 #[cfg(windows)]
-pub(crate) fn prepare_windows_sparse_file(
-    file: &fs::File,
-    logical_size: u64,
-) -> Result<(), FormatError> {
+pub(crate) fn prepare_windows_sparse_file(file: &fs::File, logical_size: u64) -> Result<(), FormatError> {
     use std::os::windows::io::AsRawHandle;
     use std::ptr;
     use windows_sys::Win32::System::Ioctl::FSCTL_SET_SPARSE;
@@ -199,35 +153,26 @@ pub(crate) fn prepare_windows_sparse_file(
         )
     } == 0
     {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "destination filesystem cannot mark sparse output",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("destination filesystem cannot mark sparse output"));
     }
     file.set_len(logical_size)
         .map_err(|_| FormatError::FilesystemExtractionFailed("failed to size sparse output"))
 }
 
 #[cfg(windows)]
-pub(crate) fn query_windows_sparse_ranges(
-    file: &fs::File,
-    logical_size: u64,
-) -> Result<Vec<SparseExtent>, FormatError> {
+pub(crate) fn query_windows_sparse_ranges(file: &fs::File, logical_size: u64) -> Result<Vec<SparseExtent>, FormatError> {
     use std::mem::size_of;
     use std::os::windows::io::AsRawHandle;
     use std::ptr;
     use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
-    use windows_sys::Win32::System::Ioctl::{
-        FILE_ALLOCATED_RANGE_BUFFER, FSCTL_QUERY_ALLOCATED_RANGES,
-    };
+    use windows_sys::Win32::System::Ioctl::{FILE_ALLOCATED_RANGE_BUFFER, FSCTL_QUERY_ALLOCATED_RANGES};
     use windows_sys::Win32::System::IO::DeviceIoControl;
 
     const QUERY_BATCH: usize = 1024;
     if logical_size == 0 {
         return Ok(Vec::new());
     }
-    let logical_size_i64 = i64::try_from(logical_size).map_err(|_| {
-        FormatError::FilesystemExtractionFailed("sparse logical size exceeds Windows range API")
-    })?;
+    let logical_size_i64 = i64::try_from(logical_size).map_err(|_| FormatError::FilesystemExtractionFailed("sparse logical size exceeds Windows range API"))?;
     let mut query_start = 0u64;
     let mut extents = Vec::<SparseExtent>::new();
     while query_start < logical_size {
@@ -252,34 +197,24 @@ pub(crate) fn query_windows_sparse_ranges(
         };
         let error = std::io::Error::last_os_error();
         if success == 0 && error.raw_os_error() != Some(ERROR_MORE_DATA as i32) {
-            return Err(FormatError::FilesystemExtractionFailed(
-                "failed to query restored sparse ranges",
-            ));
+            return Err(FormatError::FilesystemExtractionFailed("failed to query restored sparse ranges"));
         }
         if bytes_returned as usize % size_of::<FILE_ALLOCATED_RANGE_BUFFER>() != 0 {
-            return Err(FormatError::FilesystemExtractionFailed(
-                "Windows returned a truncated restored sparse range",
-            ));
+            return Err(FormatError::FilesystemExtractionFailed("Windows returned a truncated restored sparse range"));
         }
         let count = bytes_returned as usize / size_of::<FILE_ALLOCATED_RANGE_BUFFER>();
         if count > QUERY_BATCH || (success == 0 && count == 0) {
-            return Err(FormatError::FilesystemExtractionFailed(
-                "restored sparse range query made no progress",
-            ));
+            return Err(FormatError::FilesystemExtractionFailed("restored sparse range query made no progress"));
         }
         let mut next_query_start = query_start;
         for range in &output[..count] {
             if range.FileOffset < 0 || range.Length <= 0 {
-                return Err(FormatError::FilesystemExtractionFailed(
-                    "Windows returned an invalid restored sparse range",
-                ));
+                return Err(FormatError::FilesystemExtractionFailed("Windows returned an invalid restored sparse range"));
             }
             let offset = range.FileOffset as u64;
             let end = offset
                 .checked_add(range.Length as u64)
-                .ok_or(FormatError::FilesystemExtractionFailed(
-                    "restored sparse range overflow",
-                ))?
+                .ok_or(FormatError::FilesystemExtractionFailed("restored sparse range overflow"))?
                 .min(logical_size);
             if offset >= logical_size || end <= offset {
                 return Err(FormatError::FilesystemExtractionFailed(
@@ -291,16 +226,10 @@ pub(crate) fn query_windows_sparse_ranges(
                 if offset <= previous_end {
                     previous.length = previous_end.max(end) - previous.offset;
                 } else {
-                    extents.push(SparseExtent {
-                        offset,
-                        length: end - offset,
-                    });
+                    extents.push(SparseExtent { offset, length: end - offset });
                 }
             } else {
-                extents.push(SparseExtent {
-                    offset,
-                    length: end - offset,
-                });
+                extents.push(SparseExtent { offset, length: end - offset });
             }
             next_query_start = next_query_start.max(end);
         }
@@ -308,9 +237,7 @@ pub(crate) fn query_windows_sparse_ranges(
             break;
         }
         if next_query_start <= query_start {
-            return Err(FormatError::FilesystemExtractionFailed(
-                "restored sparse range query did not advance",
-            ));
+            return Err(FormatError::FilesystemExtractionFailed("restored sparse range query did not advance"));
         }
         query_start = next_query_start;
     }
@@ -338,28 +265,17 @@ pub(crate) fn windows_file_system_is_refs(file: &fs::File) -> Result<bool, Forma
         )
     } == 0
     {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "failed to identify Windows destination filesystem",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("failed to identify Windows destination filesystem"));
     }
-    let length = name
-        .iter()
-        .position(|unit| *unit == 0)
-        .unwrap_or(name.len());
+    let length = name.iter().position(|unit| *unit == 0).unwrap_or(name.len());
     Ok(String::from_utf16_lossy(&name[..length]).eq_ignore_ascii_case("refs"))
 }
 
 #[cfg(windows)]
-pub(crate) fn verify_windows_sparse_file(
-    file: &fs::File,
-    logical_size: u64,
-    expected_extents: &[SparseExtent],
-) -> Result<(), FormatError> {
+pub(crate) fn verify_windows_sparse_file(file: &fs::File, logical_size: u64, expected_extents: &[SparseExtent]) -> Result<(), FormatError> {
     use std::mem::size_of;
     use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        FileBasicInfo, GetFileInformationByHandleEx, FILE_BASIC_INFO,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{FileBasicInfo, GetFileInformationByHandleEx, FILE_BASIC_INFO};
 
     const FILE_ATTRIBUTE_SPARSE_FILE: u32 = 0x0000_0200;
     let mut basic = FILE_BASIC_INFO::default();
@@ -374,38 +290,24 @@ pub(crate) fn verify_windows_sparse_file(
     } == 0
         || basic.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE == 0
     {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "restored file is not marked sparse",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("restored file is not marked sparse"));
     }
-    if query_windows_sparse_ranges(file, logical_size)? != expected_extents
-        && !windows_file_system_is_refs(file)?
-    {
-        return Err(FormatError::FilesystemExtractionFailed(
-            "restored sparse ranges do not match archive",
-        ));
+    if query_windows_sparse_ranges(file, logical_size)? != expected_extents && !windows_file_system_is_refs(file)? {
+        return Err(FormatError::FilesystemExtractionFailed("restored sparse ranges do not match archive"));
     }
     Ok(())
 }
 
 #[cfg(windows)]
-fn rename_open_file_noreplace(
-    file: &fs::File,
-    destination_parent: &CapDir,
-    destination_leaf: &Path,
-) -> Result<(), FormatError> {
+fn rename_open_file_noreplace(file: &fs::File, destination_parent: &CapDir, destination_leaf: &Path) -> Result<(), FormatError> {
     use std::mem::size_of;
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
-        FileRenameInfo, GetFinalPathNameByHandleW, SetFileInformationByHandle,
-        FILE_NAME_NORMALIZED, FILE_RENAME_INFO, VOLUME_NAME_DOS,
+        FileRenameInfo, GetFinalPathNameByHandleW, SetFileInformationByHandle, FILE_NAME_NORMALIZED, FILE_RENAME_INFO, VOLUME_NAME_DOS,
     };
 
-    let leaf = destination_leaf
-        .as_os_str()
-        .encode_wide()
-        .collect::<Vec<_>>();
+    let leaf = destination_leaf.as_os_str().encode_wide().collect::<Vec<_>>();
     if leaf.is_empty() || leaf.contains(&0) {
         return Err(FormatError::UnsafeArchivePath);
     }
@@ -417,18 +319,12 @@ fn rename_open_file_noreplace(
             GetFinalPathNameByHandleW(
                 destination_parent.as_raw_handle().cast(),
                 buffer.as_mut_ptr(),
-                u32::try_from(buffer.len()).map_err(|_| {
-                    FormatError::FilesystemExtractionFailed(
-                        "destination path buffer exceeds Windows limit",
-                    )
-                })?,
+                u32::try_from(buffer.len()).map_err(|_| FormatError::FilesystemExtractionFailed("destination path buffer exceeds Windows limit"))?,
                 FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
             )
         } as usize;
         if length == 0 {
-            return Err(FormatError::FilesystemExtractionFailed(
-                "failed to resolve destination directory handle",
-            ));
+            return Err(FormatError::FilesystemExtractionFailed("failed to resolve destination directory handle"));
         }
         if length < buffer.len() {
             buffer.truncate(length);
@@ -436,29 +332,23 @@ fn rename_open_file_noreplace(
         }
         capacity = length
             .checked_add(1)
-            .ok_or(FormatError::FilesystemExtractionFailed(
-                "destination path length overflow",
-            ))?;
+            .ok_or(FormatError::FilesystemExtractionFailed("destination path length overflow"))?;
     };
     if !name.ends_with(&[b'\\' as u16]) {
         name.push(b'\\' as u16);
     }
     name.extend_from_slice(&leaf);
-    let name_byte_len =
-        name.len()
-            .checked_mul(size_of::<u16>())
-            .ok_or(FormatError::FilesystemExtractionFailed(
-                "destination file name is too large to publish",
-            ))?;
+    let name_byte_len = name
+        .len()
+        .checked_mul(size_of::<u16>())
+        .ok_or(FormatError::FilesystemExtractionFailed("destination file name is too large to publish"))?;
     // Windows' documented FILE_RENAME_INFO allocation formula includes the structure's embedded
     // one-unit FileName field in addition to FileNameLength. Preserve that trailing zeroed space:
     // on ARM64, passing only offset_of(FileName) + FileNameLength can make NTFS consume adjacent
     // bytes as an unintended filename suffix when the exact allocation ends on an 8-byte boundary.
     let byte_len = size_of::<FILE_RENAME_INFO>()
         .checked_add(name_byte_len)
-        .ok_or(FormatError::FilesystemExtractionFailed(
-            "destination rename buffer overflow",
-        ))?;
+        .ok_or(FormatError::FilesystemExtractionFailed("destination rename buffer overflow"))?;
     let storage_len = byte_len.div_ceil(size_of::<usize>());
     let mut storage = vec![0usize; storage_len];
     let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
@@ -467,32 +357,21 @@ fn rename_open_file_noreplace(
     unsafe {
         (*info).Anonymous.ReplaceIfExists = false;
         (*info).RootDirectory = std::ptr::null_mut();
-        (*info).FileNameLength = u32::try_from(name.len() * size_of::<u16>()).map_err(|_| {
-            FormatError::FilesystemExtractionFailed("destination filename exceeds Windows limit")
-        })?;
-        std::ptr::copy_nonoverlapping(
-            name.as_ptr(),
-            std::ptr::addr_of_mut!((*info).FileName).cast::<u16>(),
-            name.len(),
-        );
+        (*info).FileNameLength =
+            u32::try_from(name.len() * size_of::<u16>()).map_err(|_| FormatError::FilesystemExtractionFailed("destination filename exceeds Windows limit"))?;
+        std::ptr::copy_nonoverlapping(name.as_ptr(), std::ptr::addr_of_mut!((*info).FileName).cast::<u16>(), name.len());
         if SetFileInformationByHandle(
             file.as_raw_handle().cast(),
             FileRenameInfo,
             info.cast(),
-            u32::try_from(byte_len).map_err(|_| {
-                FormatError::FilesystemExtractionFailed(
-                    "destination rename buffer exceeds Windows limit",
-                )
-            })?,
+            u32::try_from(byte_len).map_err(|_| FormatError::FilesystemExtractionFailed("destination rename buffer exceeds Windows limit"))?,
         ) == 0
         {
             let error = std::io::Error::last_os_error();
             return if matches!(error.raw_os_error(), Some(80 | 183)) {
                 Err(FormatError::UnsafeOverwrite)
             } else {
-                Err(FormatError::FilesystemExtractionFailed(
-                    "failed to publish allocation-preserving output",
-                ))
+                Err(FormatError::FilesystemExtractionFailed("failed to publish allocation-preserving output"))
             };
         }
     }
@@ -511,12 +390,10 @@ pub(crate) fn publish_regular_file(
 
     #[cfg(windows)]
     {
-        temp_file.sync_data().map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to sync regular file data")
-        })?;
-        if let Err(error) =
-            rename_open_file_noreplace(&temp_file, &destination.parent, &destination.leaf)
-        {
+        temp_file
+            .sync_data()
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        if let Err(error) = rename_open_file_noreplace(&temp_file, &destination.parent, &destination.leaf) {
             let _ = destination.parent.remove_file_or_symlink(temp_leaf);
             return Err(error);
         }
@@ -528,13 +405,11 @@ pub(crate) fn publish_regular_file(
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt as _;
 
-        temp_file.sync_data().map_err(|_| {
-            FormatError::FilesystemExtractionFailed("failed to sync regular file data")
-        })?;
-        let source = CString::new(temp_leaf.as_os_str().as_bytes())
-            .map_err(|_| FormatError::UnsafeArchivePath)?;
-        let target = CString::new(destination.leaf.as_os_str().as_bytes())
-            .map_err(|_| FormatError::UnsafeArchivePath)?;
+        temp_file
+            .sync_data()
+            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        let source = CString::new(temp_leaf.as_os_str().as_bytes()).map_err(|_| FormatError::UnsafeArchivePath)?;
+        let target = CString::new(destination.leaf.as_os_str().as_bytes()).map_err(|_| FormatError::UnsafeArchivePath)?;
         // libc does not expose renameat2 on every Linux libc target, so invoke the
         // kernel interface directly. Both names are validated single components
         // beneath the same pinned parent.
@@ -554,9 +429,7 @@ pub(crate) fn publish_regular_file(
             return if error.raw_os_error() == Some(libc::EEXIST) {
                 Err(FormatError::UnsafeOverwrite)
             } else {
-                Err(FormatError::FilesystemExtractionFailed(
-                    "failed to publish allocation-preserving output",
-                ))
+                Err(FormatError::FilesystemExtractionFailed("failed to publish allocation-preserving output"))
             };
         }
         #[cfg(not(windows))]
@@ -569,10 +442,7 @@ pub(crate) fn publish_regular_file(
     }
 
     #[cfg(all(not(windows), not(target_os = "linux")))]
-    let mut output = match destination
-        .parent
-        .open_with(&destination.leaf, &create_new_file_options())
-    {
+    let mut output = match destination.parent.open_with(&destination.leaf, &create_new_file_options()) {
         Ok(file) => file.into_std(),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             let _ = destination.parent.remove_file_or_symlink(temp_leaf);
@@ -580,9 +450,7 @@ pub(crate) fn publish_regular_file(
         }
         Err(_) => {
             let _ = destination.parent.remove_file_or_symlink(temp_leaf);
-            return Err(FormatError::FilesystemExtractionFailed(
-                "failed to create regular file",
-            ));
+            return Err(FormatError::FilesystemExtractionFailed("failed to create regular file"));
         }
     };
 
@@ -601,9 +469,7 @@ pub(crate) fn publish_regular_file(
     if copy_result.is_err() {
         let _ = destination.parent.remove_file_or_symlink(&destination.leaf);
         let _ = destination.parent.remove_file_or_symlink(temp_leaf);
-        return Err(FormatError::FilesystemExtractionFailed(
-            "failed to write regular file",
-        ));
+        return Err(FormatError::FilesystemExtractionFailed("failed to write regular file"));
     }
 
     #[cfg(all(not(windows), not(target_os = "linux")))]

@@ -25,8 +25,8 @@ const FRAME_KNOWN_FLAGS: u32 = 0x0000_0003;
 const DEFAULT_MAX_HASH_COLLISION_SHARD_SCAN: usize = 16;
 const REED_SOLOMON_GF16_MAX_TOTAL_SHARDS: u64 = 65_535;
 const SHA256_EMPTY: [u8; 32] = [
-    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
-    0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+    0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95,
+    0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,11 +230,7 @@ pub struct DirectoryHintEntry {
 }
 
 impl IndexRoot {
-    pub fn parse(
-        bytes: &[u8],
-        has_dictionary: bool,
-        limits: MetadataLimits,
-    ) -> Result<Self, FormatError> {
+    pub fn parse(bytes: &[u8], has_dictionary: bool, limits: MetadataLimits) -> Result<Self, FormatError> {
         let structure = "IndexRoot";
         if bytes.len() < INDEX_ROOT_LEN {
             return invalid(structure, "plaintext is shorter than fixed header");
@@ -289,22 +285,14 @@ impl IndexRoot {
 
         let directory_hint_shards = if header.directory_hint_shard_count == 0 {
             if header.directory_hint_shard_table_offset != 0 {
-                return invalid(
-                    structure,
-                    "absent directory hint shard table has non-zero offset",
-                );
+                return invalid(structure, "absent directory hint shard table has non-zero offset");
             }
             Vec::new()
         } else {
             if header.shard_count == 0 {
                 return invalid(structure, "directory hints require at least one shard");
             }
-            expect_offset(
-                structure,
-                "directory hint shard table",
-                header.directory_hint_shard_table_offset,
-                cursor,
-            )?;
+            expect_offset(structure, "directory hint shard table", header.directory_hint_shard_table_offset, cursor)?;
             let count = to_usize(header.directory_hint_shard_count as u64, structure)?;
             let bytes_len = checked_mul(count, DIRECTORY_HINT_SHARD_ENTRY_LEN, structure)?;
             let table = slice(bytes, cursor, bytes_len, structure)?;
@@ -313,10 +301,7 @@ impl IndexRoot {
         };
 
         if bytes.len() != cursor {
-            return invalid(
-                structure,
-                "plaintext length does not match canonical cursor",
-            );
+            return invalid(structure, "plaintext length does not match canonical cursor");
         }
         validate_index_root_totals(&header, &shards, has_dictionary)?;
 
@@ -331,22 +316,15 @@ impl IndexRoot {
         let mut header = self.header.clone();
         header.shard_count = self.shards.len() as u32;
         header.directory_hint_shard_count = self.directory_hint_shards.len() as u32;
-        header.shard_table_offset = if self.shards.is_empty() {
-            0
-        } else {
-            INDEX_ROOT_LEN as u64
-        };
+        header.shard_table_offset = if self.shards.is_empty() { 0 } else { INDEX_ROOT_LEN as u64 };
         header.directory_hint_shard_table_offset = if self.directory_hint_shards.is_empty() {
             0
         } else {
             (INDEX_ROOT_LEN + self.shards.len() * SHARD_ENTRY_LEN) as u64
         };
 
-        let mut bytes = Vec::with_capacity(
-            INDEX_ROOT_LEN
-                + self.shards.len() * SHARD_ENTRY_LEN
-                + self.directory_hint_shards.len() * DIRECTORY_HINT_SHARD_ENTRY_LEN,
-        );
+        let mut bytes =
+            Vec::with_capacity(INDEX_ROOT_LEN + self.shards.len() * SHARD_ENTRY_LEN + self.directory_hint_shards.len() * DIRECTORY_HINT_SHARD_ENTRY_LEN);
         bytes.extend_from_slice(&header.to_bytes());
         for entry in &self.shards {
             bytes.extend_from_slice(&entry.to_bytes());
@@ -357,11 +335,7 @@ impl IndexRoot {
         bytes
     }
 
-    pub fn candidate_shard_indexes_for_hash(
-        &self,
-        target_hash: [u8; 8],
-        scan_cap_per_direction: usize,
-    ) -> Result<Vec<usize>, FormatError> {
+    pub fn candidate_shard_indexes_for_hash(&self, target_hash: [u8; 8], scan_cap_per_direction: usize) -> Result<Vec<usize>, FormatError> {
         candidate_interval_indexes(
             &self.shards,
             target_hash,
@@ -371,15 +345,8 @@ impl IndexRoot {
         )
     }
 
-    pub fn candidate_shards_for_path(
-        &self,
-        normalized_path: &[u8],
-        limits: MetadataLimits,
-    ) -> Result<Vec<usize>, FormatError> {
-        self.candidate_shard_indexes_for_hash(
-            hash_prefix(normalized_path),
-            limits.max_hash_collision_shard_scan,
-        )
+    pub fn candidate_shards_for_path(&self, normalized_path: &[u8], limits: MetadataLimits) -> Result<Vec<usize>, FormatError> {
+        self.candidate_shard_indexes_for_hash(hash_prefix(normalized_path), limits.max_hash_collision_shard_scan)
     }
 }
 
@@ -461,11 +428,7 @@ impl DirectoryHintShardEntry {
 }
 
 impl IndexShard {
-    pub fn parse(
-        bytes: &[u8],
-        locating_shard: &ShardEntry,
-        limits: MetadataLimits,
-    ) -> Result<Self, FormatError> {
+    pub fn parse(bytes: &[u8], locating_shard: &ShardEntry, limits: MetadataLimits) -> Result<Self, FormatError> {
         let structure = "IndexShard";
         if bytes.len() < INDEX_SHARD_HEADER_LEN {
             return invalid(structure, "plaintext is shorter than fixed header");
@@ -545,32 +508,17 @@ impl IndexShard {
             }
             Vec::new()
         } else {
-            expect_offset(
-                structure,
-                "string pool",
-                header.string_pool_offset as u64,
-                cursor,
-            )?;
+            expect_offset(structure, "string pool", header.string_pool_offset as u64, cursor)?;
             let len = header.string_pool_size as usize;
             let pool = slice(bytes, cursor, len, structure)?.to_vec();
             cursor = checked_add(cursor, len, structure)?;
             pool
         };
         if bytes.len() != cursor {
-            return invalid(
-                structure,
-                "plaintext length does not match canonical cursor",
-            );
+            return invalid(structure, "plaintext length does not match canonical cursor");
         }
 
-        let (file_paths, file_tar_member_group_starts) = validate_index_shard_tables(
-            &files,
-            &frames,
-            &envelopes,
-            &string_pool,
-            locating_shard,
-            limits,
-        )?;
+        let (file_paths, file_tar_member_group_starts) = validate_index_shard_tables(&files, &frames, &envelopes, &string_pool, locating_shard, limits)?;
 
         Ok(Self {
             header,
@@ -642,9 +590,8 @@ impl IndexShard {
         let mut high = self.files.len();
         while low < high {
             let mid = low + (high - low) / 2;
-            let key_is_less = self.files[mid].path_hash < target_hash
-                || (self.files[mid].path_hash == target_hash
-                    && self.file_paths[mid].as_slice() < target_path);
+            let key_is_less =
+                self.files[mid].path_hash < target_hash || (self.files[mid].path_hash == target_hash && self.file_paths[mid].as_slice() < target_path);
             if key_is_less {
                 low = mid + 1;
             } else {
@@ -739,12 +686,7 @@ impl EnvelopeEntry {
 }
 
 impl DirectoryHintTable {
-    pub fn parse(
-        bytes: &[u8],
-        locating_shard: &DirectoryHintShardEntry,
-        index_root_shard_count: u32,
-        limits: MetadataLimits,
-    ) -> Result<Self, FormatError> {
+    pub fn parse(bytes: &[u8], locating_shard: &DirectoryHintShardEntry, index_root_shard_count: u32, limits: MetadataLimits) -> Result<Self, FormatError> {
         let structure = "DirectoryHintTable";
         if bytes.len() < DIRECTORY_HINT_TABLE_LEN {
             return invalid(structure, "plaintext is shorter than fixed header");
@@ -765,16 +707,10 @@ impl DirectoryHintTable {
             return invalid(structure, "unsupported version");
         }
         if header.hint_shard_index != locating_shard.hint_shard_index {
-            return invalid(
-                structure,
-                "hint shard index does not match locating DirectoryHintShardEntry",
-            );
+            return invalid(structure, "hint shard index does not match locating DirectoryHintShardEntry");
         }
         if header.entry_count != locating_shard.entry_count {
-            return invalid(
-                structure,
-                "entry count does not match locating DirectoryHintShardEntry",
-            );
+            return invalid(structure, "entry count does not match locating DirectoryHintShardEntry");
         }
         if header.entry_count == 0 {
             return invalid(structure, "located directory hint shard is empty");
@@ -784,33 +720,17 @@ impl DirectoryHintTable {
         }
 
         let entry_count = to_usize(header.entry_count, structure)?;
-        expect_offset(
-            structure,
-            "entry table",
-            header.entry_table_offset,
-            DIRECTORY_HINT_TABLE_LEN,
-        )?;
+        expect_offset(structure, "entry table", header.entry_table_offset, DIRECTORY_HINT_TABLE_LEN)?;
         let entry_bytes_len = checked_mul(entry_count, DIRECTORY_HINT_ENTRY_LEN, structure)?;
         let entries_end = checked_add(DIRECTORY_HINT_TABLE_LEN, entry_bytes_len, structure)?;
-        expect_offset(
-            structure,
-            "shard list",
-            header.shard_list_offset,
-            entries_end,
-        )?;
+        expect_offset(structure, "shard list", header.shard_list_offset, entries_end)?;
         if header.shard_list_offset % 4 != 0 {
             return invalid(structure, "shard list is not 4-byte aligned");
         }
 
         let entry_bytes = slice(bytes, DIRECTORY_HINT_TABLE_LEN, entry_bytes_len, structure)?;
         let entries = parse_directory_hint_entries(entry_bytes)?;
-        let shard_list_len = validate_directory_hint_entries(
-            &entries,
-            bytes,
-            &header,
-            locating_shard,
-            index_root_shard_count,
-        )?;
+        let shard_list_len = validate_directory_hint_entries(&entries, bytes, &header, locating_shard, index_root_shard_count)?;
         let shard_list_offset = to_usize(header.shard_list_offset, structure)?;
         let shard_list_bytes_len = checked_mul(shard_list_len, 4, structure)?;
         let shard_list_end = checked_add(shard_list_offset, shard_list_bytes_len, structure)?;
@@ -823,12 +743,7 @@ impl DirectoryHintTable {
             }
             Vec::new()
         } else {
-            expect_offset(
-                structure,
-                "string pool",
-                header.string_pool_offset,
-                shard_list_end,
-            )?;
+            expect_offset(structure, "string pool", header.string_pool_offset, shard_list_end)?;
             let offset = to_usize(header.string_pool_offset, structure)?;
             let size = to_usize(header.string_pool_size, structure)?;
             slice(bytes, offset, size, structure)?.to_vec()
@@ -843,10 +758,7 @@ impl DirectoryHintTable {
             )?
         };
         if bytes.len() != final_cursor {
-            return invalid(
-                structure,
-                "plaintext length does not match canonical cursor",
-            );
+            return invalid(structure, "plaintext length does not match canonical cursor");
         }
 
         let entry_paths = validate_directory_hint_paths_and_lists(
@@ -870,11 +782,7 @@ impl DirectoryHintTable {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut header = self.header.clone();
         header.entry_count = self.entries.len() as u64;
-        header.entry_table_offset = if self.entries.is_empty() {
-            0
-        } else {
-            DIRECTORY_HINT_TABLE_LEN as u64
-        };
+        header.entry_table_offset = if self.entries.is_empty() { 0 } else { DIRECTORY_HINT_TABLE_LEN as u64 };
         header.shard_list_offset = if self.entries.is_empty() {
             0
         } else {
@@ -888,10 +796,7 @@ impl DirectoryHintTable {
         };
 
         let mut bytes = Vec::with_capacity(
-            DIRECTORY_HINT_TABLE_LEN
-                + self.entries.len() * DIRECTORY_HINT_ENTRY_LEN
-                + self.shard_row_indexes.len() * 4
-                + self.string_pool.len(),
+            DIRECTORY_HINT_TABLE_LEN + self.entries.len() * DIRECTORY_HINT_ENTRY_LEN + self.shard_row_indexes.len() * 4 + self.string_pool.len(),
         );
         bytes.extend_from_slice(&header.to_bytes());
         for entry in &self.entries {
@@ -916,9 +821,7 @@ impl DirectoryHintTable {
         let target_hash = hash_prefix(normalized_dir_path);
         let lower = self.lower_bound_directory_key(target_hash, normalized_dir_path);
         let entry = self.entries.get(lower)?;
-        if entry.dir_hash == target_hash
-            && self.entry_paths[lower].as_slice() == normalized_dir_path
-        {
+        if entry.dir_hash == target_hash && self.entry_paths[lower].as_slice() == normalized_dir_path {
             Some(lower)
         } else {
             None
@@ -930,9 +833,8 @@ impl DirectoryHintTable {
         let mut high = self.entries.len();
         while low < high {
             let mid = low + (high - low) / 2;
-            let key_is_less = self.entries[mid].dir_hash < target_hash
-                || (self.entries[mid].dir_hash == target_hash
-                    && self.entry_paths[mid].as_slice() < target_path);
+            let key_is_less =
+                self.entries[mid].dir_hash < target_hash || (self.entries[mid].dir_hash == target_hash && self.entry_paths[mid].as_slice() < target_path);
             if key_is_less {
                 low = mid + 1;
             } else {
@@ -984,19 +886,13 @@ pub fn hash_prefix(bytes: &[u8]) -> [u8; 8] {
     out
 }
 
-pub fn normalize_lookup_file_path(
-    path: &str,
-    max_path_length: u32,
-) -> Result<Vec<u8>, FormatError> {
+pub fn normalize_lookup_file_path(path: &str, max_path_length: u32) -> Result<Vec<u8>, FormatError> {
     let normalized = path.nfc().collect::<String>();
     validate_file_path_bytes(normalized.as_bytes(), max_path_length)?;
     Ok(normalized.into_bytes())
 }
 
-pub fn normalize_lookup_directory_path(
-    path: &str,
-    max_path_length: u32,
-) -> Result<Vec<u8>, FormatError> {
+pub fn normalize_lookup_directory_path(path: &str, max_path_length: u32) -> Result<Vec<u8>, FormatError> {
     let trimmed = path.strip_suffix('/').unwrap_or(path);
     let normalized = trimmed.nfc().collect::<String>();
     validate_directory_path_bytes(normalized.as_bytes(), max_path_length)?;
@@ -1007,15 +903,10 @@ pub fn is_directory_ancestor(directory_path: &[u8], file_path: &[u8]) -> bool {
     if directory_path.is_empty() {
         return true;
     }
-    file_path.len() > directory_path.len()
-        && file_path.starts_with(directory_path)
-        && file_path[directory_path.len()] == b'/'
+    file_path.len() > directory_path.len() && file_path.starts_with(directory_path) && file_path[directory_path.len()] == b'/'
 }
 
-fn parse_shard_entries(
-    bytes: &[u8],
-    limits: MetadataLimits,
-) -> Result<Vec<ShardEntry>, FormatError> {
+fn parse_shard_entries(bytes: &[u8], limits: MetadataLimits) -> Result<Vec<ShardEntry>, FormatError> {
     let mut entries = Vec::with_capacity(bytes.len() / SHARD_ENTRY_LEN);
     let mut seen_indexes = HashSet::new();
     for chunk in bytes.chunks_exact(SHARD_ENTRY_LEN) {
@@ -1036,12 +927,7 @@ fn parse_shard_entries(
         if entry.decompressed_size == 0 {
             return invalid("ShardEntry", "decompressed size is zero");
         }
-        validate_encrypted_extent(
-            "ShardEntry",
-            entry.data_block_count,
-            entry.encrypted_size,
-            limits.block_size,
-        )?;
+        validate_encrypted_extent("ShardEntry", entry.data_block_count, entry.encrypted_size, limits.block_size)?;
         validate_fec_class_extent(
             "ShardEntry",
             entry.data_block_count,
@@ -1069,10 +955,7 @@ fn parse_shard_entries(
     Ok(entries)
 }
 
-fn parse_directory_hint_shard_entries(
-    bytes: &[u8],
-    limits: MetadataLimits,
-) -> Result<Vec<DirectoryHintShardEntry>, FormatError> {
+fn parse_directory_hint_shard_entries(bytes: &[u8], limits: MetadataLimits) -> Result<Vec<DirectoryHintShardEntry>, FormatError> {
     let mut entries = Vec::with_capacity(bytes.len() / DIRECTORY_HINT_SHARD_ENTRY_LEN);
     let mut seen_indexes = HashSet::new();
     for chunk in bytes.chunks_exact(DIRECTORY_HINT_SHARD_ENTRY_LEN) {
@@ -1093,12 +976,7 @@ fn parse_directory_hint_shard_entries(
         if entry.decompressed_size == 0 {
             return invalid("DirectoryHintShardEntry", "decompressed size is zero");
         }
-        validate_encrypted_extent(
-            "DirectoryHintShardEntry",
-            entry.data_block_count,
-            entry.encrypted_size,
-            limits.block_size,
-        )?;
+        validate_encrypted_extent("DirectoryHintShardEntry", entry.data_block_count, entry.encrypted_size, limits.block_size)?;
         validate_fec_class_extent(
             "DirectoryHintShardEntry",
             entry.data_block_count,
@@ -1107,10 +985,7 @@ fn parse_directory_hint_shard_entries(
             limits.max_index_parity_shards,
         )?;
         if entry.first_dir_hash > entry.last_dir_hash {
-            return invalid(
-                "DirectoryHintShardEntry",
-                "first hash is greater than last hash",
-            );
+            return invalid("DirectoryHintShardEntry", "first hash is greater than last hash");
         }
         if !seen_indexes.insert(entry.hint_shard_index) {
             return invalid("DirectoryHintShardEntry", "duplicate hint shard index");
@@ -1121,10 +996,7 @@ fn parse_directory_hint_shard_entries(
                 return invalid("IndexRoot", "DirectoryHintShardEntry rows are not sorted");
             }
             if previous.last_dir_hash > entry.first_dir_hash {
-                return invalid(
-                    "IndexRoot",
-                    "DirectoryHintShardEntry hash ranges overlap out of order",
-                );
+                return invalid("IndexRoot", "DirectoryHintShardEntry hash ranges overlap out of order");
             }
         }
         entries.push(entry);
@@ -1196,14 +1068,8 @@ fn parse_envelope_entry(bytes: &[u8]) -> Result<EnvelopeEntry, FormatError> {
 fn parse_directory_hint_entries(bytes: &[u8]) -> Result<Vec<DirectoryHintEntry>, FormatError> {
     let mut entries = Vec::with_capacity(bytes.len() / DIRECTORY_HINT_ENTRY_LEN);
     for chunk in bytes.chunks_exact(DIRECTORY_HINT_ENTRY_LEN) {
-        expect_zero(
-            "DirectoryHintEntry",
-            slice(chunk, 20, 4, "DirectoryHintEntry")?,
-        )?;
-        expect_zero(
-            "DirectoryHintEntry",
-            slice(chunk, 32, 8, "DirectoryHintEntry")?,
-        )?;
+        expect_zero("DirectoryHintEntry", slice(chunk, 20, 4, "DirectoryHintEntry")?)?;
+        expect_zero("DirectoryHintEntry", slice(chunk, 32, 8, "DirectoryHintEntry")?)?;
         entries.push(DirectoryHintEntry {
             dir_hash: read_array::<8>(chunk, 0, "DirectoryHintEntry")?,
             path_offset: read_u64(chunk, 8, "DirectoryHintEntry")?,
@@ -1215,28 +1081,13 @@ fn parse_directory_hint_entries(bytes: &[u8]) -> Result<Vec<DirectoryHintEntry>,
     Ok(entries)
 }
 
-fn validate_index_root_totals(
-    header: &IndexRootHeader,
-    shards: &[ShardEntry],
-    has_dictionary: bool,
-) -> Result<(), FormatError> {
+fn validate_index_root_totals(header: &IndexRootHeader, shards: &[ShardEntry], has_dictionary: bool) -> Result<(), FormatError> {
     if shards.is_empty() {
-        if header.file_count != 0
-            || header.frame_count != 0
-            || header.envelope_count != 0
-            || header.payload_block_count != 0
-            || header.tar_total_size != 0
-        {
-            return invalid(
-                "IndexRoot",
-                "empty shard table has non-empty archive totals",
-            );
+        if header.file_count != 0 || header.frame_count != 0 || header.envelope_count != 0 || header.payload_block_count != 0 || header.tar_total_size != 0 {
+            return invalid("IndexRoot", "empty shard table has non-empty archive totals");
         }
         if header.content_sha256 != SHA256_EMPTY {
-            return invalid(
-                "IndexRoot",
-                "empty archive content hash is not SHA-256(empty)",
-            );
+            return invalid("IndexRoot", "empty archive content hash is not SHA-256(empty)");
         }
         if has_dictionary || !index_root_dictionary_fields_are_zero(header) {
             return invalid("IndexRoot", "empty archive cannot use dictionary");
@@ -1246,46 +1097,28 @@ fn validate_index_root_totals(
 
     let mut sum = 0u64;
     for shard in shards {
-        sum = sum.checked_add(shard.file_count as u64).ok_or(
-            FormatError::MetadataArithmeticOverflow {
-                structure: "IndexRoot",
-            },
-        )?;
+        sum = sum
+            .checked_add(shard.file_count as u64)
+            .ok_or(FormatError::MetadataArithmeticOverflow { structure: "IndexRoot" })?;
     }
     if sum != header.file_count {
-        return invalid(
-            "IndexRoot",
-            "file_count does not equal sum of ShardEntry rows",
-        );
+        return invalid("IndexRoot", "file_count does not equal sum of ShardEntry rows");
     }
     Ok(())
 }
 
-fn validate_dictionary_fields(
-    header: &IndexRootHeader,
-    has_dictionary: bool,
-    limits: MetadataLimits,
-) -> Result<(), FormatError> {
+fn validate_dictionary_fields(header: &IndexRootHeader, has_dictionary: bool, limits: MetadataLimits) -> Result<(), FormatError> {
     if !has_dictionary {
         if !index_root_dictionary_fields_are_zero(header) {
-            return invalid(
-                "IndexRoot",
-                "dictionary fields are non-zero while has_dictionary is false",
-            );
+            return invalid("IndexRoot", "dictionary fields are non-zero while has_dictionary is false");
         }
         return Ok(());
     }
 
     if header.dictionary_data_block_count == 0 {
-        return invalid(
-            "IndexRoot",
-            "dictionary data block count is zero while has_dictionary is true",
-        );
+        return invalid("IndexRoot", "dictionary data block count is zero while has_dictionary is true");
     }
-    if header.dictionary_first_block == 0
-        || header.dictionary_encrypted_size == 0
-        || header.dictionary_decompressed_size == 0
-    {
+    if header.dictionary_first_block == 0 || header.dictionary_encrypted_size == 0 || header.dictionary_decompressed_size == 0 {
         return invalid("IndexRoot", "required dictionary field is zero");
     }
     validate_encrypted_extent(
@@ -1354,18 +1187,10 @@ fn validate_index_shard_tables(
             return invalid("FileEntry", "frame count is zero");
         }
         if file.tar_member_group_size < 1536 {
-            return invalid(
-                "FileEntry",
-                "tar member group is smaller than the revision-45 minimum",
-            );
+            return invalid("FileEntry", "tar member group is smaller than the revision-45 minimum");
         }
-        if file.path_hash < locating_shard.first_path_hash
-            || file.path_hash > locating_shard.last_path_hash
-        {
-            return invalid(
-                "FileEntry",
-                "path hash is outside locating ShardEntry bounds",
-            );
+        if file.path_hash < locating_shard.first_path_hash || file.path_hash > locating_shard.last_path_hash {
+            return invalid("FileEntry", "path hash is outside locating ShardEntry bounds");
         }
 
         if file.kind > 6 {
@@ -1375,44 +1200,24 @@ fn validate_index_shard_tables(
             return invalid("FileEntry", "metadata_flags has reserved bits set");
         }
         if file.uname_length > 0 {
-            let uname_bytes = string_slice(
-                string_pool,
-                file.uname_offset as u64,
-                file.uname_length as u64,
-                "FileEntry",
-            )?;
+            let uname_bytes = string_slice(string_pool, file.uname_offset as u64, file.uname_length as u64, "FileEntry")?;
             if std::str::from_utf8(uname_bytes).is_err() {
                 return invalid("FileEntry", "uname string is not valid UTF-8");
             }
         }
         if file.gname_length > 0 {
-            let gname_bytes = string_slice(
-                string_pool,
-                file.gname_offset as u64,
-                file.gname_length as u64,
-                "FileEntry",
-            )?;
+            let gname_bytes = string_slice(string_pool, file.gname_offset as u64, file.gname_length as u64, "FileEntry")?;
             if std::str::from_utf8(gname_bytes).is_err() {
                 return invalid("FileEntry", "gname string is not valid UTF-8");
             }
         }
         if file.link_target_length > 0 {
-            let link_bytes = string_slice(
-                string_pool,
-                file.link_target_offset as u64,
-                file.link_target_length as u64,
-                "FileEntry",
-            )?;
+            let link_bytes = string_slice(string_pool, file.link_target_offset as u64, file.link_target_length as u64, "FileEntry")?;
             if std::str::from_utf8(link_bytes).is_err() {
                 return invalid("FileEntry", "link_target string is not valid UTF-8");
             }
         }
-        let path = string_slice(
-            string_pool,
-            file.path_offset as u64,
-            file.path_length as u64,
-            "FileEntry",
-        )?;
+        let path = string_slice(string_pool, file.path_offset as u64, file.path_length as u64, "FileEntry")?;
         validate_file_path_bytes(path, limits.max_path_length)?;
         if hash_prefix(path) != file.path_hash {
             return invalid("FileEntry", "path hash does not match string-pool path");
@@ -1422,16 +1227,13 @@ fn validate_index_shard_tables(
         let tar_member_group_start = first_frame
             .tar_stream_offset
             .checked_add(file.offset_in_first_frame_plaintext as u64)
-            .ok_or(FormatError::MetadataArithmeticOverflow {
-                structure: "FileEntry",
-            })?;
+            .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FileEntry" })?;
         validate_file_frame_range(file, frames, &frame_by_index)?;
         for offset in 0..file.frame_count as u64 {
-            let index = file.first_frame_index.checked_add(offset).ok_or(
-                FormatError::MetadataArithmeticOverflow {
-                    structure: "FileEntry",
-                },
-            )?;
+            let index = file
+                .first_frame_index
+                .checked_add(offset)
+                .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FileEntry" })?;
             required_frames.insert(index);
         }
         paths.push(path.to_vec());
@@ -1439,15 +1241,8 @@ fn validate_index_shard_tables(
     }
 
     validate_file_order(files, &paths, &starts)?;
-    if required_frames.len() != frames.len()
-        || frames
-            .iter()
-            .any(|frame| !required_frames.contains(&frame.frame_index))
-    {
-        return invalid(
-            "IndexShard",
-            "FrameEntry table is not the exact set referenced by FileEntry rows",
-        );
+    if required_frames.len() != frames.len() || frames.iter().any(|frame| !required_frames.contains(&frame.frame_index)) {
+        return invalid("IndexShard", "FrameEntry table is not the exact set referenced by FileEntry rows");
     }
 
     let mut required_envelopes = BTreeSet::new();
@@ -1462,32 +1257,19 @@ fn validate_index_shard_tables(
         validate_frame_envelope_binding(frame, envelope)?;
         required_envelopes.insert(frame.envelope_index);
     }
-    if required_envelopes.len() != envelopes.len()
-        || envelopes
-            .iter()
-            .any(|entry| !required_envelopes.contains(&entry.envelope_index))
-    {
-        return invalid(
-            "IndexShard",
-            "EnvelopeEntry table is not the exact set referenced by FrameEntry rows",
-        );
+    if required_envelopes.len() != envelopes.len() || envelopes.iter().any(|entry| !required_envelopes.contains(&entry.envelope_index)) {
+        return invalid("IndexShard", "EnvelopeEntry table is not the exact set referenced by FrameEntry rows");
     }
     validate_frame_slices_by_envelope(frames, envelopes)?;
 
     if let Some(first) = files.first() {
         if first.path_hash != locating_shard.first_path_hash {
-            return invalid(
-                "IndexShard",
-                "first FileEntry hash does not match ShardEntry",
-            );
+            return invalid("IndexShard", "first FileEntry hash does not match ShardEntry");
         }
     }
     if let Some(last) = files.last() {
         if last.path_hash != locating_shard.last_path_hash {
-            return invalid(
-                "IndexShard",
-                "last FileEntry hash does not match ShardEntry",
-            );
+            return invalid("IndexShard", "last FileEntry hash does not match ShardEntry");
         }
     }
 
@@ -1512,15 +1294,10 @@ fn validate_frame_table(frames: &[FrameEntry]) -> Result<(), FormatError> {
         let previous_end = previous
             .tar_stream_offset
             .checked_add(previous.decompressed_size as u64)
-            .ok_or(FormatError::MetadataArithmeticOverflow {
-                structure: "FrameEntry",
-            })?;
+            .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FrameEntry" })?;
         if next.frame_index == previous.frame_index + 1 {
             if next.tar_stream_offset != previous_end {
-                return invalid(
-                    "FrameEntry",
-                    "consecutive tar stream offsets are not packed",
-                );
+                return invalid("FrameEntry", "consecutive tar stream offsets are not packed");
             }
         } else if next.tar_stream_offset <= previous_end {
             return invalid("FrameEntry", "non-consecutive tar stream offsets overlap");
@@ -1529,20 +1306,12 @@ fn validate_frame_table(frames: &[FrameEntry]) -> Result<(), FormatError> {
     Ok(())
 }
 
-fn validate_envelope_table(
-    envelopes: &[EnvelopeEntry],
-    limits: MetadataLimits,
-) -> Result<(), FormatError> {
+fn validate_envelope_table(envelopes: &[EnvelopeEntry], limits: MetadataLimits) -> Result<(), FormatError> {
     for envelope in envelopes {
         if envelope.frame_count == 0 || envelope.plaintext_size == 0 {
             return invalid("EnvelopeEntry", "payload envelope has no frame plaintext");
         }
-        validate_encrypted_extent(
-            "EnvelopeEntry",
-            envelope.data_block_count,
-            envelope.encrypted_size,
-            limits.block_size,
-        )?;
+        validate_encrypted_extent("EnvelopeEntry", envelope.data_block_count, envelope.encrypted_size, limits.block_size)?;
         validate_fec_class_extent(
             "EnvelopeEntry",
             envelope.data_block_count,
@@ -1559,17 +1328,9 @@ fn validate_envelope_table(
     Ok(())
 }
 
-fn validate_file_order(
-    files: &[FileEntry],
-    paths: &[Vec<u8>],
-    starts: &[u64],
-) -> Result<(), FormatError> {
+fn validate_file_order(files: &[FileEntry], paths: &[Vec<u8>], starts: &[u64]) -> Result<(), FormatError> {
     for idx in 1..files.len() {
-        let previous_key = (
-            &files[idx - 1].path_hash,
-            paths[idx - 1].as_slice(),
-            starts[idx - 1],
-        );
+        let previous_key = (&files[idx - 1].path_hash, paths[idx - 1].as_slice(), starts[idx - 1]);
         let current_key = (&files[idx].path_hash, paths[idx].as_slice(), starts[idx]);
         if previous_key >= current_key {
             return invalid("IndexShard", "FileEntry rows are not sorted and unique");
@@ -1578,92 +1339,64 @@ fn validate_file_order(
     Ok(())
 }
 
-fn validate_file_frame_range(
-    file: &FileEntry,
-    frames: &[FrameEntry],
-    frame_by_index: &HashMap<u64, usize>,
-) -> Result<(), FormatError> {
+fn validate_file_frame_range(file: &FileEntry, frames: &[FrameEntry], frame_by_index: &HashMap<u64, usize>) -> Result<(), FormatError> {
     let first = frame_for_file(file, frame_by_index, frames, file.first_frame_index)?;
     if file.offset_in_first_frame_plaintext >= first.decompressed_size {
-        return invalid(
-            "FileEntry",
-            "offset in first frame is outside the first referenced frame",
-        );
+        return invalid("FileEntry", "offset in first frame is outside the first referenced frame");
     }
 
-    let mut bytes_before_last =
-        first.decompressed_size as u64 - file.offset_in_first_frame_plaintext as u64;
+    let mut bytes_before_last = first.decompressed_size as u64 - file.offset_in_first_frame_plaintext as u64;
     if file.frame_count == 1 {
         if file.tar_member_group_size > bytes_before_last {
-            return invalid(
-                "FileEntry",
-                "tar member group exceeds the single referenced frame",
-            );
+            return invalid("FileEntry", "tar member group exceeds the single referenced frame");
         }
         return Ok(());
     }
 
     for offset in 1..(file.frame_count as u64 - 1) {
-        let frame_index = file.first_frame_index.checked_add(offset).ok_or(
-            FormatError::MetadataArithmeticOverflow {
-                structure: "FileEntry",
-            },
-        )?;
+        let frame_index = file
+            .first_frame_index
+            .checked_add(offset)
+            .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FileEntry" })?;
         let frame = frame_for_file(file, frame_by_index, frames, frame_index)?;
         bytes_before_last = bytes_before_last
             .checked_add(frame.decompressed_size as u64)
-            .ok_or(FormatError::MetadataArithmeticOverflow {
-                structure: "FileEntry",
-            })?;
+            .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FileEntry" })?;
     }
 
     let last_index = file
         .first_frame_index
         .checked_add(file.frame_count as u64 - 1)
-        .ok_or(FormatError::MetadataArithmeticOverflow {
-            structure: "FileEntry",
-        })?;
+        .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FileEntry" })?;
     let last = frame_for_file(file, frame_by_index, frames, last_index)?;
     let max_size = bytes_before_last
         .checked_add(last.decompressed_size as u64)
-        .ok_or(FormatError::MetadataArithmeticOverflow {
-            structure: "FileEntry",
-        })?;
+        .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FileEntry" })?;
     if file.tar_member_group_size <= bytes_before_last || file.tar_member_group_size > max_size {
         return invalid("FileEntry", "frame range is not minimal");
     }
     Ok(())
 }
 
-fn validate_frame_envelope_binding(
-    frame: &FrameEntry,
-    envelope: &EnvelopeEntry,
-) -> Result<(), FormatError> {
+fn validate_frame_envelope_binding(frame: &FrameEntry, envelope: &EnvelopeEntry) -> Result<(), FormatError> {
     let envelope_frame_end = envelope
         .first_frame_index
         .checked_add(envelope.frame_count as u64)
-        .ok_or(FormatError::MetadataArithmeticOverflow {
-            structure: "EnvelopeEntry",
-        })?;
+        .ok_or(FormatError::MetadataArithmeticOverflow { structure: "EnvelopeEntry" })?;
     if frame.frame_index < envelope.first_frame_index || frame.frame_index >= envelope_frame_end {
         return invalid("FrameEntry", "frame index is outside envelope frame range");
     }
     let end = frame
         .offset_in_envelope
         .checked_add(frame.compressed_size)
-        .ok_or(FormatError::MetadataArithmeticOverflow {
-            structure: "FrameEntry",
-        })?;
+        .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FrameEntry" })?;
     if end > envelope.plaintext_size {
         return invalid("FrameEntry", "frame slice exceeds envelope plaintext");
     }
     Ok(())
 }
 
-fn validate_frame_slices_by_envelope(
-    frames: &[FrameEntry],
-    envelopes: &[EnvelopeEntry],
-) -> Result<(), FormatError> {
+fn validate_frame_slices_by_envelope(frames: &[FrameEntry], envelopes: &[EnvelopeEntry]) -> Result<(), FormatError> {
     for envelope in envelopes {
         let mut slices = frames
             .iter()
@@ -1672,9 +1405,7 @@ fn validate_frame_slices_by_envelope(
                 let end = frame
                     .offset_in_envelope
                     .checked_add(frame.compressed_size)
-                    .ok_or(FormatError::MetadataArithmeticOverflow {
-                        structure: "FrameEntry",
-                    })?;
+                    .ok_or(FormatError::MetadataArithmeticOverflow { structure: "FrameEntry" })?;
                 Ok((frame.offset_in_envelope, end, frame.frame_index))
             })
             .collect::<Result<Vec<_>, FormatError>>()?;
@@ -1701,10 +1432,7 @@ fn validate_frame_slices_by_envelope(
                 cursor = end;
             }
             if cursor != envelope.plaintext_size {
-                return invalid(
-                    "EnvelopeEntry",
-                    "complete local envelope does not cover plaintext",
-                );
+                return invalid("EnvelopeEntry", "complete local envelope does not cover plaintext");
             }
         }
     }
@@ -1726,16 +1454,10 @@ fn validate_directory_hint_entries(
         return invalid(structure, "located directory hint table is empty");
     }
     if entries[0].dir_hash != locating_shard.first_dir_hash {
-        return invalid(
-            structure,
-            "first DirectoryHintEntry hash does not match locating row",
-        );
+        return invalid(structure, "first DirectoryHintEntry hash does not match locating row");
     }
     if entries[entries.len() - 1].dir_hash != locating_shard.last_dir_hash {
-        return invalid(
-            structure,
-            "last DirectoryHintEntry hash does not match locating row",
-        );
+        return invalid(structure, "last DirectoryHintEntry hash does not match locating row");
     }
 
     let mut max_shard_list_end = 0usize;
@@ -1744,11 +1466,9 @@ fn validate_directory_hint_entries(
             return invalid("DirectoryHintEntry", "shard count is zero");
         }
         let start = entry.shard_list_start_index as usize;
-        let end = start.checked_add(entry.shard_count as usize).ok_or(
-            FormatError::MetadataArithmeticOverflow {
-                structure: "DirectoryHintEntry",
-            },
-        )?;
+        let end = start.checked_add(entry.shard_count as usize).ok_or(FormatError::MetadataArithmeticOverflow {
+            structure: "DirectoryHintEntry",
+        })?;
         max_shard_list_end = max_shard_list_end.max(end);
     }
     let byte_len = checked_mul(max_shard_list_end, 4, structure)?;
@@ -1773,57 +1493,36 @@ fn validate_directory_hint_paths_and_lists(
     for entry in entries {
         let path = if entry.path_length == 0 {
             if entry.path_offset != 0 || entry.dir_hash != hash_prefix(b"") {
-                return invalid(
-                    "DirectoryHintEntry",
-                    "root directory entry is not canonical",
-                );
+                return invalid("DirectoryHintEntry", "root directory entry is not canonical");
             }
             &[][..]
         } else {
-            let path = string_slice(
-                string_pool,
-                entry.path_offset,
-                entry.path_length as u64,
-                "DirectoryHintEntry",
-            )?;
+            let path = string_slice(string_pool, entry.path_offset, entry.path_length as u64, "DirectoryHintEntry")?;
             validate_directory_path_bytes(path, max_path_length)?;
             path
         };
         if hash_prefix(path) != entry.dir_hash {
-            return invalid(
-                "DirectoryHintEntry",
-                "dir_hash does not match string-pool path",
-            );
+            return invalid("DirectoryHintEntry", "dir_hash does not match string-pool path");
         }
         if !seen_paths.insert(path.to_vec()) {
             return invalid("DirectoryHintEntry", "duplicate directory path");
         }
 
         let start = entry.shard_list_start_index as usize;
-        let end = start.checked_add(entry.shard_count as usize).ok_or(
-            FormatError::MetadataArithmeticOverflow {
-                structure: "DirectoryHintEntry",
-            },
-        )?;
-        let rows = shard_row_indexes
-            .get(start..end)
-            .ok_or(FormatError::InvalidMetadata {
-                structure: "DirectoryHintEntry",
-                reason: "shard-row-index range is out of bounds",
-            })?;
+        let end = start.checked_add(entry.shard_count as usize).ok_or(FormatError::MetadataArithmeticOverflow {
+            structure: "DirectoryHintEntry",
+        })?;
+        let rows = shard_row_indexes.get(start..end).ok_or(FormatError::InvalidMetadata {
+            structure: "DirectoryHintEntry",
+            reason: "shard-row-index range is out of bounds",
+        })?;
         for pair in rows.windows(2) {
             if pair[0] >= pair[1] {
-                return invalid(
-                    "DirectoryHintEntry",
-                    "shard-row-index list is not sorted and unique",
-                );
+                return invalid("DirectoryHintEntry", "shard-row-index list is not sorted and unique");
             }
         }
         if rows.iter().any(|row| *row >= index_root_shard_count) {
-            return invalid(
-                "DirectoryHintEntry",
-                "shard-row-index is outside IndexRoot shard table",
-            );
+            return invalid("DirectoryHintEntry", "shard-row-index is outside IndexRoot shard table");
         }
         paths.push(path.to_vec());
     }
@@ -1832,19 +1531,11 @@ fn validate_directory_hint_paths_and_lists(
         let previous_key = (&entries[idx - 1].dir_hash, paths[idx - 1].as_slice());
         let current_key = (&entries[idx].dir_hash, paths[idx].as_slice());
         if previous_key >= current_key {
-            return invalid(
-                "DirectoryHintTable",
-                "DirectoryHintEntry rows are not sorted and unique",
-            );
+            return invalid("DirectoryHintTable", "DirectoryHintEntry rows are not sorted and unique");
         }
     }
-    if entries[0].dir_hash != locating_shard.first_dir_hash
-        || entries[entries.len() - 1].dir_hash != locating_shard.last_dir_hash
-    {
-        return invalid(
-            "DirectoryHintTable",
-            "entry hash bounds do not match locating shard",
-        );
+    if entries[0].dir_hash != locating_shard.first_dir_hash || entries[entries.len() - 1].dir_hash != locating_shard.last_dir_hash {
+        return invalid("DirectoryHintTable", "entry hash bounds do not match locating shard");
     }
 
     Ok(paths)
@@ -1871,10 +1562,7 @@ fn candidate_interval_indexes<T>(
 
     let mut start = landing;
     let mut left_scanned = 0usize;
-    while start > 0
-        && first_hash(&entries[start - 1]) <= target_hash
-        && last_hash(&entries[start - 1]) >= target_hash
-    {
+    while start > 0 && first_hash(&entries[start - 1]) <= target_hash && last_hash(&entries[start - 1]) >= target_hash {
         left_scanned += 1;
         if left_scanned > scan_cap_per_direction {
             return Err(FormatError::HashPrefixCollisionRunExceeded);
@@ -1884,10 +1572,7 @@ fn candidate_interval_indexes<T>(
 
     let mut end = landing + 1;
     let mut right_scanned = 0usize;
-    while end < entries.len()
-        && first_hash(&entries[end]) <= target_hash
-        && last_hash(&entries[end]) >= target_hash
-    {
+    while end < entries.len() && first_hash(&entries[end]) <= target_hash && last_hash(&entries[end]) >= target_hash {
         right_scanned += 1;
         if right_scanned > scan_cap_per_direction {
             return Err(FormatError::HashPrefixCollisionRunExceeded);
@@ -1914,11 +1599,7 @@ pub fn validate_directory_path_bytes(path: &[u8], max_path_length: u32) -> Resul
 
 fn validate_relative_path(path: &[u8], allow_empty_root: bool) -> Result<(), FormatError> {
     if path.is_empty() {
-        return if allow_empty_root {
-            Ok(())
-        } else {
-            Err(FormatError::UnsafeArchivePath)
-        };
+        return if allow_empty_root { Ok(()) } else { Err(FormatError::UnsafeArchivePath) };
     }
     if path.contains(&0) || path.contains(&b'\\') || path.contains(&b':') || path[0] == b'/' {
         return Err(FormatError::UnsafeArchivePath);
@@ -1939,11 +1620,7 @@ fn validate_relative_path(path: &[u8], allow_empty_root: bool) -> Result<(), For
 }
 
 fn is_windows_device_component(component: &str) -> bool {
-    let stem = component
-        .split('.')
-        .next()
-        .unwrap_or(component)
-        .trim_end_matches([' ', '.']);
+    let stem = component.split('.').next().unwrap_or(component).trim_end_matches([' ', '.']);
     let upper = stem.to_ascii_uppercase();
     matches!(
         upper.as_str(),
@@ -1979,12 +1656,7 @@ fn is_windows_device_component(component: &str) -> bool {
     )
 }
 
-fn validate_encrypted_extent(
-    structure: &'static str,
-    data_block_count: u32,
-    encrypted_size: u32,
-    block_size: u32,
-) -> Result<(), FormatError> {
+fn validate_encrypted_extent(structure: &'static str, data_block_count: u32, encrypted_size: u32, block_size: u32) -> Result<(), FormatError> {
     if data_block_count == 0 || encrypted_size == 0 {
         return invalid(structure, "encrypted object has zero data blocks or size");
     }
@@ -1992,10 +1664,7 @@ fn validate_encrypted_extent(
         .checked_mul(block_size as u64)
         .ok_or(FormatError::MetadataArithmeticOverflow { structure })?;
     if expected > u32::MAX as u64 || expected != encrypted_size as u64 {
-        return invalid(
-            structure,
-            "encrypted_size is not data_block_count * block_size",
-        );
+        return invalid(structure, "encrypted_size is not data_block_count * block_size");
     }
     Ok(())
 }
@@ -2015,10 +1684,7 @@ fn validate_fec_class_extent(
     }
     let total = data_block_count as u64 + parity_block_count as u64;
     if total > REED_SOLOMON_GF16_MAX_TOTAL_SHARDS {
-        return invalid(
-            structure,
-            "data_block_count + parity_block_count exceeds ReedSolomonGF16 limit",
-        );
+        return invalid(structure, "data_block_count + parity_block_count exceeds ReedSolomonGF16 limit");
     }
     Ok(())
 }
@@ -2047,11 +1713,7 @@ struct CountedTableSpec<T> {
     parse: fn(&[u8]) -> Result<T, FormatError>,
 }
 
-fn parse_counted_table<T>(
-    bytes: &[u8],
-    spec: CountedTableSpec<T>,
-    cursor: &mut usize,
-) -> Result<Vec<T>, FormatError> {
+fn parse_counted_table<T>(bytes: &[u8], spec: CountedTableSpec<T>, cursor: &mut usize) -> Result<Vec<T>, FormatError> {
     if spec.count == 0 {
         if spec.offset != 0 {
             return invalid(spec.structure, "absent counted table has non-zero offset");
@@ -2074,31 +1736,18 @@ fn parse_u32_array(bytes: &[u8], structure: &'static str) -> Result<Vec<u32>, Fo
     Ok(out)
 }
 
-fn string_slice<'a>(
-    string_pool: &'a [u8],
-    offset: u64,
-    length: u64,
-    structure: &'static str,
-) -> Result<&'a [u8], FormatError> {
+fn string_slice<'a>(string_pool: &'a [u8], offset: u64, length: u64, structure: &'static str) -> Result<&'a [u8], FormatError> {
     let start = to_usize(offset, structure)?;
     let len = to_usize(length, structure)?;
     slice(string_pool, start, len, structure)
 }
 
 fn shard_entry_sort_key(entry: &ShardEntry) -> ([u8; 8], [u8; 8], u64) {
-    (
-        entry.first_path_hash,
-        entry.last_path_hash,
-        entry.shard_index,
-    )
+    (entry.first_path_hash, entry.last_path_hash, entry.shard_index)
 }
 
 fn directory_hint_shard_sort_key(entry: &DirectoryHintShardEntry) -> ([u8; 8], [u8; 8], u64) {
-    (
-        entry.first_dir_hash,
-        entry.last_dir_hash,
-        entry.hint_shard_index,
-    )
+    (entry.first_dir_hash, entry.last_dir_hash, entry.hint_shard_index)
 }
 
 fn table_offset(len: usize, cursor: usize) -> u32 {
@@ -2109,11 +1758,7 @@ fn table_offset(len: usize, cursor: usize) -> u32 {
     }
 }
 
-fn expect_magic(
-    structure: &'static str,
-    expected: [u8; 4],
-    actual: [u8; 4],
-) -> Result<(), FormatError> {
+fn expect_magic(structure: &'static str, expected: [u8; 4], actual: [u8; 4]) -> Result<(), FormatError> {
     if actual != expected {
         return Err(FormatError::BadMagic { structure });
     }
@@ -2127,27 +1772,14 @@ fn expect_zero(structure: &'static str, bytes: &[u8]) -> Result<(), FormatError>
     Ok(())
 }
 
-fn expect_offset(
-    structure: &'static str,
-    name: &'static str,
-    actual: u64,
-    expected: usize,
-) -> Result<(), FormatError> {
+fn expect_offset(structure: &'static str, name: &'static str, actual: u64, expected: usize) -> Result<(), FormatError> {
     if actual != expected as u64 {
-        return Err(FormatError::InvalidMetadata {
-            structure,
-            reason: name,
-        });
+        return Err(FormatError::InvalidMetadata { structure, reason: name });
     }
     Ok(())
 }
 
-fn slice<'a>(
-    bytes: &'a [u8],
-    offset: usize,
-    len: usize,
-    structure: &'static str,
-) -> Result<&'a [u8], FormatError> {
+fn slice<'a>(bytes: &'a [u8], offset: usize, len: usize, structure: &'static str) -> Result<&'a [u8], FormatError> {
     let end = checked_add(offset, len, structure)?;
     bytes.get(offset..end).ok_or(FormatError::InvalidMetadata {
         structure,
@@ -2155,11 +1787,7 @@ fn slice<'a>(
     })
 }
 
-fn read_array<const N: usize>(
-    bytes: &[u8],
-    offset: usize,
-    structure: &'static str,
-) -> Result<[u8; N], FormatError> {
+fn read_array<const N: usize>(bytes: &[u8], offset: usize, structure: &'static str) -> Result<[u8; N], FormatError> {
     let mut out = [0u8; N];
     out.copy_from_slice(slice(bytes, offset, N, structure)?);
     Ok(out)
@@ -2211,13 +1839,11 @@ fn write_u8(bytes: &mut [u8], offset: usize, value: u8) {
 }
 
 fn checked_add(lhs: usize, rhs: usize, structure: &'static str) -> Result<usize, FormatError> {
-    lhs.checked_add(rhs)
-        .ok_or(FormatError::MetadataArithmeticOverflow { structure })
+    lhs.checked_add(rhs).ok_or(FormatError::MetadataArithmeticOverflow { structure })
 }
 
 fn checked_mul(lhs: usize, rhs: usize, structure: &'static str) -> Result<usize, FormatError> {
-    lhs.checked_mul(rhs)
-        .ok_or(FormatError::MetadataArithmeticOverflow { structure })
+    lhs.checked_mul(rhs).ok_or(FormatError::MetadataArithmeticOverflow { structure })
 }
 
 fn to_usize(value: u64, structure: &'static str) -> Result<usize, FormatError> {
@@ -2847,8 +2473,7 @@ mod tests {
         let mut unsupported_version = shard.to_bytes();
         write_u32(&mut unsupported_version, 4, 3);
         assert_eq!(
-            IndexShard::parse(&unsupported_version, &locating, MetadataLimits::default())
-                .unwrap_err(),
+            IndexShard::parse(&unsupported_version, &locating, MetadataLimits::default()).unwrap_err(),
             FormatError::InvalidMetadata {
                 structure: "IndexShard",
                 reason: "unsupported version",
@@ -2857,18 +2482,9 @@ mod tests {
 
         let mut nonzero_zero_frame_table = shard.to_bytes();
         write_u32(&mut nonzero_zero_frame_table, 20, 0);
-        write_u32(
-            &mut nonzero_zero_frame_table,
-            32,
-            INDEX_SHARD_HEADER_LEN as u32,
-        );
+        write_u32(&mut nonzero_zero_frame_table, 32, INDEX_SHARD_HEADER_LEN as u32);
         assert_eq!(
-            IndexShard::parse(
-                &nonzero_zero_frame_table,
-                &locating,
-                MetadataLimits::default()
-            )
-            .unwrap_err(),
+            IndexShard::parse(&nonzero_zero_frame_table, &locating, MetadataLimits::default()).unwrap_err(),
             FormatError::InvalidMetadata {
                 structure: "IndexShard",
                 reason: "absent counted table has non-zero offset",
@@ -2883,12 +2499,7 @@ mod tests {
             (INDEX_SHARD_HEADER_LEN + FILE_ENTRY_LEN + FRAME_ENTRY_LEN) as u32,
         );
         assert_eq!(
-            IndexShard::parse(
-                &nonzero_zero_envelope_table,
-                &locating,
-                MetadataLimits::default()
-            )
-            .unwrap_err(),
+            IndexShard::parse(&nonzero_zero_envelope_table, &locating, MetadataLimits::default()).unwrap_err(),
             FormatError::InvalidMetadata {
                 structure: "IndexShard",
                 reason: "absent counted table has non-zero offset",
@@ -3058,10 +2669,7 @@ mod tests {
         unreferenced_frame.frame_index = 9;
         unreferenced_frame.tar_stream_offset = 3072;
         assert_eq!(
-            parse_with(
-                vec![frame.clone(), unreferenced_frame],
-                vec![envelope.clone()]
-            ),
+            parse_with(vec![frame.clone(), unreferenced_frame], vec![envelope.clone()]),
             FormatError::InvalidMetadata {
                 structure: "IndexShard",
                 reason: "FrameEntry table is not the exact set referenced by FileEntry rows",
@@ -3091,10 +2699,7 @@ mod tests {
         unreferenced_envelope.first_block_index = 11;
         unreferenced_envelope.first_frame_index = 9;
         assert_eq!(
-            parse_with(
-                vec![frame.clone()],
-                vec![envelope.clone(), unreferenced_envelope]
-            ),
+            parse_with(vec![frame.clone()], vec![envelope.clone(), unreferenced_envelope]),
             FormatError::InvalidMetadata {
                 structure: "IndexShard",
                 reason: "EnvelopeEntry table is not the exact set referenced by FrameEntry rows",
@@ -3156,9 +2761,7 @@ mod tests {
         bad_root[0] ^= 1;
         assert_eq!(
             IndexRoot::parse(&bad_root, false, limits).unwrap_err(),
-            FormatError::BadMagic {
-                structure: "IndexRoot"
-            }
+            FormatError::BadMagic { structure: "IndexRoot" }
         );
         let mut bad_root = root_bytes.clone();
         write_u32(&mut bad_root, 4, 2);
@@ -3173,9 +2776,7 @@ mod tests {
         bad_root[128] = 1;
         assert_eq!(
             IndexRoot::parse(&bad_root, false, limits).unwrap_err(),
-            FormatError::NonZeroReserved {
-                structure: "IndexRoot"
-            }
+            FormatError::NonZeroReserved { structure: "IndexRoot" }
         );
         let mut bad_root = root_bytes.clone();
         write_u64(&mut bad_root, 88, (INDEX_ROOT_LEN + 1) as u64);
@@ -3281,12 +2882,7 @@ mod tests {
         IndexShard::parse(&shard_bytes, &locating, limits).unwrap();
 
         assert_eq!(
-            IndexShard::parse(
-                &shard_bytes[..INDEX_SHARD_HEADER_LEN - 1],
-                &locating,
-                limits
-            )
-            .unwrap_err(),
+            IndexShard::parse(&shard_bytes[..INDEX_SHARD_HEADER_LEN - 1], &locating, limits).unwrap_err(),
             FormatError::InvalidMetadata {
                 structure: "IndexShard",
                 reason: "plaintext is shorter than fixed header",
@@ -3296,17 +2892,13 @@ mod tests {
         bad_shard[0] ^= 1;
         assert_eq!(
             IndexShard::parse(&bad_shard, &locating, limits).unwrap_err(),
-            FormatError::BadMagic {
-                structure: "IndexShard"
-            }
+            FormatError::BadMagic { structure: "IndexShard" }
         );
         let mut bad_shard = shard_bytes.clone();
         bad_shard[48] = 1;
         assert_eq!(
             IndexShard::parse(&bad_shard, &locating, limits).unwrap_err(),
-            FormatError::NonZeroReserved {
-                structure: "IndexShard"
-            }
+            FormatError::NonZeroReserved { structure: "IndexShard" }
         );
         let mut bad_shard = shard_bytes.clone();
         write_u32(&mut bad_shard, 28, INDEX_SHARD_HEADER_LEN as u32 + 1);
@@ -3318,8 +2910,7 @@ mod tests {
             }
         );
         assert_eq!(
-            IndexShard::parse(&shard_bytes[..shard_bytes.len() - 1], &locating, limits)
-                .unwrap_err(),
+            IndexShard::parse(&shard_bytes[..shard_bytes.len() - 1], &locating, limits).unwrap_err(),
             FormatError::InvalidMetadata {
                 structure: "IndexShard",
                 reason: "range is out of bounds",
@@ -3373,13 +2964,7 @@ mod tests {
         DirectoryHintTable::parse(&table_bytes, &locating_hint, 1, limits).unwrap();
 
         assert_eq!(
-            DirectoryHintTable::parse(
-                &table_bytes[..DIRECTORY_HINT_TABLE_LEN - 1],
-                &locating_hint,
-                1,
-                limits,
-            )
-            .unwrap_err(),
+            DirectoryHintTable::parse(&table_bytes[..DIRECTORY_HINT_TABLE_LEN - 1], &locating_hint, 1, limits,).unwrap_err(),
             FormatError::InvalidMetadata {
                 structure: "DirectoryHintTable",
                 reason: "plaintext is shorter than fixed header",
@@ -3411,13 +2996,7 @@ mod tests {
             }
         );
         assert_eq!(
-            DirectoryHintTable::parse(
-                &table_bytes[..table_bytes.len() - 1],
-                &locating_hint,
-                1,
-                limits
-            )
-            .unwrap_err(),
+            DirectoryHintTable::parse(&table_bytes[..table_bytes.len() - 1], &locating_hint, 1, limits).unwrap_err(),
             FormatError::InvalidMetadata {
                 structure: "DirectoryHintTable",
                 reason: "range is out of bounds",
@@ -3466,10 +3045,7 @@ mod tests {
         );
 
         limits.max_hash_collision_shard_scan = 2;
-        assert_eq!(
-            root.candidate_shards_for_path(path, limits).unwrap(),
-            vec![0, 1, 2]
-        );
+        assert_eq!(root.candidate_shards_for_path(path, limits).unwrap(), vec![0, 1, 2]);
     }
 
     #[test]
@@ -3558,8 +3134,7 @@ mod tests {
             last_path_hash: path_hash,
         };
 
-        let parsed =
-            IndexShard::parse(&shard.to_bytes(), &locating, MetadataLimits::default()).unwrap();
+        let parsed = IndexShard::parse(&shard.to_bytes(), &locating, MetadataLimits::default()).unwrap();
 
         assert_eq!(parsed.lookup_file_index(path), Some(0));
         assert_eq!(parsed.file_path(0), Some(path.as_slice()));

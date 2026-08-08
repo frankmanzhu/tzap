@@ -7,18 +7,12 @@ use serde_json::json;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use tzap_core::format::{FormatError, FORMAT_VERSION, VOLUME_FORMAT_REV_45};
 use tzap_core::{
-    public_no_key_verify_volumes_with_options, verify_non_seekable_stream_with_bootstrap_sidecar,
-    verify_non_seekable_stream_with_options,
-    verify_non_seekable_stream_with_recipient_wrap_resolver_and_bootstrap_sidecar,
-    verify_non_seekable_stream_with_recipient_wrap_resolver_options,
-    verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar,
-    verify_unencrypted_non_seekable_stream_with_options, AeadAlgo, ArchiveContentVerification,
-    KdfAlgo, OpenedArchive, PublicNoKeyVerification, ReaderOptions, RootAuthVerification,
-    SequentialRootAuthStatus,
+    public_no_key_verify_volumes_with_options, verify_non_seekable_stream_with_bootstrap_sidecar, verify_non_seekable_stream_with_options,
+    verify_non_seekable_stream_with_recipient_wrap_resolver_and_bootstrap_sidecar, verify_non_seekable_stream_with_recipient_wrap_resolver_options,
+    verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar, verify_unencrypted_non_seekable_stream_with_options, AeadAlgo, ArchiveContentVerification,
+    KdfAlgo, OpenedArchive, PublicNoKeyVerification, ReaderOptions, RootAuthVerification, SequentialRootAuthStatus,
 };
-use tzap_plugin_signing::ed25519_raw::{
-    self, Ed25519RootAuthOutcome, Ed25519VerificationMode, ED25519_AUTHENTICATOR_ID,
-};
+use tzap_plugin_signing::ed25519_raw::{self, Ed25519RootAuthOutcome, Ed25519VerificationMode, ED25519_AUTHENTICATOR_ID};
 use tzap_plugin_signing::x509_chain::{self, X509RootAuthReport, X509_AUTHENTICATOR_ID};
 
 pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
@@ -40,9 +34,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
         jobs,
     } = args;
 
-    let first = archives
-        .first()
-        .ok_or_else(|| anyhow!("at least one archive volume is required"))?;
+    let first = archives.first().ok_or_else(|| anyhow!("at least one archive volume is required"))?;
     let archive_paths = archives.to_vec();
     let reader_options = reader_options(match resolve_jobs(jobs) {
         Ok(jobs) => jobs,
@@ -68,9 +60,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
     }
     if archives.iter().any(|path| path == "-") {
         if write_repaired {
-            let err = anyhow!(FormatError::ReaderUnsupported(
-                "--write-repaired is not supported for archive stdin",
-            ));
+            let err = anyhow!(FormatError::ReaderUnsupported("--write-repaired is not supported for archive stdin",));
             if json {
                 emit_verify_json_error(&archive_paths, None, None, &err)?;
             }
@@ -78,29 +68,23 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
         }
         if fast {
             let err = anyhow!(UsageError(
-                        "--fast requires seekable archive paths; archive stdin uses full non-seekable verification",
-                    ));
+                "--fast requires seekable archive paths; archive stdin uses full non-seekable verification",
+            ));
             if json {
                 emit_verify_json_error(&archive_paths, None, None, &err)?;
             }
             return Err(err);
         }
         if json && archives.len() != 1 {
-            let err = anyhow!(FormatError::ReaderUnsupported(
-                "archive stdin must be the only archive input",
-            ));
+            let err = anyhow!(FormatError::ReaderUnsupported("archive stdin must be the only archive input",));
             emit_verify_json_error(&archive_paths, None, None, &err)?;
             return Err(err);
         }
         if first != "-" || archives.len() != 1 {
-            return Err(anyhow!(FormatError::ReaderUnsupported(
-                "archive stdin must be the only archive input",
-            )));
+            return Err(anyhow!(FormatError::ReaderUnsupported("archive stdin must be the only archive input",)));
         }
         if public_no_key {
-            let err = anyhow!(FormatError::ReaderUnsupported(
-                "public no-key verification is not supported for archive stdin",
-            ));
+            let err = anyhow!(FormatError::ReaderUnsupported("public no-key verification is not supported for archive stdin",));
             if json {
                 emit_verify_json_error(&archive_paths, None, None, &err)?;
             }
@@ -126,12 +110,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
         };
         let stdin = io::stdin();
         let result = if let Some(keyfile) = keyfile.as_deref() {
-            let master_key = match load_archive_stdin_key(
-                Some(keyfile),
-                password_stdin,
-                password,
-                insecure_zero_key,
-            ) {
+            let master_key = match load_archive_stdin_key(Some(keyfile), password_stdin, password, insecure_zero_key) {
                 Ok(master_key) => master_key,
                 Err(err) => {
                     if json {
@@ -141,18 +120,9 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                 }
             };
             if let Some(bootstrap_bytes) = bootstrap_bytes.as_deref() {
-                verify_non_seekable_stream_with_bootstrap_sidecar(
-                    stdin.lock(),
-                    bootstrap_bytes,
-                    &master_key,
-                    non_seekable_reader_options(reader_options),
-                )
+                verify_non_seekable_stream_with_bootstrap_sidecar(stdin.lock(), bootstrap_bytes, &master_key, non_seekable_reader_options(reader_options))
             } else {
-                verify_non_seekable_stream_with_options(
-                    stdin.lock(),
-                    &master_key,
-                    non_seekable_reader_options(reader_options),
-                )
+                verify_non_seekable_stream_with_options(stdin.lock(), &master_key, non_seekable_reader_options(reader_options))
             }
         } else if let Some(recipient_key) = recipient_key.as_deref() {
             let lookup = match load_recipient_private_key_lookup(recipient_key) {
@@ -181,16 +151,9 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
             }
         } else {
             if let Some(bootstrap_bytes) = bootstrap_bytes.as_deref() {
-                verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar(
-                    stdin.lock(),
-                    bootstrap_bytes,
-                    non_seekable_reader_options(reader_options),
-                )
+                verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar(stdin.lock(), bootstrap_bytes, non_seekable_reader_options(reader_options))
             } else {
-                verify_unencrypted_non_seekable_stream_with_options(
-                    stdin.lock(),
-                    non_seekable_reader_options(reader_options),
-                )
+                verify_unencrypted_non_seekable_stream_with_options(stdin.lock(), non_seekable_reader_options(reader_options))
             }
         }
         .context("failed to verify non-seekable archive stream");
@@ -249,19 +212,14 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
             ),
         )?;
         if report.root_auth == SequentialRootAuthStatus::WireValidOnly {
-            emit_success_stdout(
-                quiet,
-                "root-auth: wire-valid-only (signer trust not checked)",
-            )?;
+            emit_success_stdout(quiet, "root-auth: wire-valid-only (signer trust not checked)")?;
         }
         emit_metadata_verification_stdout(quiet, &report.metadata)?;
         return Ok(());
     }
     if public_no_key {
         if write_repaired {
-            let err = anyhow!(FormatError::ReaderUnsupported(
-                "--write-repaired requires key-holding verification",
-            ));
+            let err = anyhow!(FormatError::ReaderUnsupported("--write-repaired requires key-holding verification",));
             if json {
                 emit_verify_json_error(&archive_paths, None, None, &err)?;
             }
@@ -283,13 +241,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
             json,
         });
     }
-    if let Err(err) = validate_verify_key_holding_key_source(
-        keyfile.as_deref(),
-        recipient_key.as_deref(),
-        password_stdin,
-        password,
-        insecure_zero_key,
-    ) {
+    if let Err(err) = validate_verify_key_holding_key_source(keyfile.as_deref(), recipient_key.as_deref(), password_stdin, password, insecure_zero_key) {
         if json {
             emit_verify_json_error(&archive_paths, None, None, &err)?;
         }
@@ -302,9 +254,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
         return Err(err);
     }
     if write_repaired && bootstrap.is_some() {
-        let err = anyhow!(FormatError::ReaderUnsupported(
-            "--write-repaired is not supported with --bootstrap",
-        ));
+        let err = anyhow!(FormatError::ReaderUnsupported("--write-repaired is not supported with --bootstrap",));
         if json {
             emit_verify_json_error(&archive_paths, None, None, &err)?;
         }
@@ -321,20 +271,9 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
     };
     let archive_paths = selection.paths.clone();
     let opened_selection_result = if let Some(recipient_key) = recipient_key.as_deref() {
-        open_selection_with_recipient_key(
-            &selection,
-            recipient_key,
-            bootstrap.as_deref(),
-            reader_options,
-        )
+        open_selection_with_recipient_key(&selection, recipient_key, bootstrap.as_deref(), reader_options)
     } else {
-        let master_key = match load_open_key_from_paths(
-            keyfile.as_deref(),
-            password_stdin,
-            password,
-            insecure_zero_key,
-            &selection.paths,
-        ) {
+        let master_key = match load_open_key_from_paths(keyfile.as_deref(), password_stdin, password, insecure_zero_key, &selection.paths) {
             Ok(master_key) => master_key,
             Err(err) => {
                 if json {
@@ -343,33 +282,23 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                 return Err(err);
             }
         };
-        open_selection_maybe_bootstrap_resolved(
-            &selection,
-            &master_key,
-            bootstrap.as_deref(),
-            reader_options,
-        )
+        open_selection_maybe_bootstrap_resolved(&selection, &master_key, bootstrap.as_deref(), reader_options)
     };
-    let opened_selection =
-        match opened_selection_result.with_context(|| format!("failed to open archive {first}")) {
-            Ok(opened) => opened,
-            Err(err) => {
-                if json {
-                    emit_verify_json_error(&archive_paths, None, None, &err)?;
-                }
-                return Err(err);
+    let opened_selection = match opened_selection_result.with_context(|| format!("failed to open archive {first}")) {
+        Ok(opened) => opened,
+        Err(err) => {
+            if json {
+                emit_verify_json_error(&archive_paths, None, None, &err)?;
             }
-        };
+            return Err(err);
+        }
+    };
     let archive_paths = opened_selection.paths;
     let opened = opened_selection.opened;
     let result = if fast {
-        opened
-            .verify_content_fast()
-            .with_context(|| format!("failed to fast-verify archive {first}"))
+        opened.verify_content_fast().with_context(|| format!("failed to fast-verify archive {first}"))
     } else {
-        opened
-            .verify_content()
-            .with_context(|| format!("failed to verify archive {first}"))
+        opened.verify_content().with_context(|| format!("failed to verify archive {first}"))
     };
     let volume_count = opened.manifest_footer.total_volumes;
     let file_count = opened.index_root.header.file_count;
@@ -391,12 +320,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                     Ok(root_auth) => root_auth,
                     Err(err) => {
                         if json {
-                            emit_verify_json_error(
-                                &archive_paths,
-                                Some(volume_count as u64),
-                                Some(file_count),
-                                &err,
-                            )?;
+                            emit_verify_json_error(&archive_paths, Some(volume_count as u64), Some(file_count), &err)?;
                         }
                         return Err(err);
                     }
@@ -404,11 +328,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
             };
             if let Some(report) = &metadata_report {
                 for entry in &report.entries {
-                    emit_member_metadata_diagnostics(
-                        quiet,
-                        &String::from_utf8_lossy(&entry.path),
-                        &entry.diagnostics,
-                    )?;
+                    emit_member_metadata_diagnostics(quiet, &String::from_utf8_lossy(&entry.path), &entry.diagnostics)?;
                 }
             } else {
                 let entries = match opened.list_files() {
@@ -416,12 +336,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                     Err(err) => {
                         if json {
                             let err = anyhow::Error::from(err);
-                            emit_verify_json_error(
-                                &archive_paths,
-                                Some(volume_count as u64),
-                                Some(file_count),
-                                &err,
-                            )?;
+                            emit_verify_json_error(&archive_paths, Some(volume_count as u64), Some(file_count), &err)?;
                             return Err(err);
                         }
                         return Err(err.into());
@@ -434,12 +349,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                     Ok(outputs) => outputs,
                     Err(err) => {
                         if json {
-                            emit_verify_json_error(
-                                &archive_paths,
-                                Some(volume_count as u64),
-                                Some(file_count),
-                                &err,
-                            )?;
+                            emit_verify_json_error(&archive_paths, Some(volume_count as u64), Some(file_count), &err)?;
                         }
                         return Err(err);
                     }
@@ -489,11 +399,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
                         }))
                         .collect::<Vec<_>>());
                 }
-                println!(
-                    "{}",
-                    serde_json::to_string(&payload)
-                        .context("failed to encode verify output as JSON")?
-                );
+                println!("{}", serde_json::to_string(&payload).context("failed to encode verify output as JSON")?);
                 return Ok(());
             }
             emit_success_stdout(
@@ -520,18 +426,12 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
             }
             if write_repaired {
                 if repaired_outputs.is_empty() {
-                    emit_success_stdout(
-                        quiet,
-                        "no repaired output written; no recoverable block damage found",
-                    )?;
+                    emit_success_stdout(quiet, "no repaired output written; no recoverable block damage found")?;
                 } else {
                     for output in repaired_outputs {
                         emit_success_stdout(
                             quiet,
-                            &format!(
-                                "wrote repaired volume copy {} ({} block(s))",
-                                output.path, output.repaired_block_count
-                            ),
+                            &format!("wrote repaired volume copy {} ({} block(s))", output.path, output.repaired_block_count),
                         )?;
                     }
                 }
@@ -540,12 +440,7 @@ pub(crate) fn run_verify(quiet: bool, args: VerifyArgs) -> Result<()> {
         }
         Err(err) => {
             if json {
-                emit_verify_json_error(
-                    &archive_paths,
-                    Some(volume_count as u64),
-                    Some(file_count),
-                    &err,
-                )?;
+                emit_verify_json_error(&archive_paths, Some(volume_count as u64), Some(file_count), &err)?;
             }
             Err(err)
         }
@@ -585,10 +480,7 @@ pub(crate) fn validate_fast_verify_options(
         return Err(UsageError("--fast cannot be combined with --public-no-key").into());
     }
     if has_trusted_public_key || has_trusted_ca_cert || trusted_system_roots {
-        return Err(UsageError(
-            "--fast cannot be combined with RootAuth trust options; omit --fast for full RootAuth verification",
-        )
-        .into());
+        return Err(UsageError("--fast cannot be combined with RootAuth trust options; omit --fast for full RootAuth verification").into());
     }
     if write_repaired {
         return Err(UsageError("--fast cannot be combined with --write-repaired").into());
@@ -654,10 +546,7 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
             return Err(err);
         }
     };
-    let first = request
-        .archive_paths
-        .first()
-        .ok_or(UsageError("at least one archive volume is required"))?;
+    let first = request.archive_paths.first().ok_or(UsageError("at least one archive volume is required"))?;
     let selection = match resolve_archive_input_paths(first, &request.archive_paths[1..], true) {
         Ok(selection) => selection,
         Err(err) => {
@@ -677,10 +566,7 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
             return Err(err);
         }
     };
-    let borrowed = volume_inputs
-        .iter()
-        .map(MappedVolumeInput::as_slice)
-        .collect::<Vec<_>>();
+    let borrowed = volume_inputs.iter().map(MappedVolumeInput::as_slice).collect::<Vec<_>>();
     let mut x509_report = None;
     let mut x509_error = None;
     let verification = match public_no_key_verify_volumes_with_options(
@@ -688,17 +574,10 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
         |footer, archive_root| match &trust {
             PublicNoKeyTrust::Ed25519 { public_key } => {
                 if footer.authenticator_id != ED25519_AUTHENTICATOR_ID {
-                    return Err(FormatError::ReaderUnsupported(
-                        "trusted public key can only verify Ed25519 RootAuth",
-                    ));
+                    return Err(FormatError::ReaderUnsupported("trusted public key can only verify Ed25519 RootAuth"));
                 }
                 Ok(matches!(
-                    ed25519_raw::verify_root_auth_footer(
-                        footer,
-                        archive_root,
-                        Some(*public_key),
-                        Ed25519VerificationMode::PublicNoKey,
-                    ),
+                    ed25519_raw::verify_root_auth_footer(footer, archive_root, Some(*public_key), Ed25519VerificationMode::PublicNoKey,),
                     Ed25519RootAuthOutcome::PublicDataBlockCommitmentVerified { .. }
                 ))
             }
@@ -708,17 +587,9 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
                 include_official_tzap_root,
             } => {
                 if footer.authenticator_id != X509_AUTHENTICATOR_ID {
-                    return Err(FormatError::ReaderUnsupported(
-                        "X.509 trust can only verify X.509 RootAuth",
-                    ));
+                    return Err(FormatError::ReaderUnsupported("X.509 trust can only verify X.509 RootAuth"));
                 }
-                match x509_chain::verify_root_auth_footer(
-                    footer,
-                    archive_root,
-                    trusted_roots_der,
-                    *trusted_system_roots,
-                    *include_official_tzap_root,
-                ) {
+                match x509_chain::verify_root_auth_footer(footer, archive_root, trusted_roots_der, *trusted_system_roots, *include_official_tzap_root) {
                     Ok(report) => {
                         x509_report = Some(report);
                         Ok(true)
@@ -752,9 +623,7 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
     let root_auth = match trust {
         PublicNoKeyTrust::Ed25519 { .. } => VerifiedPublicNoKeyRootAuth::Ed25519(verification),
         PublicNoKeyTrust::X509 { .. } => {
-            let report = x509_report.ok_or(FormatError::InvalidArchive(
-                "missing X.509 public no-key verification report",
-            ))?;
+            let report = x509_report.ok_or(FormatError::InvalidArchive("missing X.509 public no-key verification report"))?;
             VerifiedPublicNoKeyRootAuth::X509 {
                 verification,
                 report: Box::new(report),
@@ -791,36 +660,21 @@ pub(crate) fn run_public_no_key_verify(request: PublicNoKeyVerifyRequest<'_>) ->
     for diagnostic in public_no_key_diagnostic_labels_for_root_auth(&root_auth) {
         emit_success_stdout(request.quiet, &format!("public-no-key: {diagnostic}"))?;
     }
-    emit_success_stdout(
-        request.quiet,
-        &format!("public-no-key outcome: {PUBLIC_NO_KEY_OUTCOME_NOTE}"),
-    )?;
+    emit_success_stdout(request.quiet, &format!("public-no-key outcome: {PUBLIC_NO_KEY_OUTCOME_NOTE}"))?;
     Ok(())
 }
 
-pub(crate) fn load_public_no_key_trust(
-    request: &PublicNoKeyVerifyRequest<'_>,
-) -> Result<PublicNoKeyTrust> {
+pub(crate) fn load_public_no_key_trust(request: &PublicNoKeyVerifyRequest<'_>) -> Result<PublicNoKeyTrust> {
     let wants_ed25519 = request.trusted_public_key.is_some();
     let wants_x509 = !request.trusted_ca_cert.is_empty() || request.trusted_system_roots;
     if wants_ed25519 && wants_x509 {
-        return Err(UsageError(
-            "use either --trusted-public-key or X.509 trust options with --public-no-key, not both",
-        )
-        .into());
+        return Err(UsageError("use either --trusted-public-key or X.509 trust options with --public-no-key, not both").into());
     }
     if request.insecure_zero_key {
         return Err(removed_insecure_zero_key_error().into());
     }
-    if request.password_stdin
-        || request.password
-        || request.keyfile.is_some()
-        || request.recipient_key.is_some()
-    {
-        return Err(UsageError(
-            "--public-no-key cannot be combined with --keyfile, --recipient-key, --password, or --password-stdin",
-        )
-        .into());
+    if request.password_stdin || request.password || request.keyfile.is_some() || request.recipient_key.is_some() {
+        return Err(UsageError("--public-no-key cannot be combined with --keyfile, --recipient-key, --password, or --password-stdin").into());
     }
     if request.bootstrap.is_some() {
         return Err(UsageError("--public-no-key does not use --bootstrap sidecars").into());
@@ -846,12 +700,7 @@ pub(crate) fn verify_opened_root_auth_ed25519(
     opened
         .verify_root_auth_with_verified_content(content_verification, |footer, archive_root| {
             Ok(matches!(
-                ed25519_raw::verify_root_auth_footer(
-                    footer,
-                    archive_root,
-                    Some(public_key),
-                    Ed25519VerificationMode::KeyHoldingRootAuth,
-                ),
+                ed25519_raw::verify_root_auth_footer(footer, archive_root, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
                 Ed25519RootAuthOutcome::RootAuthContentVerified { .. }
             ))
         })
@@ -868,9 +717,7 @@ pub(crate) fn verify_opened_root_auth(
     let wants_ed25519 = trusted_public_key.is_some();
     let wants_explicit_x509 = !trusted_ca_cert.is_empty() || trusted_system_roots;
     if wants_ed25519 && wants_explicit_x509 {
-        return Err(
-            UsageError("use either --trusted-public-key or X.509 trust options, not both").into(),
-        );
+        return Err(UsageError("use either --trusted-public-key or X.509 trust options, not both").into());
     }
     let Some(footer) = opened.root_auth_footer.as_ref() else {
         if wants_ed25519 || wants_explicit_x509 {
@@ -878,17 +725,18 @@ pub(crate) fn verify_opened_root_auth(
         }
         return Ok(None);
     };
-    let wants_official_x509 =
-        !wants_ed25519 && !wants_explicit_x509 && footer.authenticator_id == X509_AUTHENTICATOR_ID;
+    let wants_official_x509 = !wants_ed25519 && !wants_explicit_x509 && footer.authenticator_id == X509_AUTHENTICATOR_ID;
     if !wants_ed25519 && !wants_explicit_x509 && !wants_official_x509 {
         return Ok(None);
     }
     match footer.authenticator_id {
         ED25519_AUTHENTICATOR_ID if wants_ed25519 => {
             let public_key = trusted_public_key.expect("checked Ed25519 trust request");
-            Ok(Some(VerifiedRootAuth::Ed25519(
-                verify_opened_root_auth_ed25519(opened, content_verification, public_key)?,
-            )))
+            Ok(Some(VerifiedRootAuth::Ed25519(verify_opened_root_auth_ed25519(
+                opened,
+                content_verification,
+                public_key,
+            )?)))
         }
         X509_AUTHENTICATOR_ID if wants_explicit_x509 || wants_official_x509 => {
             let trusted_roots_der = load_x509_trusted_roots(trusted_ca_cert, wants_official_x509)?;
@@ -900,13 +748,8 @@ pub(crate) fn verify_opened_root_auth(
                 wants_official_x509,
             )?))
         }
-        ED25519_AUTHENTICATOR_ID => {
-            Err(UsageError("Ed25519 RootAuth requires --trusted-public-key FILE").into())
-        }
-        X509_AUTHENTICATOR_ID => Err(UsageError(
-            "X.509 RootAuth requires --trusted-ca-cert FILE or --trusted-system-roots",
-        )
-        .into()),
+        ED25519_AUTHENTICATOR_ID => Err(UsageError("Ed25519 RootAuth requires --trusted-public-key FILE").into()),
+        X509_AUTHENTICATOR_ID => Err(UsageError("X.509 RootAuth requires --trusted-ca-cert FILE or --trusted-system-roots").into()),
         _ => Err(FormatError::ReaderUnsupported("unsupported RootAuth authenticator id").into()),
     }
 }
@@ -922,13 +765,7 @@ pub(crate) fn verify_opened_root_auth_x509(
     let mut x509_error = None;
     let verification = opened
         .verify_root_auth_with_verified_content(content_verification, |footer, archive_root| {
-            match x509_chain::verify_root_auth_footer(
-                footer,
-                archive_root,
-                trusted_roots_der,
-                trusted_system_roots,
-                include_official_tzap_root,
-            ) {
+            match x509_chain::verify_root_auth_footer(footer, archive_root, trusted_roots_der, trusted_system_roots, include_official_tzap_root) {
                 Ok(value) => {
                     report = Some(value);
                     Ok(true)
@@ -946,9 +783,7 @@ pub(crate) fn verify_opened_root_auth_x509(
                 anyhow!(err)
             }
         })?;
-    let report = report.ok_or(FormatError::InvalidArchive(
-        "missing X.509 RootAuth verification report",
-    ))?;
+    let report = report.ok_or(FormatError::InvalidArchive("missing X.509 RootAuth verification report"))?;
     Ok(VerifiedRootAuth::X509 {
         verification,
         report: Box::new(report),
@@ -991,11 +826,7 @@ pub(crate) fn key_holding_status_json(
     })
 }
 
-pub(crate) fn key_holding_root_auth_status(
-    opened: &OpenedArchive,
-    root_auth: Option<&VerifiedRootAuth>,
-    fast: bool,
-) -> &'static str {
+pub(crate) fn key_holding_root_auth_status(opened: &OpenedArchive, root_auth: Option<&VerifiedRootAuth>, fast: bool) -> &'static str {
     if let Some(root_auth) = root_auth {
         return verified_root_auth_status(root_auth);
     }
@@ -1008,10 +839,7 @@ pub(crate) fn key_holding_root_auth_status(
     }
 }
 
-pub(crate) fn key_holding_trust_policy_status(
-    root_auth: Option<&VerifiedRootAuth>,
-    trust_requested: bool,
-) -> &'static str {
+pub(crate) fn key_holding_trust_policy_status(root_auth: Option<&VerifiedRootAuth>, trust_requested: bool) -> &'static str {
     if root_auth.is_some() {
         "trusted"
     } else if trust_requested {
@@ -1032,9 +860,7 @@ pub(crate) fn verified_root_auth_status(root_auth: &VerifiedRootAuth) -> &'stati
 /// public no-key result.
 const PUBLIC_NO_KEY_OUTCOME_NOTE: &str = "Trusted key signed a commitment to this observed CRC-valid public data-block set (ciphertext in an encryption mode, plaintext in unencrypted mode) and to opaque component digests. Plaintext recovery for encrypted archives, decoded file/content authenticity, IndexRoot, mode-specifically authenticated metadata, physical completeness, and recovery margin were not inspected.";
 
-pub(crate) fn public_no_key_status_json(
-    root_auth: &VerifiedPublicNoKeyRootAuth,
-) -> serde_json::Value {
+pub(crate) fn public_no_key_status_json(root_auth: &VerifiedPublicNoKeyRootAuth) -> serde_json::Value {
     let verification = public_no_key_verification(root_auth);
     json!({
         "revision_mode": revision_mode_label(verification.volume_format_rev),
@@ -1048,9 +874,7 @@ pub(crate) fn public_no_key_status_json(
     })
 }
 
-pub(crate) fn public_no_key_verification(
-    root_auth: &VerifiedPublicNoKeyRootAuth,
-) -> &PublicNoKeyVerification {
+pub(crate) fn public_no_key_verification(root_auth: &VerifiedPublicNoKeyRootAuth) -> &PublicNoKeyVerification {
     match root_auth {
         VerifiedPublicNoKeyRootAuth::Ed25519(verification) => verification,
         VerifiedPublicNoKeyRootAuth::X509 { verification, .. } => verification,
@@ -1078,10 +902,7 @@ pub(crate) fn root_auth_json(root_auth: &VerifiedRootAuth) -> serde_json::Value 
             }
             payload
         }
-        VerifiedRootAuth::X509 {
-            verification,
-            report,
-        } => json!({
+        VerifiedRootAuth::X509 { verification, report } => json!({
             "status": root_auth_status(verification),
             "diagnostics": root_auth_diagnostic_labels(verification),
             "revision_mode": revision_mode_label(verification.volume_format_rev),
@@ -1125,11 +946,7 @@ pub(crate) fn root_auth_status(root_auth: &RootAuthVerification) -> &'static str
 }
 
 pub(crate) fn root_auth_diagnostic_labels(root_auth: &RootAuthVerification) -> Vec<&'static str> {
-    root_auth
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.label())
-        .collect()
+    root_auth.diagnostics.iter().map(|diagnostic| diagnostic.label()).collect()
 }
 
 pub(crate) fn emit_root_auth_skipped_warning(quiet: bool) -> io::Result<()> {
@@ -1146,26 +963,11 @@ pub(crate) fn emit_root_auth_skipped_warning(quiet: bool) -> io::Result<()> {
 pub(crate) fn emit_root_auth_stdout(quiet: bool, root_auth: &VerifiedRootAuth) -> io::Result<()> {
     match root_auth {
         VerifiedRootAuth::Ed25519(verification) => {
-            emit_success_stdout(
-                quiet,
-                &format!(
-                    "root-auth: OK ed25519 {}",
-                    encode_hex(&verification.archive_root)
-                ),
-            )?;
+            emit_success_stdout(quiet, &format!("root-auth: OK ed25519 {}", encode_hex(&verification.archive_root)))?;
             emit_root_auth_diagnostics_stdout(quiet, verification)
         }
-        VerifiedRootAuth::X509 {
-            verification,
-            report,
-        } => {
-            emit_success_stdout(
-                quiet,
-                &format!(
-                    "root-auth: OK x509 {}",
-                    encode_hex(&verification.archive_root)
-                ),
-            )?;
+        VerifiedRootAuth::X509 { verification, report } => {
+            emit_success_stdout(quiet, &format!("root-auth: OK x509 {}", encode_hex(&verification.archive_root)))?;
             emit_success_stdout(quiet, &format!("root-auth signer: {}", report.subject))?;
             emit_success_stdout(quiet, &format!("root-auth issuer: {}", report.issuer))?;
             if let Some(trust_anchor) = &report.trust_anchor_subject {
@@ -1173,10 +975,7 @@ pub(crate) fn emit_root_auth_stdout(quiet: bool, root_auth: &VerifiedRootAuth) -
             }
             emit_success_stdout(
                 quiet,
-                &format!(
-                    "root-auth signed-at: {} (signer-claimed)",
-                    format_unix_timestamp(report.signed_at_unix_seconds)
-                ),
+                &format!("root-auth signed-at: {} (signer-claimed)", format_unix_timestamp(report.signed_at_unix_seconds)),
             )?;
             emit_success_stdout(
                 quiet,
@@ -1198,22 +997,13 @@ pub(crate) fn emit_root_auth_stdout(quiet: bool, root_auth: &VerifiedRootAuth) -
                     report.trusted_timestamp
                 ),
             )?;
-            emit_success_stdout(
-                quiet,
-                &format!(
-                    "root-auth certificate-sha256: {}",
-                    encode_hex(&report.certificate_sha256)
-                ),
-            )?;
+            emit_success_stdout(quiet, &format!("root-auth certificate-sha256: {}", encode_hex(&report.certificate_sha256)))?;
             emit_root_auth_diagnostics_stdout(quiet, verification)
         }
     }
 }
 
-pub(crate) fn emit_root_auth_diagnostics_stdout(
-    quiet: bool,
-    verification: &RootAuthVerification,
-) -> io::Result<()> {
+pub(crate) fn emit_root_auth_diagnostics_stdout(quiet: bool, verification: &RootAuthVerification) -> io::Result<()> {
     for diagnostic in &verification.diagnostics {
         emit_success_stdout(quiet, &format!("root-auth: {}", diagnostic.label()))?;
     }
@@ -1238,19 +1028,14 @@ pub(crate) fn fast_verify_diagnostic_labels(opened: &OpenedArchive) -> Vec<&'sta
     diagnostics
 }
 
-pub(crate) fn emit_fast_verify_diagnostics_stdout(
-    quiet: bool,
-    opened: &OpenedArchive,
-) -> io::Result<()> {
+pub(crate) fn emit_fast_verify_diagnostics_stdout(quiet: bool, opened: &OpenedArchive) -> io::Result<()> {
     for diagnostic in fast_verify_diagnostic_labels(opened) {
         emit_success_stdout(quiet, &format!("fast-verify: {diagnostic}"))?;
     }
     Ok(())
 }
 
-pub(crate) fn public_no_key_root_auth_json(
-    root_auth: &VerifiedPublicNoKeyRootAuth,
-) -> serde_json::Value {
+pub(crate) fn public_no_key_root_auth_json(root_auth: &VerifiedPublicNoKeyRootAuth) -> serde_json::Value {
     match root_auth {
         VerifiedPublicNoKeyRootAuth::Ed25519(verification) => {
             let mut payload = json!({
@@ -1266,17 +1051,12 @@ pub(crate) fn public_no_key_root_auth_json(
                 "signer_identity": encode_hex(&verification.signer_identity_bytes),
                 "total_data_block_count": verification.total_data_block_count,
             });
-            if verification.signer_identity_type == 1
-                && verification.signer_identity_bytes.len() == 32
-            {
+            if verification.signer_identity_type == 1 && verification.signer_identity_bytes.len() == 32 {
                 payload["key_id"] = json!(encode_hex(&verification.signer_identity_bytes));
             }
             payload
         }
-        VerifiedPublicNoKeyRootAuth::X509 {
-            verification,
-            report,
-        } => json!({
+        VerifiedPublicNoKeyRootAuth::X509 { verification, report } => json!({
             "status": public_no_key_status(verification),
             "diagnostics": public_no_key_diagnostic_labels(verification),
             "revision_mode": revision_mode_label(verification.volume_format_rev),
@@ -1319,52 +1099,25 @@ pub(crate) fn public_no_key_status(verification: &PublicNoKeyVerification) -> &'
         .unwrap_or("public_data_block_commitment_verified")
 }
 
-pub(crate) fn public_no_key_diagnostic_labels(
-    verification: &PublicNoKeyVerification,
-) -> Vec<&'static str> {
-    verification
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.label())
-        .collect()
+pub(crate) fn public_no_key_diagnostic_labels(verification: &PublicNoKeyVerification) -> Vec<&'static str> {
+    verification.diagnostics.iter().map(|diagnostic| diagnostic.label()).collect()
 }
 
-pub(crate) fn public_no_key_diagnostic_labels_for_root_auth(
-    root_auth: &VerifiedPublicNoKeyRootAuth,
-) -> Vec<&'static str> {
+pub(crate) fn public_no_key_diagnostic_labels_for_root_auth(root_auth: &VerifiedPublicNoKeyRootAuth) -> Vec<&'static str> {
     match root_auth {
-        VerifiedPublicNoKeyRootAuth::Ed25519(verification) => {
-            public_no_key_diagnostic_labels(verification)
-        }
-        VerifiedPublicNoKeyRootAuth::X509 { verification, .. } => {
-            public_no_key_diagnostic_labels(verification)
-        }
+        VerifiedPublicNoKeyRootAuth::Ed25519(verification) => public_no_key_diagnostic_labels(verification),
+        VerifiedPublicNoKeyRootAuth::X509 { verification, .. } => public_no_key_diagnostic_labels(verification),
     }
 }
 
-pub(crate) fn emit_public_no_key_root_auth_stdout(
-    quiet: bool,
-    root_auth: &VerifiedPublicNoKeyRootAuth,
-) -> io::Result<()> {
+pub(crate) fn emit_public_no_key_root_auth_stdout(quiet: bool, root_auth: &VerifiedPublicNoKeyRootAuth) -> io::Result<()> {
     match root_auth {
         VerifiedPublicNoKeyRootAuth::Ed25519(verification) => emit_success_stdout(
             quiet,
-            &format!(
-                "root-auth: OK public-no-key ed25519 {}",
-                encode_hex(&verification.archive_root)
-            ),
+            &format!("root-auth: OK public-no-key ed25519 {}", encode_hex(&verification.archive_root)),
         ),
-        VerifiedPublicNoKeyRootAuth::X509 {
-            verification,
-            report,
-        } => {
-            emit_success_stdout(
-                quiet,
-                &format!(
-                    "root-auth: OK public-no-key x509 {}",
-                    encode_hex(&verification.archive_root)
-                ),
-            )?;
+        VerifiedPublicNoKeyRootAuth::X509 { verification, report } => {
+            emit_success_stdout(quiet, &format!("root-auth: OK public-no-key x509 {}", encode_hex(&verification.archive_root)))?;
             emit_success_stdout(quiet, &format!("root-auth signer: {}", report.subject))?;
             emit_success_stdout(quiet, &format!("root-auth issuer: {}", report.issuer))?;
             if let Some(trust_anchor) = &report.trust_anchor_subject {
@@ -1372,10 +1125,7 @@ pub(crate) fn emit_public_no_key_root_auth_stdout(
             }
             emit_success_stdout(
                 quiet,
-                &format!(
-                    "root-auth signed-at: {} (signer-claimed)",
-                    format_unix_timestamp(report.signed_at_unix_seconds)
-                ),
+                &format!("root-auth signed-at: {} (signer-claimed)", format_unix_timestamp(report.signed_at_unix_seconds)),
             )?;
             emit_success_stdout(
                 quiet,
@@ -1404,17 +1154,13 @@ pub(crate) fn emit_public_no_key_root_auth_stdout(
 pub(crate) fn public_no_key_total_data_block_count(root_auth: &VerifiedPublicNoKeyRootAuth) -> u64 {
     match root_auth {
         VerifiedPublicNoKeyRootAuth::Ed25519(verification) => verification.total_data_block_count,
-        VerifiedPublicNoKeyRootAuth::X509 { verification, .. } => {
-            verification.total_data_block_count
-        }
+        VerifiedPublicNoKeyRootAuth::X509 { verification, .. } => verification.total_data_block_count,
     }
 }
 
 pub(crate) fn format_unix_timestamp(unix_seconds: i64) -> String {
     match OffsetDateTime::from_unix_timestamp(unix_seconds) {
-        Ok(date_time) => date_time
-            .format(&Rfc3339)
-            .unwrap_or_else(|_| unix_seconds.to_string()),
+        Ok(date_time) => date_time.format(&Rfc3339).unwrap_or_else(|_| unix_seconds.to_string()),
         Err(_) => unix_seconds.to_string(),
     }
 }

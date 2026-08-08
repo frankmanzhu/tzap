@@ -1,19 +1,15 @@
 use tzap_core::compression::{compress_zstd_frame, decompress_exact_zstd_frame};
-use tzap_core::crypto::{
-    aead_decrypt, aead_encrypt, build_aad, derive_nonce, KdfParams, MasterKey, Subkeys,
-};
+use tzap_core::crypto::{aead_decrypt, aead_encrypt, build_aad, derive_nonce, KdfParams, MasterKey, Subkeys};
 use tzap_core::entry_metadata::EXTENDED_METADATA_V1;
 use tzap_core::fec::encode_parity_gf16;
 use tzap_core::format::{
-    AeadAlgo, FormatError, CRITICAL_RECOVERY_LOCATOR_LEN, CRYPTO_HEADER_HMAC_LEN, FORMAT_VERSION,
-    MASTER_KEY_LEN, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, SUBKEY_LEN, VOLUME_FORMAT_REV,
-    VOLUME_HEADER_LEN,
+    AeadAlgo, FormatError, CRITICAL_RECOVERY_LOCATOR_LEN, CRYPTO_HEADER_HMAC_LEN, FORMAT_VERSION, MASTER_KEY_LEN, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV,
+    SUBKEY_LEN, VOLUME_FORMAT_REV, VOLUME_HEADER_LEN,
 };
 use tzap_core::metadata::{
-    hash_prefix, normalize_lookup_directory_path, normalize_lookup_file_path,
-    validate_file_path_bytes, DirectoryHintEntry, DirectoryHintShardEntry, DirectoryHintTable,
-    DirectoryHintTableHeader, EnvelopeEntry, FileEntry, FrameEntry, IndexRoot, IndexRootHeader,
-    IndexShard, IndexShardHeader, MetadataLimits, ShardEntry,
+    hash_prefix, normalize_lookup_directory_path, normalize_lookup_file_path, validate_file_path_bytes, DirectoryHintEntry, DirectoryHintShardEntry,
+    DirectoryHintTable, DirectoryHintTableHeader, EnvelopeEntry, FileEntry, FrameEntry, IndexRoot, IndexRootHeader, IndexShard, IndexShardHeader,
+    MetadataLimits, ShardEntry,
 };
 use tzap_core::reader::{open_archive, open_archive_volumes};
 use tzap_core::tar_model::parse_tar_member_group;
@@ -38,10 +34,7 @@ fn deterministic_options(seed: u8) -> WriterOptions {
 
 fn final_locator(volume: &[u8]) -> CriticalRecoveryLocator {
     let final_offset = volume.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-    CriticalRecoveryLocator::parse(
-        &volume[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN],
-    )
-    .unwrap()
+    CriticalRecoveryLocator::parse(&volume[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN]).unwrap()
 }
 
 fn corrupt_v45_terminal_recovery(volume: &mut [u8]) {
@@ -67,10 +60,7 @@ fn golden_fixtures_are_deterministic_and_readable() {
 
     let opened = open_archive(&one.bytes, &master_key()).unwrap();
     opened.verify().unwrap();
-    assert_eq!(
-        opened.extract_file("dir/beta.txt").unwrap(),
-        Some(b"beta payload".to_vec())
-    );
+    assert_eq!(opened.extract_file("dir/beta.txt").unwrap(), Some(b"beta payload".to_vec()));
 }
 
 #[test]
@@ -82,10 +72,7 @@ fn mutation_fixture_generator_rejects_authentication_and_revision_mutations() {
     )
     .unwrap();
 
-    for revision in [
-        VOLUME_FORMAT_REV - 1,
-        READER_MAX_SUPPORTED_VOLUME_FORMAT_REV + 1,
-    ] {
+    for revision in [VOLUME_FORMAT_REV - 1, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV + 1] {
         let mut mutated = archive.bytes.clone();
         let mut header = VolumeHeader::parse(&mutated[..VOLUME_HEADER_LEN]).unwrap();
         header.volume_format_rev = revision;
@@ -102,24 +89,17 @@ fn mutation_fixture_generator_rejects_authentication_and_revision_mutations() {
 
     let mut crypto_hmac = archive.bytes.clone();
     let header = VolumeHeader::parse(&crypto_hmac[..VOLUME_HEADER_LEN]).unwrap();
-    let crypto_hmac_offset = header.crypto_header_offset as usize
-        + header.crypto_header_length as usize
-        - CRYPTO_HEADER_HMAC_LEN;
+    let crypto_hmac_offset = header.crypto_header_offset as usize + header.crypto_header_length as usize - CRYPTO_HEADER_HMAC_LEN;
     crypto_hmac[crypto_hmac_offset] ^= 0x01;
     assert_eq!(
         open_archive(&crypto_hmac, &master_key()).unwrap_err(),
-        FormatError::HmacMismatch {
-            structure: "CryptoHeader"
-        }
+        FormatError::HmacMismatch { structure: "CryptoHeader" }
     );
 
     let mut trailer_hmac = archive.bytes.clone();
     let trailer_hmac_offset = final_locator(&trailer_hmac).volume_trailer_offset as usize + 96;
     trailer_hmac[trailer_hmac_offset] ^= 0x01;
-    open_archive(&trailer_hmac, &master_key())
-        .unwrap()
-        .verify()
-        .unwrap();
+    open_archive(&trailer_hmac, &master_key()).unwrap().verify().unwrap();
     corrupt_v45_terminal_recovery(&mut trailer_hmac);
     assert_eq!(
         open_archive(&trailer_hmac, &master_key()).unwrap_err(),
@@ -129,11 +109,7 @@ fn mutation_fixture_generator_rejects_authentication_and_revision_mutations() {
     let mut payload_tamper = archive.bytes.clone();
     let crypto_header_offset = header.crypto_header_offset as usize;
     let crypto_header_end = crypto_header_offset + header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &payload_tamper[crypto_header_offset..crypto_header_end],
-        header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&payload_tamper[crypto_header_offset..crypto_header_end], header.crypto_header_length).unwrap();
     let block_size = crypto_header.fixed.block_size as usize;
     let record_offset = crypto_header_end;
     payload_tamper[record_offset + 16] ^= 0x55;
@@ -141,10 +117,7 @@ fn mutation_fixture_generator_rejects_authentication_and_revision_mutations() {
     let crc = crc32c::crc32c(&payload_tamper[record_offset..crc_offset]);
     payload_tamper[crc_offset..crc_offset + 4].copy_from_slice(&crc.to_le_bytes());
     assert_eq!(
-        open_archive(&payload_tamper, &master_key())
-            .unwrap()
-            .verify()
-            .unwrap_err(),
+        open_archive(&payload_tamper, &master_key()).unwrap().verify().unwrap_err(),
         FormatError::AeadFailure
     );
 }
@@ -171,10 +144,7 @@ fn minimal_file_entry_frame_range_corpus_cases() {
     let spanning_partial_final = index_shard_bytes(
         0,
         vec![file_entry(path, 0, 0, 2, 0, 1536, 7)],
-        vec![
-            frame_entry(0, 0, 0, 16, 1024, 0),
-            frame_entry(1, 0, 16, 16, 1024, 1024),
-        ],
+        vec![frame_entry(0, 0, 0, 16, 1024, 0), frame_entry(1, 0, 16, 16, 1024, 1024)],
         vec![envelope_entry(0, 0, 32, 0, 2)],
         path.to_vec(),
     );
@@ -188,10 +158,7 @@ fn minimal_file_entry_frame_range_corpus_cases() {
     let non_minimal = index_shard_bytes(
         0,
         vec![file_entry(path, 0, 0, 2, 0, 1536, 7)],
-        vec![
-            frame_entry(0, 0, 0, 16, 2048, 0),
-            frame_entry(1, 0, 16, 16, 512, 2048),
-        ],
+        vec![frame_entry(0, 0, 0, 16, 2048, 0), frame_entry(1, 0, 16, 16, 512, 2048)],
         vec![envelope_entry(0, 0, 32, 0, 2)],
         path.to_vec(),
     );
@@ -220,10 +187,7 @@ fn exact_file_lookup_is_independent_from_directory_hints() {
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
 
     assert!(opened.index_root.directory_hint_shards.is_empty());
-    assert_eq!(
-        opened.extract_file("foo").unwrap(),
-        Some(b"regular file named foo".to_vec())
-    );
+    assert_eq!(opened.extract_file("foo").unwrap(), Some(b"regular file named foo".to_vec()));
 
     let misleading_hint_root = IndexRoot {
         header: IndexRootHeader::empty(),
@@ -439,12 +403,7 @@ fn reserved_file_entry_flags_are_rejected_before_lookup() {
     );
 
     assert_eq!(
-        IndexShard::parse(
-            &shard,
-            &locating_shard(0, 1, path_hash, path_hash, shard.len()),
-            MetadataLimits::default(),
-        )
-        .unwrap_err(),
+        IndexShard::parse(&shard, &locating_shard(0, 1, path_hash, path_hash, shard.len()), MetadataLimits::default(),).unwrap_err(),
         FormatError::InvalidMetadata {
             structure: "FileEntry",
             reason: "unknown revision-45 flags are non-zero",
@@ -493,12 +452,7 @@ fn hash_prefix_ordering_rejects_little_endian_integer_reinterpretation() {
         (1, raw_low_but_le_high, raw_low_but_le_high),
     ]);
     assert_eq!(
-        IndexRoot::parse(
-            &little_endian_integer_order.to_bytes(),
-            false,
-            MetadataLimits::default(),
-        )
-        .unwrap_err(),
+        IndexRoot::parse(&little_endian_integer_order.to_bytes(), false, MetadataLimits::default(),).unwrap_err(),
         FormatError::InvalidMetadata {
             structure: "IndexRoot",
             reason: "ShardEntry rows are not sorted",
@@ -516,10 +470,7 @@ fn argon2id_profile_vector_is_pinned() {
     };
     let master = MasterKey::derive_from_passphrase(&params, "e\u{301}").unwrap();
 
-    assert_eq!(
-        hex::encode(master.0),
-        "24709642204c04bf88fb36550c478769eb10a0400c0493c9695d30fbf7082241"
-    );
+    assert_eq!(hex::encode(master.0), "24709642204c04bf88fb36550c478769eb10a0400c0493c9695d30fbf7082241");
 
     assert!(MasterKey::derive_from_passphrase(
         &KdfParams::Argon2id {
@@ -541,14 +492,8 @@ fn hkdf_subkey_and_nonce_vectors_are_literal() {
     let master = MasterKey::from_raw_key(&raw_key).unwrap();
     let subkeys = Subkeys::derive(&master, &archive_uuid, &session_id).unwrap();
 
-    assert_eq!(
-        hex::encode(subkeys.enc_key),
-        "fdcc2d13c382611e7734a32394569baab5dd642e22ee82979dd4696651593276"
-    );
-    assert_eq!(
-        hex::encode(subkeys.mac_key),
-        "08cb773f32e45da15f29fdd991e7a18ca67089a3ec88065fee88545cadd044d3"
-    );
+    assert_eq!(hex::encode(subkeys.enc_key), "fdcc2d13c382611e7734a32394569baab5dd642e22ee82979dd4696651593276");
+    assert_eq!(hex::encode(subkeys.mac_key), "08cb773f32e45da15f29fdd991e7a18ca67089a3ec88065fee88545cadd044d3");
     assert_eq!(
         hex::encode(subkeys.nonce_seed),
         "acfc4ce61dadfbf0d28f5ec6f9b93948dc4856581e04df659ed6e2ae395cf467"
@@ -575,99 +520,45 @@ fn hkdf_subkey_and_nonce_vectors_are_literal() {
     );
 
     assert_eq!(
-        hex::encode(
-            derive_nonce(
-                &subkeys.nonce_seed,
-                b"envelope",
-                &archive_uuid,
-                &session_id,
-                7,
-                12,
-            )
-            .unwrap()
-        ),
+        hex::encode(derive_nonce(&subkeys.nonce_seed, b"envelope", &archive_uuid, &session_id, 7, 12,).unwrap()),
         "cfeb02d3a8c9089af250f096"
     );
     assert_eq!(
-        hex::encode(
-            derive_nonce(
-                &subkeys.nonce_seed,
-                b"idxroot",
-                &archive_uuid,
-                &session_id,
-                0,
-                12,
-            )
-            .unwrap()
-        ),
+        hex::encode(derive_nonce(&subkeys.nonce_seed, b"idxroot", &archive_uuid, &session_id, 0, 12,).unwrap()),
         "439d845528c52fc6140fcd13"
     );
     assert_eq!(
-        hex::encode(
-            derive_nonce(
-                &subkeys.nonce_seed,
-                b"dict",
-                &archive_uuid,
-                &session_id,
-                0,
-                24,
-            )
-            .unwrap()
-        ),
+        hex::encode(derive_nonce(&subkeys.nonce_seed, b"dict", &archive_uuid, &session_id, 0, 24,).unwrap()),
         "0d8694130bdc757c8acde58dec9c23bf5a0f69ad62727414"
     );
 }
 
 #[test]
 fn aead_combined_output_tag_is_final_and_authenticated() {
-    for algo in [
-        AeadAlgo::AesGcmSiv256,
-        AeadAlgo::XChaCha20Poly1305,
-        AeadAlgo::AesGcm256,
-    ] {
+    for algo in [AeadAlgo::AesGcmSiv256, AeadAlgo::XChaCha20Poly1305, AeadAlgo::AesGcm256] {
         let key = [0x61; SUBKEY_LEN];
         let archive_uuid = [0x62; 16];
         let session_id = [0x63; 16];
-        let nonce = derive_nonce(
-            &[0x64; SUBKEY_LEN],
-            b"corpus-aead",
-            &archive_uuid,
-            &session_id,
-            7,
-            algo.nonce_len(),
-        )
-        .unwrap();
+        let nonce = derive_nonce(&[0x64; SUBKEY_LEN], b"corpus-aead", &archive_uuid, &session_id, 7, algo.nonce_len()).unwrap();
         let aad = build_aad(b"corpus-aead", &archive_uuid, &session_id, 7).unwrap();
         let plaintext = b"combined-output-vector";
         let combined = aead_encrypt(algo, &key, &nonce, &aad, plaintext).unwrap();
 
         assert_eq!(combined.len(), plaintext.len() + algo.tag_len());
-        assert_eq!(
-            aead_decrypt(algo, &key, &nonce, &aad, &combined).unwrap(),
-            plaintext
-        );
+        assert_eq!(aead_decrypt(algo, &key, &nonce, &aad, &combined).unwrap(), plaintext);
 
         let tag_start = combined.len() - algo.tag_len();
         let mut prefixed_tag = combined[tag_start..].to_vec();
         prefixed_tag.extend_from_slice(&combined[..tag_start]);
-        assert_eq!(
-            aead_decrypt(algo, &key, &nonce, &aad, &prefixed_tag).unwrap_err(),
-            FormatError::AeadFailure
-        );
+        assert_eq!(aead_decrypt(algo, &key, &nonce, &aad, &prefixed_tag).unwrap_err(), FormatError::AeadFailure);
 
         let mut truncated = combined.clone();
         truncated.pop();
-        assert_eq!(
-            aead_decrypt(algo, &key, &nonce, &aad, &truncated).unwrap_err(),
-            FormatError::AeadFailure
-        );
+        assert_eq!(aead_decrypt(algo, &key, &nonce, &aad, &truncated).unwrap_err(), FormatError::AeadFailure);
 
         let mut extra_tag = combined.clone();
         extra_tag.extend_from_slice(&combined[tag_start..]);
-        assert_eq!(
-            aead_decrypt(algo, &key, &nonce, &aad, &extra_tag).unwrap_err(),
-            FormatError::AeadFailure
-        );
+        assert_eq!(aead_decrypt(algo, &key, &nonce, &aad, &extra_tag).unwrap_err(), FormatError::AeadFailure);
     }
 }
 
@@ -680,10 +571,7 @@ fn reed_solomon_gf16_wire_vector_is_pinned() {
         vec![vec![0x04, 0x88, 0x04, 0xf0], vec![0x02, 0x78, 0x05, 0xf0]]
     );
 
-    assert_eq!(
-        encode_parity_gf16(&[vec![0u8; 3]], 1).unwrap_err(),
-        FormatError::FecOddShardSize
-    );
+    assert_eq!(encode_parity_gf16(&[vec![0u8; 3]], 1).unwrap_err(), FormatError::FecOddShardSize);
 }
 
 #[test]
@@ -799,19 +687,12 @@ fn shard_boundary_metadata_bindings_are_checked() {
         decompressed_size: table.len() as u32,
         entry_count: 1,
     };
-    tzap_core::metadata::DirectoryHintTable::parse(&table, &locating, 1, MetadataLimits::default())
-        .unwrap();
+    tzap_core::metadata::DirectoryHintTable::parse(&table, &locating, 1, MetadataLimits::default()).unwrap();
 
     let mut wrong_dir_bounds = locating.clone();
     wrong_dir_bounds.last_dir_hash = [0xff; 8];
     assert_eq!(
-        tzap_core::metadata::DirectoryHintTable::parse(
-            &table,
-            &wrong_dir_bounds,
-            1,
-            MetadataLimits::default(),
-        )
-        .unwrap_err(),
+        tzap_core::metadata::DirectoryHintTable::parse(&table, &wrong_dir_bounds, 1, MetadataLimits::default(),).unwrap_err(),
         FormatError::InvalidMetadata {
             structure: "DirectoryHintTable",
             reason: "last DirectoryHintEntry hash does not match locating row",
@@ -822,13 +703,7 @@ fn shard_boundary_metadata_bindings_are_checked() {
     let mut zero_entries = locating;
     zero_entries.entry_count = 0;
     assert_eq!(
-        tzap_core::metadata::DirectoryHintTable::parse(
-            &empty_table,
-            &zero_entries,
-            1,
-            MetadataLimits::default(),
-        )
-        .unwrap_err(),
+        tzap_core::metadata::DirectoryHintTable::parse(&empty_table, &zero_entries, 1, MetadataLimits::default(),).unwrap_err(),
         FormatError::InvalidMetadata {
             structure: "DirectoryHintTable",
             reason: "located directory hint shard is empty",
@@ -854,32 +729,18 @@ fn sparse_local_frame_offsets_allow_unrelated_frame_index_gaps() {
     let shard = index_shard_bytes(
         0,
         file_rows.into_iter().map(|(_, file, _)| file).collect(),
-        vec![
-            frame_entry(0, 0, 0, 16, 1536, 0),
-            frame_entry(2, 1, 0, 16, 1536, 1537),
-        ],
-        vec![
-            envelope_entry(0, 0, 16, 0, 1),
-            envelope_entry(1, 10, 16, 2, 1),
-        ],
+        vec![frame_entry(0, 0, 0, 16, 1536, 0), frame_entry(2, 1, 0, 16, 1536, 1537)],
+        vec![envelope_entry(0, 0, 16, 0, 1), envelope_entry(1, 10, 16, 2, 1)],
         string_pool,
     );
-    IndexShard::parse(
-        &shard,
-        &locating_shard(0, 2, first_hash, last_hash, shard.len()),
-        MetadataLimits::default(),
-    )
-    .unwrap();
+    IndexShard::parse(&shard, &locating_shard(0, 2, first_hash, last_hash, shard.len()), MetadataLimits::default()).unwrap();
 }
 
 #[test]
 fn metadata_zstd_exactness_mutation_corpus() {
     let plaintext = b"metadata exact frame";
     let compressed = compress_zstd_frame(plaintext, 1).unwrap();
-    assert_eq!(
-        decompress_exact_zstd_frame(&compressed, plaintext.len()).unwrap(),
-        plaintext
-    );
+    assert_eq!(decompress_exact_zstd_frame(&compressed, plaintext.len()).unwrap(), plaintext);
 
     let mut trailing = compressed.clone();
     trailing.push(0);
@@ -896,10 +757,7 @@ fn metadata_zstd_exactness_mutation_corpus() {
     );
 
     let skippable = [0x50, 0x2a, 0x4d, 0x18, 0, 0, 0, 0];
-    assert_eq!(
-        decompress_exact_zstd_frame(&skippable, 0).unwrap_err(),
-        FormatError::NotStandardZstdFrame
-    );
+    assert_eq!(decompress_exact_zstd_frame(&skippable, 0).unwrap_err(), FormatError::NotStandardZstdFrame);
 
     assert_eq!(
         decompress_exact_zstd_frame(&compressed, plaintext.len() + 1).unwrap_err(),
@@ -920,8 +778,7 @@ fn payload_zstd_frame_validity_rejects_arbitrary_and_truncated_frames() {
     let plaintext = b"payload frame validity";
     let compressed = compress_zstd_frame(plaintext, 1).unwrap();
     assert_eq!(
-        decompress_exact_zstd_frame(&compressed[..compressed.len() - 1], plaintext.len())
-            .unwrap_err(),
+        decompress_exact_zstd_frame(&compressed[..compressed.len() - 1], plaintext.len()).unwrap_err(),
         FormatError::InvalidZstdFrame
     );
 
@@ -934,10 +791,7 @@ fn payload_zstd_frame_validity_rejects_arbitrary_and_truncated_frames() {
 #[test]
 fn fec_effective_object_ceiling_is_enforced() {
     let data = vec![Vec::new(); 65_535];
-    assert_eq!(
-        encode_parity_gf16(&data, 1).unwrap_err(),
-        FormatError::FecTooManyShards(65_536)
-    );
+    assert_eq!(encode_parity_gf16(&data, 1).unwrap_err(), FormatError::FecTooManyShards(65_536));
 }
 
 #[test]
@@ -955,10 +809,7 @@ fn volume_format_revision_freshness_is_pinned_to_current_revision() {
     };
     VolumeHeader::parse(&base.to_bytes()).unwrap();
 
-    for rev in [
-        VOLUME_FORMAT_REV - 1,
-        READER_MAX_SUPPORTED_VOLUME_FORMAT_REV + 1,
-    ] {
+    for rev in [VOLUME_FORMAT_REV - 1, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV + 1] {
         let mut mutated = base.clone();
         mutated.volume_format_rev = rev;
         let parsed = VolumeHeader::parse(&mutated.to_bytes()).unwrap();
@@ -990,21 +841,12 @@ fn cross_platform_path_rejections_are_host_independent() {
         "COM1",
         "nul.txt",
     ] {
-        assert!(
-            validate_file_path_bytes(path.as_bytes(), 4096).is_err(),
-            "{path}"
-        );
+        assert!(validate_file_path_bytes(path.as_bytes(), 4096).is_err(), "{path}");
         assert!(normalize_lookup_file_path(path, 4096).is_err(), "{path}");
     }
 
-    assert_eq!(
-        normalize_lookup_file_path("dir/e\u{301}.txt", 4096).unwrap(),
-        "dir/é.txt".as_bytes()
-    );
-    assert_eq!(
-        normalize_lookup_directory_path("dir/e\u{301}/", 4096).unwrap(),
-        "dir/é".as_bytes()
-    );
+    assert_eq!(normalize_lookup_file_path("dir/e\u{301}.txt", 4096).unwrap(), "dir/é.txt".as_bytes());
+    assert_eq!(normalize_lookup_directory_path("dir/e\u{301}/", 4096).unwrap(), "dir/é".as_bytes());
 }
 
 #[test]
@@ -1014,25 +856,12 @@ fn deterministic_round_trip_property_matrix() {
         (1, 1, 1, None),
         (2, 3, 1, None),
         (3, 2, 2, None),
-        (
-            4,
-            2,
-            1,
-            Some(b"common words common words corpus dictionary".as_slice()),
-        ),
+        (4, 2, 1, Some(b"common words common words corpus dictionary".as_slice())),
     ] {
         let contents = (0..file_count)
-            .map(|idx| {
-                (
-                    format!("dir/file-{idx}.txt"),
-                    format!("payload case {case} file {idx} common words"),
-                )
-            })
+            .map(|idx| (format!("dir/file-{idx}.txt"), format!("payload case {case} file {idx} common words")))
             .collect::<Vec<_>>();
-        let files = contents
-            .iter()
-            .map(|(path, data)| RegularFile::new(path, data.as_bytes()))
-            .collect::<Vec<_>>();
+        let files = contents.iter().map(|(path, data)| RegularFile::new(path, data.as_bytes())).collect::<Vec<_>>();
         let mut options = deterministic_options(0x70 + case);
         options.stripe_width = stripe_width;
         options.volume_loss_tolerance = if stripe_width > 1 { 1 } else { 0 };
@@ -1044,11 +873,7 @@ fn deterministic_round_trip_property_matrix() {
         .unwrap();
 
         let opened = if stripe_width > 1 {
-            let refs = archive
-                .volumes
-                .iter()
-                .map(Vec::as_slice)
-                .collect::<Vec<_>>();
+            let refs = archive.volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
             open_archive_volumes(&refs, &master_key()).unwrap()
         } else {
             open_archive(&archive.bytes, &master_key()).unwrap()
@@ -1056,25 +881,15 @@ fn deterministic_round_trip_property_matrix() {
         opened.verify().unwrap();
         assert_eq!(opened.list_files().unwrap().len(), file_count);
         for (path, data) in contents {
-            assert_eq!(
-                opened.extract_file(&path).unwrap(),
-                Some(data.into_bytes()),
-                "{path}"
-            );
+            assert_eq!(opened.extract_file(&path).unwrap(), Some(data.into_bytes()), "{path}");
         }
     }
 }
 
 #[test]
 fn reconstructed_tar_stream_fixture_matches_member_bindings() {
-    let archive = write_archive(
-        &[RegularFile::new("tar/member.txt", b"tar corpus")],
-        &master_key(),
-        deterministic_options(0x44),
-    )
-    .unwrap();
-    let tar_stream =
-        tzap_core::sequential_extract_tar_stream(&archive.bytes, &master_key()).unwrap();
+    let archive = write_archive(&[RegularFile::new("tar/member.txt", b"tar corpus")], &master_key(), deterministic_options(0x44)).unwrap();
+    let tar_stream = tzap_core::sequential_extract_tar_stream(&archive.bytes, &master_key()).unwrap();
     let member = parse_tar_member_group(&tar_stream, 4096).unwrap();
 
     assert_eq!(member.path, b"tar/member.txt");
@@ -1107,13 +922,7 @@ fn index_root_with_shard_hashes(hashes: Vec<(u64, [u8; 8], [u8; 8])>) -> IndexRo
     }
 }
 
-fn locating_shard(
-    shard_index: u64,
-    file_count: u32,
-    first_hash: [u8; 8],
-    last_hash: [u8; 8],
-    decompressed_size: usize,
-) -> ShardEntry {
+fn locating_shard(shard_index: u64, file_count: u32, first_hash: [u8; 8], last_hash: [u8; 8], decompressed_size: usize) -> ShardEntry {
     ShardEntry {
         shard_index,
         first_block_index: 10,
@@ -1127,13 +936,7 @@ fn locating_shard(
     }
 }
 
-fn index_shard_bytes(
-    shard_index: u64,
-    files: Vec<FileEntry>,
-    frames: Vec<FrameEntry>,
-    envelopes: Vec<EnvelopeEntry>,
-    string_pool: Vec<u8>,
-) -> Vec<u8> {
+fn index_shard_bytes(shard_index: u64, files: Vec<FileEntry>, frames: Vec<FrameEntry>, envelopes: Vec<EnvelopeEntry>, string_pool: Vec<u8>) -> Vec<u8> {
     let header_len = IndexShardHeader {
         version: 1,
         shard_index,
@@ -1183,12 +986,7 @@ fn index_shard_bytes(
     out
 }
 
-fn directory_hint_table_bytes(
-    hint_shard_index: u64,
-    entries: Vec<DirectoryHintEntry>,
-    shard_row_indexes: Vec<u32>,
-    string_pool: Vec<u8>,
-) -> Vec<u8> {
+fn directory_hint_table_bytes(hint_shard_index: u64, entries: Vec<DirectoryHintEntry>, shard_row_indexes: Vec<u32>, string_pool: Vec<u8>) -> Vec<u8> {
     let header_len = DirectoryHintTableHeader {
         version: 1,
         hint_shard_index,
@@ -1200,15 +998,8 @@ fn directory_hint_table_bytes(
     }
     .to_bytes()
     .len();
-    let entry_len = entries
-        .first()
-        .map(|entry| entry.to_bytes().len())
-        .unwrap_or(0);
-    let shard_list_offset = if entries.is_empty() {
-        0
-    } else {
-        header_len + entries.len() * entry_len
-    };
+    let entry_len = entries.first().map(|entry| entry.to_bytes().len()).unwrap_or(0);
+    let shard_list_offset = if entries.is_empty() { 0 } else { header_len + entries.len() * entry_len };
     let string_pool_offset = if string_pool.is_empty() {
         0
     } else {
@@ -1219,11 +1010,7 @@ fn directory_hint_table_bytes(
         version: 1,
         hint_shard_index,
         entry_count: entries.len() as u64,
-        entry_table_offset: if entries.is_empty() {
-            0
-        } else {
-            header_len as u64
-        },
+        entry_table_offset: if entries.is_empty() { 0 } else { header_len as u64 },
         shard_list_offset: shard_list_offset as u64,
         string_pool_offset: string_pool_offset as u64,
         string_pool_size: string_pool.len() as u64,
@@ -1302,13 +1089,7 @@ fn frame_entry(
     }
 }
 
-fn envelope_entry(
-    envelope_index: u64,
-    first_block_index: u64,
-    plaintext_size: u32,
-    first_frame_index: u64,
-    frame_count: u32,
-) -> EnvelopeEntry {
+fn envelope_entry(envelope_index: u64, first_block_index: u64, plaintext_size: u32, first_frame_index: u64, frame_count: u32) -> EnvelopeEntry {
     EnvelopeEntry {
         envelope_index,
         first_block_index,

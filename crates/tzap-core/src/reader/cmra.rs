@@ -3,18 +3,15 @@ use super::*;
 use crate::crypto::{verify_integrity_tag, HmacDomain, KdfParams, MasterKey, Subkeys};
 use crate::fec::repair_data_gf16;
 use crate::format::{
-    FormatError, BLOCK_RECORD_FRAMING_LEN, CRITICAL_METADATA_IMAGE_FIXED_LEN,
-    CRITICAL_METADATA_RECOVERY_HEADER_LEN, CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN,
-    CRITICAL_RECOVERY_LOCATOR_LEN, CRYPTO_HEADER_HMAC_LEN, IMAGE_CRC_LEN, LOCATOR_PAIR_LEN,
-    MANIFEST_FOOTER_LEN, READER_MAX_CMRA_PARITY_PCT, READER_MAX_CRYPTO_HEADER_LEN,
-    READER_MAX_KEY_WRAP_TABLE_LEN, READER_MAX_ROOT_AUTH_FOOTER_LEN, SERIALIZED_REGION_HEADER_LEN,
+    FormatError, BLOCK_RECORD_FRAMING_LEN, CRITICAL_METADATA_IMAGE_FIXED_LEN, CRITICAL_METADATA_RECOVERY_HEADER_LEN,
+    CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN, CRITICAL_RECOVERY_LOCATOR_LEN, CRYPTO_HEADER_HMAC_LEN, IMAGE_CRC_LEN, LOCATOR_PAIR_LEN, MANIFEST_FOOTER_LEN,
+    READER_MAX_CMRA_PARITY_PCT, READER_MAX_CRYPTO_HEADER_LEN, READER_MAX_KEY_WRAP_TABLE_LEN, READER_MAX_ROOT_AUTH_FOOTER_LEN, SERIALIZED_REGION_HEADER_LEN,
     VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
 };
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
 use crate::wire::{
-    compute_key_wrap_table_digest, CriticalMetadataImage, CriticalMetadataRecoveryHeader,
-    CriticalMetadataRecoveryShard, CriticalRecoveryLocator, CryptoHeader, CryptoHeaderFixed,
-    KeyWrapTableV1, ManifestFooter, RootAuthFooterV1, VolumeHeader, VolumeTrailer,
+    compute_key_wrap_table_digest, CriticalMetadataImage, CriticalMetadataRecoveryHeader, CriticalMetadataRecoveryShard, CriticalRecoveryLocator, CryptoHeader,
+    CryptoHeaderFixed, KeyWrapTableV1, ManifestFooter, RootAuthFooterV1, VolumeHeader, VolumeTrailer,
 };
 
 #[derive(Debug)]
@@ -175,11 +172,7 @@ pub(crate) struct KeyHoldingTerminalContext<'a> {
     pub(crate) crypto_header_bytes: &'a [u8],
 }
 
-pub(crate) fn locate_v45_terminal(
-    bytes: &[u8],
-    context: KeyHoldingTerminalContext<'_>,
-    options: ReaderOptions,
-) -> Result<V45Terminal, FormatError> {
+pub(crate) fn locate_v45_terminal(bytes: &[u8], context: KeyHoldingTerminalContext<'_>, options: ReaderOptions) -> Result<V45Terminal, FormatError> {
     locate_v45_terminal_candidate(bytes, context, options).map(|candidate| candidate.terminal)
 }
 
@@ -208,17 +201,9 @@ pub(crate) fn locate_v45_terminal_read_at(
         while offset < tail.len() {
             let absolute_offset = checked_u64_add(scan_start, offset as u64, "CMRA scan")?;
             if tail.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v45_locator_candidate_read_at(
-                    reader,
-                    absolute_offset,
-                    2,
-                    context,
-                    &mut candidates,
-                );
+                collect_v45_locator_candidate_read_at(reader, absolute_offset, 2, context, &mut candidates);
             } else if tail.get(offset..offset + 4) == Some(b"TZCR") {
-                if let Ok(candidate) =
-                    parse_locatorless_cmra_candidate_read_at(reader, absolute_offset, context)
-                {
+                if let Ok(candidate) = parse_locatorless_cmra_candidate_read_at(reader, absolute_offset, context) {
                     candidates.push(candidate);
                 }
             }
@@ -232,31 +217,15 @@ pub(crate) fn locate_v45_terminal_read_at(
     choose_v45_terminal_candidate(candidates).map(|candidate| candidate.terminal)
 }
 
-pub(crate) fn locate_v45_terminal_authority(
-    bytes: &[u8],
-    master_key: &MasterKey,
-    options: ReaderOptions,
-) -> Result<RecoveredTerminalAuthority, FormatError> {
+pub(crate) fn locate_v45_terminal_authority(bytes: &[u8], master_key: &MasterKey, options: ReaderOptions) -> Result<RecoveredTerminalAuthority, FormatError> {
     let mut candidates = Vec::new();
     if bytes.len() >= CRITICAL_RECOVERY_LOCATOR_LEN {
         let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-        collect_v45_locator_authority_candidate(
-            bytes,
-            final_offset,
-            0,
-            master_key,
-            &mut candidates,
-        );
+        collect_v45_locator_authority_candidate(bytes, final_offset, 0, master_key, &mut candidates);
     }
     if bytes.len() >= LOCATOR_PAIR_LEN {
         let mirror_offset = bytes.len() - LOCATOR_PAIR_LEN;
-        collect_v45_locator_authority_candidate(
-            bytes,
-            mirror_offset,
-            1,
-            master_key,
-            &mut candidates,
-        );
+        collect_v45_locator_authority_candidate(bytes, mirror_offset, 1, master_key, &mut candidates);
     }
 
     if candidates.is_empty() {
@@ -265,17 +234,9 @@ pub(crate) fn locate_v45_terminal_authority(
         let mut offset = bytes.len().saturating_sub(4);
         while offset >= scan_start {
             if bytes.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v45_locator_authority_candidate(
-                    bytes,
-                    offset,
-                    2,
-                    master_key,
-                    &mut candidates,
-                );
+                collect_v45_locator_authority_candidate(bytes, offset, 2, master_key, &mut candidates);
             } else if bytes.get(offset..offset + 4) == Some(b"TZCR") {
-                if let Ok(candidate) =
-                    parse_locatorless_cmra_authority_candidate(bytes, offset, master_key)
-                {
+                if let Ok(candidate) = parse_locatorless_cmra_authority_candidate(bytes, offset, master_key) {
                     candidates.push(candidate);
                 }
             }
@@ -295,30 +256,16 @@ pub(crate) fn locate_v45_recipient_wrap_terminal_authority<F>(
     options: ReaderOptions,
 ) -> Result<RecoveredRecipientWrapTerminalAuthority, FormatError>
 where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
     let mut candidates = Vec::new();
     if bytes.len() >= CRITICAL_RECOVERY_LOCATOR_LEN {
         let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-        collect_v45_recipient_wrap_locator_authority_candidate(
-            bytes,
-            final_offset,
-            0,
-            resolver,
-            &mut candidates,
-        );
+        collect_v45_recipient_wrap_locator_authority_candidate(bytes, final_offset, 0, resolver, &mut candidates);
     }
     if bytes.len() >= LOCATOR_PAIR_LEN {
         let mirror_offset = bytes.len() - LOCATOR_PAIR_LEN;
-        collect_v45_recipient_wrap_locator_authority_candidate(
-            bytes,
-            mirror_offset,
-            1,
-            resolver,
-            &mut candidates,
-        );
+        collect_v45_recipient_wrap_locator_authority_candidate(bytes, mirror_offset, 1, resolver, &mut candidates);
     }
 
     if candidates.is_empty() {
@@ -327,17 +274,9 @@ where
         let mut offset = bytes.len().saturating_sub(4);
         while offset >= scan_start {
             if bytes.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v45_recipient_wrap_locator_authority_candidate(
-                    bytes,
-                    offset,
-                    2,
-                    resolver,
-                    &mut candidates,
-                );
+                collect_v45_recipient_wrap_locator_authority_candidate(bytes, offset, 2, resolver, &mut candidates);
             } else if bytes.get(offset..offset + 4) == Some(b"TZCR") {
-                if let Ok(candidate) = parse_locatorless_cmra_recipient_wrap_authority_candidate(
-                    bytes, offset, resolver,
-                ) {
+                if let Ok(candidate) = parse_locatorless_cmra_recipient_wrap_authority_candidate(bytes, offset, resolver) {
                     candidates.push(candidate);
                 }
             }
@@ -348,8 +287,7 @@ where
         }
     }
 
-    choose_v45_recipient_wrap_terminal_authority_candidate(candidates)
-        .map(|candidate| candidate.authority)
+    choose_v45_recipient_wrap_terminal_authority_candidate(candidates).map(|candidate| candidate.authority)
 }
 
 pub(crate) fn locate_v45_recipient_wrap_terminal_authority_read_at<F>(
@@ -359,30 +297,16 @@ pub(crate) fn locate_v45_recipient_wrap_terminal_authority_read_at<F>(
     options: ReaderOptions,
 ) -> Result<RecoveredRecipientWrapTerminalAuthority, FormatError>
 where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
     let mut candidates = Vec::new();
     if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
         let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
-        collect_v45_recipient_wrap_locator_authority_candidate_read_at(
-            reader,
-            final_offset,
-            0,
-            resolver,
-            &mut candidates,
-        );
+        collect_v45_recipient_wrap_locator_authority_candidate_read_at(reader, final_offset, 0, resolver, &mut candidates);
     }
     if len >= LOCATOR_PAIR_LEN as u64 {
         let mirror_offset = len - LOCATOR_PAIR_LEN as u64;
-        collect_v45_recipient_wrap_locator_authority_candidate_read_at(
-            reader,
-            mirror_offset,
-            1,
-            resolver,
-            &mut candidates,
-        );
+        collect_v45_recipient_wrap_locator_authority_candidate_read_at(reader, mirror_offset, 1, resolver, &mut candidates);
     }
 
     if candidates.is_empty() {
@@ -394,21 +318,9 @@ where
         while offset < tail.len() {
             let absolute_offset = checked_u64_add(scan_start, offset as u64, "CMRA scan")?;
             if tail.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v45_recipient_wrap_locator_authority_candidate_read_at(
-                    reader,
-                    absolute_offset,
-                    2,
-                    resolver,
-                    &mut candidates,
-                );
+                collect_v45_recipient_wrap_locator_authority_candidate_read_at(reader, absolute_offset, 2, resolver, &mut candidates);
             } else if tail.get(offset..offset + 4) == Some(b"TZCR") {
-                if let Ok(candidate) =
-                    parse_locatorless_cmra_recipient_wrap_authority_candidate_read_at(
-                        reader,
-                        absolute_offset,
-                        resolver,
-                    )
-                {
+                if let Ok(candidate) = parse_locatorless_cmra_recipient_wrap_authority_candidate_read_at(reader, absolute_offset, resolver) {
                     candidates.push(candidate);
                 }
             }
@@ -419,8 +331,7 @@ where
         }
     }
 
-    choose_v45_recipient_wrap_terminal_authority_candidate(candidates)
-        .map(|candidate| candidate.authority)
+    choose_v45_recipient_wrap_terminal_authority_candidate(candidates).map(|candidate| candidate.authority)
 }
 
 pub(crate) fn locate_v45_terminal_authority_read_at(
@@ -432,23 +343,11 @@ pub(crate) fn locate_v45_terminal_authority_read_at(
     let mut candidates = Vec::new();
     if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
         let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
-        collect_v45_locator_authority_candidate_read_at(
-            reader,
-            final_offset,
-            0,
-            master_key,
-            &mut candidates,
-        );
+        collect_v45_locator_authority_candidate_read_at(reader, final_offset, 0, master_key, &mut candidates);
     }
     if len >= LOCATOR_PAIR_LEN as u64 {
         let mirror_offset = len - LOCATOR_PAIR_LEN as u64;
-        collect_v45_locator_authority_candidate_read_at(
-            reader,
-            mirror_offset,
-            1,
-            master_key,
-            &mut candidates,
-        );
+        collect_v45_locator_authority_candidate_read_at(reader, mirror_offset, 1, master_key, &mut candidates);
     }
 
     if candidates.is_empty() {
@@ -460,19 +359,9 @@ pub(crate) fn locate_v45_terminal_authority_read_at(
         while offset < tail.len() {
             let absolute_offset = checked_u64_add(scan_start, offset as u64, "CMRA scan")?;
             if tail.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v45_locator_authority_candidate_read_at(
-                    reader,
-                    absolute_offset,
-                    2,
-                    master_key,
-                    &mut candidates,
-                );
+                collect_v45_locator_authority_candidate_read_at(reader, absolute_offset, 2, master_key, &mut candidates);
             } else if tail.get(offset..offset + 4) == Some(b"TZCR") {
-                if let Ok(candidate) = parse_locatorless_cmra_authority_candidate_read_at(
-                    reader,
-                    absolute_offset,
-                    master_key,
-                ) {
+                if let Ok(candidate) = parse_locatorless_cmra_authority_candidate_read_at(reader, absolute_offset, master_key) {
                     candidates.push(candidate);
                 }
             }
@@ -532,25 +421,11 @@ pub(crate) fn locate_v45_public_terminal(
     let mut candidates = Vec::new();
     if bytes.len() >= CRITICAL_RECOVERY_LOCATOR_LEN {
         let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-        collect_v45_public_locator_candidate(
-            bytes,
-            final_offset,
-            0,
-            volume_header,
-            crypto_header,
-            &mut candidates,
-        );
+        collect_v45_public_locator_candidate(bytes, final_offset, 0, volume_header, crypto_header, &mut candidates);
     }
     if bytes.len() >= LOCATOR_PAIR_LEN {
         let mirror_offset = bytes.len() - LOCATOR_PAIR_LEN;
-        collect_v45_public_locator_candidate(
-            bytes,
-            mirror_offset,
-            1,
-            volume_header,
-            crypto_header,
-            &mut candidates,
-        );
+        collect_v45_public_locator_candidate(bytes, mirror_offset, 1, volume_header, crypto_header, &mut candidates);
     }
 
     if candidates.is_empty() {
@@ -559,21 +434,9 @@ pub(crate) fn locate_v45_public_terminal(
         let mut offset = bytes.len().saturating_sub(4);
         while offset >= scan_start {
             if bytes.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v45_public_locator_candidate(
-                    bytes,
-                    offset,
-                    2,
-                    volume_header,
-                    crypto_header,
-                    &mut candidates,
-                );
+                collect_v45_public_locator_candidate(bytes, offset, 2, volume_header, crypto_header, &mut candidates);
             } else if bytes.get(offset..offset + 4) == Some(b"TZCR") {
-                if let Ok(candidate) = parse_public_locatorless_cmra_candidate(
-                    bytes,
-                    offset,
-                    volume_header,
-                    crypto_header,
-                ) {
+                if let Ok(candidate) = parse_public_locatorless_cmra_candidate(bytes, offset, volume_header, crypto_header) {
                     candidates.push(candidate);
                 }
             }
@@ -597,25 +460,11 @@ pub(crate) fn locate_v45_public_terminal_read_at(
     let mut candidates = Vec::new();
     if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
         let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
-        collect_v45_public_locator_candidate_read_at(
-            reader,
-            final_offset,
-            0,
-            volume_header,
-            crypto_header,
-            &mut candidates,
-        );
+        collect_v45_public_locator_candidate_read_at(reader, final_offset, 0, volume_header, crypto_header, &mut candidates);
     }
     if len >= LOCATOR_PAIR_LEN as u64 {
         let mirror_offset = len - LOCATOR_PAIR_LEN as u64;
-        collect_v45_public_locator_candidate_read_at(
-            reader,
-            mirror_offset,
-            1,
-            volume_header,
-            crypto_header,
-            &mut candidates,
-        );
+        collect_v45_public_locator_candidate_read_at(reader, mirror_offset, 1, volume_header, crypto_header, &mut candidates);
     }
 
     if candidates.is_empty() {
@@ -627,21 +476,9 @@ pub(crate) fn locate_v45_public_terminal_read_at(
         while offset < tail.len() {
             let absolute_offset = checked_u64_add(scan_start, offset as u64, "CMRA scan")?;
             if tail.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v45_public_locator_candidate_read_at(
-                    reader,
-                    absolute_offset,
-                    2,
-                    volume_header,
-                    crypto_header,
-                    &mut candidates,
-                );
+                collect_v45_public_locator_candidate_read_at(reader, absolute_offset, 2, volume_header, crypto_header, &mut candidates);
             } else if tail.get(offset..offset + 4) == Some(b"TZCR") {
-                if let Ok(candidate) = parse_public_locatorless_cmra_candidate_read_at(
-                    reader,
-                    absolute_offset,
-                    volume_header,
-                    crypto_header,
-                ) {
+                if let Ok(candidate) = parse_public_locatorless_cmra_candidate_read_at(reader, absolute_offset, volume_header, crypto_header) {
                     candidates.push(candidate);
                 }
             }
@@ -660,10 +497,7 @@ pub(crate) fn locate_v45_public_terminal_read_at(
 /// corrupt one (no recoverable image). Bounded: reads only the final/mirror
 /// critical-recovery locator and the CMRA image. Returns `Ok(None)` when no
 /// matching locator or recoverable image exists.
-pub(crate) fn public_no_key_layout_flags(
-    reader: &dyn ArchiveReadAt,
-    len: u64,
-) -> Result<Option<u32>, FormatError> {
+pub(crate) fn public_no_key_layout_flags(reader: &dyn ArchiveReadAt, len: u64) -> Result<Option<u32>, FormatError> {
     if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
         let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
         if let Some(flags) = public_no_key_layout_flags_at(reader, final_offset, 0)? {
@@ -679,17 +513,8 @@ pub(crate) fn public_no_key_layout_flags(
     Ok(None)
 }
 
-fn public_no_key_layout_flags_at(
-    reader: &dyn ArchiveReadAt,
-    offset: u64,
-    expected_sequence: u32,
-) -> Result<Option<u32>, FormatError> {
-    let Ok(raw) = read_at_vec(
-        reader,
-        offset,
-        CRITICAL_RECOVERY_LOCATOR_LEN,
-        "CriticalRecoveryLocator",
-    ) else {
+fn public_no_key_layout_flags_at(reader: &dyn ArchiveReadAt, offset: u64, expected_sequence: u32) -> Result<Option<u32>, FormatError> {
+    let Ok(raw) = read_at_vec(reader, offset, CRITICAL_RECOVERY_LOCATOR_LEN, "CriticalRecoveryLocator") else {
         return Ok(None);
     };
     let Ok(locator) = CriticalRecoveryLocator::parse(&raw) else {
@@ -699,12 +524,7 @@ fn public_no_key_layout_flags_at(
         return Ok(None);
     }
     let tuple = CmraDecoderTuple::from(locator);
-    let Ok(recovered) = recover_cmra_read_at(
-        reader,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::PublicNoKey,
-    ) else {
+    let Ok(recovered) = recover_cmra_read_at(reader, locator.cmra_offset, Some(tuple), CmraRecoveryMode::PublicNoKey) else {
         return Ok(None);
     };
     Ok(Some(recovered.image.layout_flags))
@@ -738,12 +558,7 @@ pub(crate) fn collect_v45_locator_candidate_read_at(
     context: KeyHoldingTerminalContext<'_>,
     candidates: &mut Vec<TerminalCandidate>,
 ) {
-    let Ok(raw) = read_at_vec(
-        reader,
-        offset,
-        CRITICAL_RECOVERY_LOCATOR_LEN,
-        "CriticalRecoveryLocator",
-    ) else {
+    let Ok(raw) = read_at_vec(reader, offset, CRITICAL_RECOVERY_LOCATOR_LEN, "CriticalRecoveryLocator") else {
         return;
     };
     let Ok(locator) = CriticalRecoveryLocator::parse(&raw) else {
@@ -773,9 +588,7 @@ pub(crate) fn collect_v45_locator_authority_candidate(
     if expected_sequence <= 1 && locator.locator_sequence != expected_sequence {
         return;
     }
-    if let Ok(candidate) =
-        parse_locator_cmra_authority_candidate(bytes, offset, locator, master_key)
-    {
+    if let Ok(candidate) = parse_locator_cmra_authority_candidate(bytes, offset, locator, master_key) {
         candidates.push(candidate);
     }
 }
@@ -787,9 +600,7 @@ pub(crate) fn collect_v45_recipient_wrap_locator_authority_candidate<F>(
     resolver: &mut F,
     candidates: &mut Vec<RecipientWrapTerminalAuthorityCandidate>,
 ) where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
     let Some(raw) = bytes.get(offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN) else {
         return;
@@ -800,9 +611,7 @@ pub(crate) fn collect_v45_recipient_wrap_locator_authority_candidate<F>(
     if expected_sequence <= 1 && locator.locator_sequence != expected_sequence {
         return;
     }
-    if let Ok(candidate) =
-        parse_locator_cmra_recipient_wrap_authority_candidate(bytes, offset, locator, resolver)
-    {
+    if let Ok(candidate) = parse_locator_cmra_recipient_wrap_authority_candidate(bytes, offset, locator, resolver) {
         candidates.push(candidate);
     }
 }
@@ -814,16 +623,9 @@ pub(crate) fn collect_v45_recipient_wrap_locator_authority_candidate_read_at<F>(
     resolver: &mut F,
     candidates: &mut Vec<RecipientWrapTerminalAuthorityCandidate>,
 ) where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
-    let Ok(raw) = read_at_vec(
-        reader,
-        offset,
-        CRITICAL_RECOVERY_LOCATOR_LEN,
-        "CriticalRecoveryLocator",
-    ) else {
+    let Ok(raw) = read_at_vec(reader, offset, CRITICAL_RECOVERY_LOCATOR_LEN, "CriticalRecoveryLocator") else {
         return;
     };
     let Ok(locator) = CriticalRecoveryLocator::parse(&raw) else {
@@ -832,9 +634,7 @@ pub(crate) fn collect_v45_recipient_wrap_locator_authority_candidate_read_at<F>(
     if expected_sequence <= 1 && locator.locator_sequence != expected_sequence {
         return;
     }
-    if let Ok(candidate) = parse_locator_cmra_recipient_wrap_authority_candidate_read_at(
-        reader, offset, locator, resolver,
-    ) {
+    if let Ok(candidate) = parse_locator_cmra_recipient_wrap_authority_candidate_read_at(reader, offset, locator, resolver) {
         candidates.push(candidate);
     }
 }
@@ -846,12 +646,7 @@ pub(crate) fn collect_v45_locator_authority_candidate_read_at(
     master_key: &MasterKey,
     candidates: &mut Vec<TerminalAuthorityCandidate>,
 ) {
-    let Ok(raw) = read_at_vec(
-        reader,
-        offset,
-        CRITICAL_RECOVERY_LOCATOR_LEN,
-        "CriticalRecoveryLocator",
-    ) else {
+    let Ok(raw) = read_at_vec(reader, offset, CRITICAL_RECOVERY_LOCATOR_LEN, "CriticalRecoveryLocator") else {
         return;
     };
     let Ok(locator) = CriticalRecoveryLocator::parse(&raw) else {
@@ -860,9 +655,7 @@ pub(crate) fn collect_v45_locator_authority_candidate_read_at(
     if expected_sequence <= 1 && locator.locator_sequence != expected_sequence {
         return;
     }
-    if let Ok(candidate) =
-        parse_locator_cmra_authority_candidate_read_at(reader, offset, locator, master_key)
-    {
+    if let Ok(candidate) = parse_locator_cmra_authority_candidate_read_at(reader, offset, locator, master_key) {
         candidates.push(candidate);
     }
 }
@@ -884,9 +677,7 @@ pub(crate) fn collect_v45_public_locator_candidate(
     if expected_sequence <= 1 && locator.locator_sequence != expected_sequence {
         return;
     }
-    if let Ok(candidate) =
-        parse_public_locator_cmra_candidate(bytes, offset, locator, volume_header, crypto_header)
-    {
+    if let Ok(candidate) = parse_public_locator_cmra_candidate(bytes, offset, locator, volume_header, crypto_header) {
         candidates.push(candidate);
     }
 }
@@ -899,12 +690,7 @@ pub(crate) fn collect_v45_public_locator_candidate_read_at(
     crypto_header: &CryptoHeader<'_>,
     candidates: &mut Vec<PublicTerminalCandidate>,
 ) {
-    let Ok(raw) = read_at_vec(
-        reader,
-        offset,
-        CRITICAL_RECOVERY_LOCATOR_LEN,
-        "CriticalRecoveryLocator",
-    ) else {
+    let Ok(raw) = read_at_vec(reader, offset, CRITICAL_RECOVERY_LOCATOR_LEN, "CriticalRecoveryLocator") else {
         return;
     };
     let Ok(locator) = CriticalRecoveryLocator::parse(&raw) else {
@@ -913,47 +699,27 @@ pub(crate) fn collect_v45_public_locator_candidate_read_at(
     if expected_sequence <= 1 && locator.locator_sequence != expected_sequence {
         return;
     }
-    if let Ok(candidate) = parse_public_locator_cmra_candidate_read_at(
-        reader,
-        offset,
-        locator,
-        volume_header,
-        crypto_header,
-    ) {
+    if let Ok(candidate) = parse_public_locator_cmra_candidate_read_at(reader, offset, locator, volume_header, crypto_header) {
         candidates.push(candidate);
     }
 }
 
-pub(crate) fn choose_v45_terminal_candidate(
-    mut candidates: Vec<TerminalCandidate>,
-) -> Result<TerminalCandidate, FormatError> {
+pub(crate) fn choose_v45_terminal_candidate(mut candidates: Vec<TerminalCandidate>) -> Result<TerminalCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
-    let winner = candidates.pop().ok_or(FormatError::InvalidArchive(
-        "no valid v45 CMRA candidate found",
-    ))?;
+    let winner = candidates.pop().ok_or(FormatError::InvalidArchive("no valid v45 CMRA candidate found"))?;
     if let Some(previous) = candidates.last() {
-        if previous.anchor == winner.anchor
-            && (previous.cmra_offset != winner.cmra_offset
-                || previous.cmra_length != winner.cmra_length)
-        {
+        if previous.anchor == winner.anchor && (previous.cmra_offset != winner.cmra_offset || previous.cmra_length != winner.cmra_length) {
             return Err(FormatError::InvalidArchive("ambiguous v45 CMRA candidates"));
         }
     }
     Ok(winner)
 }
 
-pub(crate) fn choose_v45_terminal_authority_candidate(
-    mut candidates: Vec<TerminalAuthorityCandidate>,
-) -> Result<TerminalAuthorityCandidate, FormatError> {
+pub(crate) fn choose_v45_terminal_authority_candidate(mut candidates: Vec<TerminalAuthorityCandidate>) -> Result<TerminalAuthorityCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
-    let winner = candidates.pop().ok_or(FormatError::InvalidArchive(
-        "no valid v45 CMRA candidate found",
-    ))?;
+    let winner = candidates.pop().ok_or(FormatError::InvalidArchive("no valid v45 CMRA candidate found"))?;
     if let Some(previous) = candidates.last() {
-        if previous.anchor == winner.anchor
-            && (previous.cmra_offset != winner.cmra_offset
-                || previous.cmra_length != winner.cmra_length)
-        {
+        if previous.anchor == winner.anchor && (previous.cmra_offset != winner.cmra_offset || previous.cmra_length != winner.cmra_length) {
             return Err(FormatError::InvalidArchive("ambiguous v45 CMRA candidates"));
         }
     }
@@ -964,35 +730,23 @@ pub(crate) fn choose_v45_recipient_wrap_terminal_authority_candidate(
     mut candidates: Vec<RecipientWrapTerminalAuthorityCandidate>,
 ) -> Result<RecipientWrapTerminalAuthorityCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
-    let winner = candidates.pop().ok_or(FormatError::InvalidArchive(
-        "no valid v45 CMRA candidate found",
-    ))?;
+    let winner = candidates.pop().ok_or(FormatError::InvalidArchive("no valid v45 CMRA candidate found"))?;
     if let Some(previous) = candidates.last() {
-        if previous.anchor == winner.anchor
-            && (previous.cmra_offset != winner.cmra_offset
-                || previous.cmra_length != winner.cmra_length)
-        {
+        if previous.anchor == winner.anchor && (previous.cmra_offset != winner.cmra_offset || previous.cmra_length != winner.cmra_length) {
             return Err(FormatError::InvalidArchive("ambiguous v45 CMRA candidates"));
         }
     }
     Ok(winner)
 }
 
-pub(crate) fn choose_v45_public_terminal_candidate(
-    mut candidates: Vec<PublicTerminalCandidate>,
-) -> Result<PublicTerminalCandidate, FormatError> {
+pub(crate) fn choose_v45_public_terminal_candidate(mut candidates: Vec<PublicTerminalCandidate>) -> Result<PublicTerminalCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
-    let winner = candidates.pop().ok_or(FormatError::InvalidArchive(
-        "no valid v45 public CMRA candidate found",
-    ))?;
+    let winner = candidates
+        .pop()
+        .ok_or(FormatError::InvalidArchive("no valid v45 public CMRA candidate found"))?;
     if let Some(previous) = candidates.last() {
-        if previous.anchor == winner.anchor
-            && (previous.cmra_offset != winner.cmra_offset
-                || previous.cmra_length != winner.cmra_length)
-        {
-            return Err(FormatError::InvalidArchive(
-                "ambiguous v45 public CMRA candidates",
-            ));
+        if previous.anchor == winner.anchor && (previous.cmra_offset != winner.cmra_offset || previous.cmra_length != winner.cmra_length) {
+            return Err(FormatError::InvalidArchive("ambiguous v45 public CMRA candidates"));
         }
     }
     Ok(winner)
@@ -1011,12 +765,7 @@ pub(crate) fn parse_locator_cmra_candidate(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_position(locator_offset, locator)?;
-    let recovered = recover_cmra(
-        bytes,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    let recovered = recover_cmra(bytes, locator.cmra_offset, Some(tuple), CmraRecoveryMode::KeyHolding)?;
     if recovered.tuple != tuple {
         return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
     }
@@ -1024,13 +773,8 @@ pub(crate) fn parse_locator_cmra_candidate(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_image_boundary(locator, &recovered.image)?;
-    validate_cmra_identity_hints(
-        recovered.header_hints,
-        Some(CmraIdentityHints::from(locator)),
-        &recovered.image,
-    )?;
-    let terminal =
-        validate_recovered_terminal(recovered.image, recovered.tuple, bytes, context, false)?;
+    validate_cmra_identity_hints(recovered.header_hints, Some(CmraIdentityHints::from(locator)), &recovered.image)?;
+    let terminal = validate_recovered_terminal(recovered.image, recovered.tuple, bytes, context, false)?;
     Ok(TerminalCandidate {
         terminal,
         anchor: locator_offset
@@ -1054,16 +798,8 @@ pub(crate) fn parse_locator_cmra_candidate_read_at(
     if locator.cmra_length as u64 != expected_cmra_length {
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
-    validate_locator_position(
-        to_usize(locator_offset, "CriticalRecoveryLocator")?,
-        locator,
-    )?;
-    let recovered = recover_cmra_read_at(
-        reader,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    validate_locator_position(to_usize(locator_offset, "CriticalRecoveryLocator")?, locator)?;
+    let recovered = recover_cmra_read_at(reader, locator.cmra_offset, Some(tuple), CmraRecoveryMode::KeyHolding)?;
     if recovered.tuple != tuple {
         return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
     }
@@ -1071,26 +807,12 @@ pub(crate) fn parse_locator_cmra_candidate_read_at(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_image_boundary(locator, &recovered.image)?;
-    validate_cmra_identity_hints(
-        recovered.header_hints,
-        Some(CmraIdentityHints::from(locator)),
-        &recovered.image,
-    )?;
-    let terminal = validate_recovered_terminal_read_at(
-        recovered.image,
-        recovered.tuple,
-        reader,
-        context,
-        false,
-    )?;
+    validate_cmra_identity_hints(recovered.header_hints, Some(CmraIdentityHints::from(locator)), &recovered.image)?;
+    let terminal = validate_recovered_terminal_read_at(recovered.image, recovered.tuple, reader, context, false)?;
     Ok(TerminalCandidate {
         terminal,
         anchor: to_usize(
-            checked_u64_add(
-                locator_offset,
-                CRITICAL_RECOVERY_LOCATOR_LEN as u64,
-                "locator anchor overflow",
-            )?,
+            checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?,
             "locator anchor overflow",
         )?,
         locator_sequence: Some(locator.locator_sequence),
@@ -1112,12 +834,7 @@ pub(crate) fn parse_locator_cmra_authority_candidate(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_position(locator_offset, locator)?;
-    let recovered = recover_cmra(
-        bytes,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    let recovered = recover_cmra(bytes, locator.cmra_offset, Some(tuple), CmraRecoveryMode::KeyHolding)?;
     if recovered.tuple != tuple {
         return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
     }
@@ -1125,14 +842,9 @@ pub(crate) fn parse_locator_cmra_authority_candidate(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_image_boundary(locator, &recovered.image)?;
-    validate_cmra_identity_hints(
-        recovered.header_hints,
-        Some(CmraIdentityHints::from(locator)),
-        &recovered.image,
-    )?;
+    validate_cmra_identity_hints(recovered.header_hints, Some(CmraIdentityHints::from(locator)), &recovered.image)?;
     let cmra_length = recovered.cmra_length;
-    let authority =
-        validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, false)?;
+    let authority = validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, false)?;
     Ok(TerminalAuthorityCandidate {
         authority,
         anchor: locator_offset
@@ -1150,9 +862,7 @@ pub(crate) fn parse_locator_cmra_recipient_wrap_authority_candidate<F>(
     resolver: &mut F,
 ) -> Result<RecipientWrapTerminalAuthorityCandidate, FormatError>
 where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
     let tuple = CmraDecoderTuple::from(locator);
     validate_cmra_decoder_tuple(tuple)?;
@@ -1161,12 +871,7 @@ where
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_position(locator_offset, locator)?;
-    let recovered = recover_cmra(
-        bytes,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    let recovered = recover_cmra(bytes, locator.cmra_offset, Some(tuple), CmraRecoveryMode::KeyHolding)?;
     if recovered.tuple != tuple {
         return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
     }
@@ -1174,18 +879,9 @@ where
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_image_boundary(locator, &recovered.image)?;
-    validate_cmra_identity_hints(
-        recovered.header_hints,
-        Some(CmraIdentityHints::from(locator)),
-        &recovered.image,
-    )?;
+    validate_cmra_identity_hints(recovered.header_hints, Some(CmraIdentityHints::from(locator)), &recovered.image)?;
     let cmra_length = recovered.cmra_length;
-    let authority = validate_recovered_recipient_wrap_terminal_authority(
-        recovered.image,
-        recovered.tuple,
-        resolver,
-        false,
-    )?;
+    let authority = validate_recovered_recipient_wrap_terminal_authority(recovered.image, recovered.tuple, resolver, false)?;
     Ok(RecipientWrapTerminalAuthorityCandidate {
         authority,
         anchor: locator_offset
@@ -1203,9 +899,7 @@ pub(crate) fn parse_locator_cmra_recipient_wrap_authority_candidate_read_at<F>(
     resolver: &mut F,
 ) -> Result<RecipientWrapTerminalAuthorityCandidate, FormatError>
 where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
     let tuple = CmraDecoderTuple::from(locator);
     validate_cmra_decoder_tuple(tuple)?;
@@ -1213,16 +907,8 @@ where
     if locator.cmra_length as u64 != expected_cmra_length {
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
-    validate_locator_position(
-        to_usize(locator_offset, "CriticalRecoveryLocator")?,
-        locator,
-    )?;
-    let recovered = recover_cmra_read_at(
-        reader,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    validate_locator_position(to_usize(locator_offset, "CriticalRecoveryLocator")?, locator)?;
+    let recovered = recover_cmra_read_at(reader, locator.cmra_offset, Some(tuple), CmraRecoveryMode::KeyHolding)?;
     if recovered.tuple != tuple {
         return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
     }
@@ -1230,26 +916,13 @@ where
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_image_boundary(locator, &recovered.image)?;
-    validate_cmra_identity_hints(
-        recovered.header_hints,
-        Some(CmraIdentityHints::from(locator)),
-        &recovered.image,
-    )?;
+    validate_cmra_identity_hints(recovered.header_hints, Some(CmraIdentityHints::from(locator)), &recovered.image)?;
     let cmra_length = recovered.cmra_length;
-    let authority = validate_recovered_recipient_wrap_terminal_authority(
-        recovered.image,
-        recovered.tuple,
-        resolver,
-        false,
-    )?;
+    let authority = validate_recovered_recipient_wrap_terminal_authority(recovered.image, recovered.tuple, resolver, false)?;
     Ok(RecipientWrapTerminalAuthorityCandidate {
         authority,
         anchor: to_usize(
-            checked_u64_add(
-                locator_offset,
-                CRITICAL_RECOVERY_LOCATOR_LEN as u64,
-                "locator anchor overflow",
-            )?,
+            checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?,
             "locator anchor overflow",
         )?,
         cmra_offset: locator.cmra_offset,
@@ -1269,16 +942,8 @@ pub(crate) fn parse_locator_cmra_authority_candidate_read_at(
     if locator.cmra_length as u64 != expected_cmra_length {
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
-    validate_locator_position(
-        to_usize(locator_offset, "CriticalRecoveryLocator")?,
-        locator,
-    )?;
-    let recovered = recover_cmra_read_at(
-        reader,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    validate_locator_position(to_usize(locator_offset, "CriticalRecoveryLocator")?, locator)?;
+    let recovered = recover_cmra_read_at(reader, locator.cmra_offset, Some(tuple), CmraRecoveryMode::KeyHolding)?;
     if recovered.tuple != tuple {
         return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
     }
@@ -1286,22 +951,13 @@ pub(crate) fn parse_locator_cmra_authority_candidate_read_at(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_image_boundary(locator, &recovered.image)?;
-    validate_cmra_identity_hints(
-        recovered.header_hints,
-        Some(CmraIdentityHints::from(locator)),
-        &recovered.image,
-    )?;
+    validate_cmra_identity_hints(recovered.header_hints, Some(CmraIdentityHints::from(locator)), &recovered.image)?;
     let cmra_length = recovered.cmra_length;
-    let authority =
-        validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, false)?;
+    let authority = validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, false)?;
     Ok(TerminalAuthorityCandidate {
         authority,
         anchor: to_usize(
-            checked_u64_add(
-                locator_offset,
-                CRITICAL_RECOVERY_LOCATOR_LEN as u64,
-                "locator anchor overflow",
-            )?,
+            checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?,
             "locator anchor overflow",
         )?,
         cmra_offset: locator.cmra_offset,
@@ -1323,12 +979,7 @@ pub(crate) fn parse_public_locator_cmra_candidate(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_position(locator_offset, locator)?;
-    let recovered = recover_cmra(
-        bytes,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::PublicNoKey,
-    )?;
+    let recovered = recover_cmra(bytes, locator.cmra_offset, Some(tuple), CmraRecoveryMode::PublicNoKey)?;
     if recovered.tuple != tuple {
         return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
     }
@@ -1336,18 +987,8 @@ pub(crate) fn parse_public_locator_cmra_candidate(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_image_boundary(locator, &recovered.image)?;
-    validate_cmra_identity_hints(
-        recovered.header_hints,
-        Some(CmraIdentityHints::from(locator)),
-        &recovered.image,
-    )?;
-    let terminal = validate_recovered_public_terminal(
-        recovered.image,
-        bytes,
-        volume_header,
-        crypto_header,
-        false,
-    )?;
+    validate_cmra_identity_hints(recovered.header_hints, Some(CmraIdentityHints::from(locator)), &recovered.image)?;
+    let terminal = validate_recovered_public_terminal(recovered.image, bytes, volume_header, crypto_header, false)?;
     Ok(PublicTerminalCandidate {
         terminal,
         anchor: locator_offset
@@ -1371,16 +1012,8 @@ pub(crate) fn parse_public_locator_cmra_candidate_read_at(
     if locator.cmra_length as u64 != expected_cmra_length {
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
-    validate_locator_position(
-        to_usize(locator_offset, "CriticalRecoveryLocator")?,
-        locator,
-    )?;
-    let recovered = recover_cmra_read_at(
-        reader,
-        locator.cmra_offset,
-        Some(tuple),
-        CmraRecoveryMode::PublicNoKey,
-    )?;
+    validate_locator_position(to_usize(locator_offset, "CriticalRecoveryLocator")?, locator)?;
+    let recovered = recover_cmra_read_at(reader, locator.cmra_offset, Some(tuple), CmraRecoveryMode::PublicNoKey)?;
     if recovered.tuple != tuple {
         return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
     }
@@ -1388,26 +1021,12 @@ pub(crate) fn parse_public_locator_cmra_candidate_read_at(
         return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
     }
     validate_locator_image_boundary(locator, &recovered.image)?;
-    validate_cmra_identity_hints(
-        recovered.header_hints,
-        Some(CmraIdentityHints::from(locator)),
-        &recovered.image,
-    )?;
-    let terminal = validate_recovered_public_terminal_read_at(
-        recovered.image,
-        reader,
-        volume_header,
-        crypto_header,
-        false,
-    )?;
+    validate_cmra_identity_hints(recovered.header_hints, Some(CmraIdentityHints::from(locator)), &recovered.image)?;
+    let terminal = validate_recovered_public_terminal_read_at(recovered.image, reader, volume_header, crypto_header, false)?;
     Ok(PublicTerminalCandidate {
         terminal,
         anchor: to_usize(
-            checked_u64_add(
-                locator_offset,
-                CRITICAL_RECOVERY_LOCATOR_LEN as u64,
-                "locator anchor",
-            )?,
+            checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor")?,
             "locator anchor overflow",
         )?,
         cmra_offset: locator.cmra_offset,
@@ -1420,16 +1039,9 @@ pub(crate) fn parse_locatorless_cmra_candidate(
     cmra_offset: usize,
     context: KeyHoldingTerminalContext<'_>,
 ) -> Result<TerminalCandidate, FormatError> {
-    let recovered = recover_cmra(
-        bytes,
-        cmra_offset as u64,
-        None,
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    let recovered = recover_cmra(bytes, cmra_offset as u64, None, CmraRecoveryMode::KeyHolding)?;
     if recovered.image.body_bytes_before_cmra != cmra_offset as u64 {
-        return Err(FormatError::InvalidArchive(
-            "locatorless CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
     if recovered
         .image
@@ -1438,13 +1050,10 @@ pub(crate) fn parse_locatorless_cmra_candidate(
         .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset as u64
     {
-        return Err(FormatError::InvalidArchive(
-            "locatorless trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
     validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
-    let terminal =
-        validate_recovered_terminal(recovered.image, recovered.tuple, bytes, context, true)?;
+    let terminal = validate_recovered_terminal(recovered.image, recovered.tuple, bytes, context, true)?;
     Ok(TerminalCandidate {
         terminal,
         anchor: cmra_offset
@@ -1463,9 +1072,7 @@ pub(crate) fn parse_locatorless_cmra_candidate_read_at(
 ) -> Result<TerminalCandidate, FormatError> {
     let recovered = recover_cmra_read_at(reader, cmra_offset, None, CmraRecoveryMode::KeyHolding)?;
     if recovered.image.body_bytes_before_cmra != cmra_offset {
-        return Err(FormatError::InvalidArchive(
-            "locatorless CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
     if recovered
         .image
@@ -1474,18 +1081,10 @@ pub(crate) fn parse_locatorless_cmra_candidate_read_at(
         .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset
     {
-        return Err(FormatError::InvalidArchive(
-            "locatorless trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
     validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
-    let terminal = validate_recovered_terminal_read_at(
-        recovered.image,
-        recovered.tuple,
-        reader,
-        context,
-        true,
-    )?;
+    let terminal = validate_recovered_terminal_read_at(recovered.image, recovered.tuple, reader, context, true)?;
     Ok(TerminalCandidate {
         terminal,
         anchor: to_usize(
@@ -1503,16 +1102,9 @@ pub(crate) fn parse_locatorless_cmra_authority_candidate(
     cmra_offset: usize,
     master_key: &MasterKey,
 ) -> Result<TerminalAuthorityCandidate, FormatError> {
-    let recovered = recover_cmra(
-        bytes,
-        cmra_offset as u64,
-        None,
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    let recovered = recover_cmra(bytes, cmra_offset as u64, None, CmraRecoveryMode::KeyHolding)?;
     if recovered.image.body_bytes_before_cmra != cmra_offset as u64 {
-        return Err(FormatError::InvalidArchive(
-            "locatorless CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
     if recovered
         .image
@@ -1521,14 +1113,11 @@ pub(crate) fn parse_locatorless_cmra_authority_candidate(
         .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset as u64
     {
-        return Err(FormatError::InvalidArchive(
-            "locatorless trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
     validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
     let cmra_length = recovered.cmra_length;
-    let authority =
-        validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, true)?;
+    let authority = validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, true)?;
     Ok(TerminalAuthorityCandidate {
         authority,
         anchor: cmra_offset
@@ -1545,20 +1134,11 @@ pub(crate) fn parse_locatorless_cmra_recipient_wrap_authority_candidate<F>(
     resolver: &mut F,
 ) -> Result<RecipientWrapTerminalAuthorityCandidate, FormatError>
 where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
-    let recovered = recover_cmra(
-        bytes,
-        cmra_offset as u64,
-        None,
-        CmraRecoveryMode::KeyHolding,
-    )?;
+    let recovered = recover_cmra(bytes, cmra_offset as u64, None, CmraRecoveryMode::KeyHolding)?;
     if recovered.image.body_bytes_before_cmra != cmra_offset as u64 {
-        return Err(FormatError::InvalidArchive(
-            "locatorless CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
     if recovered
         .image
@@ -1567,18 +1147,11 @@ where
         .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset as u64
     {
-        return Err(FormatError::InvalidArchive(
-            "locatorless trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
     validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
     let cmra_length = recovered.cmra_length;
-    let authority = validate_recovered_recipient_wrap_terminal_authority(
-        recovered.image,
-        recovered.tuple,
-        resolver,
-        true,
-    )?;
+    let authority = validate_recovered_recipient_wrap_terminal_authority(recovered.image, recovered.tuple, resolver, true)?;
     Ok(RecipientWrapTerminalAuthorityCandidate {
         authority,
         anchor: cmra_offset
@@ -1595,15 +1168,11 @@ pub(crate) fn parse_locatorless_cmra_recipient_wrap_authority_candidate_read_at<
     resolver: &mut F,
 ) -> Result<RecipientWrapTerminalAuthorityCandidate, FormatError>
 where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
     let recovered = recover_cmra_read_at(reader, cmra_offset, None, CmraRecoveryMode::KeyHolding)?;
     if recovered.image.body_bytes_before_cmra != cmra_offset {
-        return Err(FormatError::InvalidArchive(
-            "locatorless CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
     if recovered
         .image
@@ -1612,24 +1181,14 @@ where
         .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset
     {
-        return Err(FormatError::InvalidArchive(
-            "locatorless trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
     validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
     let cmra_length = recovered.cmra_length;
-    let authority = validate_recovered_recipient_wrap_terminal_authority(
-        recovered.image,
-        recovered.tuple,
-        resolver,
-        true,
-    )?;
+    let authority = validate_recovered_recipient_wrap_terminal_authority(recovered.image, recovered.tuple, resolver, true)?;
     Ok(RecipientWrapTerminalAuthorityCandidate {
         authority,
-        anchor: to_usize(
-            checked_u64_add(cmra_offset, cmra_length, "CMRA anchor overflow")?,
-            "CMRA anchor overflow",
-        )?,
+        anchor: to_usize(checked_u64_add(cmra_offset, cmra_length, "CMRA anchor overflow")?, "CMRA anchor overflow")?,
         cmra_offset,
         cmra_length,
     })
@@ -1642,9 +1201,7 @@ pub(crate) fn parse_locatorless_cmra_authority_candidate_read_at(
 ) -> Result<TerminalAuthorityCandidate, FormatError> {
     let recovered = recover_cmra_read_at(reader, cmra_offset, None, CmraRecoveryMode::KeyHolding)?;
     if recovered.image.body_bytes_before_cmra != cmra_offset {
-        return Err(FormatError::InvalidArchive(
-            "locatorless CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
     if recovered
         .image
@@ -1653,20 +1210,14 @@ pub(crate) fn parse_locatorless_cmra_authority_candidate_read_at(
         .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset
     {
-        return Err(FormatError::InvalidArchive(
-            "locatorless trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
     validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
     let cmra_length = recovered.cmra_length;
-    let authority =
-        validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, true)?;
+    let authority = validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, true)?;
     Ok(TerminalAuthorityCandidate {
         authority,
-        anchor: to_usize(
-            checked_u64_add(cmra_offset, cmra_length, "CMRA anchor overflow")?,
-            "CMRA anchor overflow",
-        )?,
+        anchor: to_usize(checked_u64_add(cmra_offset, cmra_length, "CMRA anchor overflow")?, "CMRA anchor overflow")?,
         cmra_offset,
         cmra_length,
     })
@@ -1678,16 +1229,9 @@ pub(crate) fn parse_public_locatorless_cmra_candidate(
     volume_header: &VolumeHeader,
     crypto_header: &CryptoHeader<'_>,
 ) -> Result<PublicTerminalCandidate, FormatError> {
-    let recovered = recover_cmra(
-        bytes,
-        cmra_offset as u64,
-        None,
-        CmraRecoveryMode::PublicNoKey,
-    )?;
+    let recovered = recover_cmra(bytes, cmra_offset as u64, None, CmraRecoveryMode::PublicNoKey)?;
     if recovered.image.body_bytes_before_cmra != cmra_offset as u64 {
-        return Err(FormatError::InvalidArchive(
-            "locatorless CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
     if recovered
         .image
@@ -1696,18 +1240,10 @@ pub(crate) fn parse_public_locatorless_cmra_candidate(
         .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset as u64
     {
-        return Err(FormatError::InvalidArchive(
-            "locatorless trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
     validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
-    let terminal = validate_recovered_public_terminal(
-        recovered.image,
-        bytes,
-        volume_header,
-        crypto_header,
-        true,
-    )?;
+    let terminal = validate_recovered_public_terminal(recovered.image, bytes, volume_header, crypto_header, true)?;
     Ok(PublicTerminalCandidate {
         terminal,
         anchor: cmra_offset
@@ -1726,9 +1262,7 @@ pub(crate) fn parse_public_locatorless_cmra_candidate_read_at(
 ) -> Result<PublicTerminalCandidate, FormatError> {
     let recovered = recover_cmra_read_at(reader, cmra_offset, None, CmraRecoveryMode::PublicNoKey)?;
     if recovered.image.body_bytes_before_cmra != cmra_offset {
-        return Err(FormatError::InvalidArchive(
-            "locatorless CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
     if recovered
         .image
@@ -1737,18 +1271,10 @@ pub(crate) fn parse_public_locatorless_cmra_candidate_read_at(
         .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset
     {
-        return Err(FormatError::InvalidArchive(
-            "locatorless trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
     validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
-    let terminal = validate_recovered_public_terminal_read_at(
-        recovered.image,
-        reader,
-        volume_header,
-        crypto_header,
-        true,
-    )?;
+    let terminal = validate_recovered_public_terminal_read_at(recovered.image, reader, volume_header, crypto_header, true)?;
     Ok(PublicTerminalCandidate {
         terminal,
         anchor: to_usize(
@@ -1760,14 +1286,9 @@ pub(crate) fn parse_public_locatorless_cmra_candidate_read_at(
     })
 }
 
-pub(crate) fn validate_locator_position(
-    locator_offset: usize,
-    locator: CriticalRecoveryLocator,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_locator_position(locator_offset: usize, locator: CriticalRecoveryLocator) -> Result<(), FormatError> {
     if locator.cmra_offset != locator.body_bytes_before_cmra {
-        return Err(FormatError::InvalidArchive(
-            "locator CMRA boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locator CMRA boundary mismatch"));
     }
     if locator
         .volume_trailer_offset
@@ -1775,9 +1296,7 @@ pub(crate) fn validate_locator_position(
         .ok_or(FormatError::InvalidArchive("locator trailer overflow"))?
         != locator.cmra_offset
     {
-        return Err(FormatError::InvalidArchive(
-            "locator trailer boundary mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("locator trailer boundary mismatch"));
     }
     let expected_offset = match locator.locator_sequence {
         1 => locator.cmra_offset.checked_add(locator.cmra_length as u64),
@@ -1789,17 +1308,12 @@ pub(crate) fn validate_locator_position(
     }
     .ok_or(FormatError::InvalidArchive("locator position overflow"))?;
     if expected_offset != locator_offset as u64 {
-        return Err(FormatError::InvalidArchive(
-            "locator position does not match sequence",
-        ));
+        return Err(FormatError::InvalidArchive("locator position does not match sequence"));
     }
     Ok(())
 }
 
-pub(crate) fn validate_locator_image_boundary(
-    locator: CriticalRecoveryLocator,
-    image: &CriticalMetadataImage,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_locator_image_boundary(locator: CriticalRecoveryLocator, image: &CriticalMetadataImage) -> Result<(), FormatError> {
     if locator.volume_format_rev != image.volume_format_rev
         || locator.volume_trailer_offset != image.volume_trailer_offset
         || locator.body_bytes_before_cmra != image.body_bytes_before_cmra
@@ -1809,9 +1323,7 @@ pub(crate) fn validate_locator_image_boundary(
             .ok_or(FormatError::InvalidArchive("CMRA image boundary overflow"))?
             != locator.cmra_offset
     {
-        return Err(FormatError::InvalidArchive(
-            "locator and CMRA image boundaries differ",
-        ));
+        return Err(FormatError::InvalidArchive("locator and CMRA image boundaries differ"));
     }
     Ok(())
 }
@@ -1823,19 +1335,12 @@ pub(crate) fn validate_cmra_identity_hints(
 ) -> Result<(), FormatError> {
     if let (Some(header), Some(locator)) = (header_hints, locator_hints) {
         if header != locator {
-            return Err(FormatError::InvalidArchive(
-                "CMRA header and locator identity hints differ",
-            ));
+            return Err(FormatError::InvalidArchive("CMRA header and locator identity hints differ"));
         }
     }
     for hints in [header_hints, locator_hints].into_iter().flatten() {
-        if hints.archive_uuid != image.archive_uuid
-            || hints.session_id != image.session_id
-            || hints.volume_index != image.volume_index
-        {
-            return Err(FormatError::InvalidArchive(
-                "CMRA identity hints do not match recovered image",
-            ));
+        if hints.archive_uuid != image.archive_uuid || hints.session_id != image.session_id || hints.volume_index != image.volume_index {
+            return Err(FormatError::InvalidArchive("CMRA identity hints do not match recovered image"));
         }
     }
     Ok(())
@@ -1848,12 +1353,7 @@ pub(crate) fn recover_cmra(
     mode: CmraRecoveryMode,
 ) -> Result<RecoveredCmra, FormatError> {
     let offset = to_usize(cmra_offset, "CMRA")?;
-    let header_bytes = slice(
-        bytes,
-        offset,
-        CRITICAL_METADATA_RECOVERY_HEADER_LEN,
-        "CriticalMetadataRecoveryHeader",
-    )?;
+    let header_bytes = slice(bytes, offset, CRITICAL_METADATA_RECOVERY_HEADER_LEN, "CriticalMetadataRecoveryHeader")?;
     let (tuple, header_hints) = recover_cmra_header_tuple(header_bytes, locator_tuple)?;
     validate_cmra_decoder_tuple(tuple)?;
     let cmra_length = cmra_serialized_length(tuple)?;
@@ -1868,12 +1368,7 @@ pub(crate) fn recover_cmra_read_at(
     locator_tuple: Option<CmraDecoderTuple>,
     mode: CmraRecoveryMode,
 ) -> Result<RecoveredCmra, FormatError> {
-    let header_bytes = read_at_vec(
-        reader,
-        cmra_offset,
-        CRITICAL_METADATA_RECOVERY_HEADER_LEN,
-        "CriticalMetadataRecoveryHeader",
-    )?;
+    let header_bytes = read_at_vec(reader, cmra_offset, CRITICAL_METADATA_RECOVERY_HEADER_LEN, "CriticalMetadataRecoveryHeader")?;
     let (tuple, header_hints) = recover_cmra_header_tuple(&header_bytes, locator_tuple)?;
     validate_cmra_decoder_tuple(tuple)?;
     let cmra_length = cmra_serialized_length(tuple)?;
@@ -1894,10 +1389,7 @@ pub(crate) fn recover_cmra_header_tuple(
             }
             (locator_tuple, Some(CmraIdentityHints::from(header)))
         }
-        (Ok(header), None) => (
-            CmraDecoderTuple::from(header),
-            Some(CmraIdentityHints::from(header)),
-        ),
+        (Ok(header), None) => (CmraDecoderTuple::from(header), Some(CmraIdentityHints::from(header))),
         (Err(_), Some(tuple)) => (tuple, None),
         (Err(err), _) => return Err(err),
     })
@@ -1925,18 +1417,13 @@ pub(crate) fn recover_cmra_from_bytes(
         if let Some(shard) = shard {
             validate_cmra_shard(&shard, idx, tuple)?;
             if shard.shard_role == 0 {
-                let data_slot = data_shards
-                    .get_mut(idx)
-                    .ok_or(FormatError::InvalidArchive("CMRA data shard out of range"))?;
+                let data_slot = data_shards.get_mut(idx).ok_or(FormatError::InvalidArchive("CMRA data shard out of range"))?;
                 *data_slot = Some(shard.payload);
             } else {
                 let parity_idx = idx - tuple.data_shard_count as usize;
-                let parity_slot =
-                    parity_shards
-                        .get_mut(parity_idx)
-                        .ok_or(FormatError::InvalidArchive(
-                            "CMRA parity shard out of range",
-                        ))?;
+                let parity_slot = parity_shards
+                    .get_mut(parity_idx)
+                    .ok_or(FormatError::InvalidArchive("CMRA parity shard out of range"))?;
                 *parity_slot = Some(shard.payload);
             }
         }
@@ -1974,22 +1461,14 @@ pub(crate) fn validate_cmra_decoder_tuple(tuple: CmraDecoderTuple) -> Result<(),
     let min = critical_image_min();
     let cap = critical_image_cap()?;
     if image_length < min || image_length > cap {
-        return Err(FormatError::InvalidArchive(
-            "CMRA image_length is outside bounds",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA image_length is outside bounds"));
     }
     let expected_data_shards = ceil_div_u64(image_length, shard_size)?;
     if expected_data_shards == 0 || expected_data_shards != tuple.data_shard_count as u64 {
-        return Err(FormatError::InvalidArchive(
-            "CMRA data_shard_count does not match image length",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA data_shard_count does not match image length"));
     }
     let max_parity = 2u64.max(ceil_div_u64(
-        checked_u64_mul(
-            expected_data_shards,
-            READER_MAX_CMRA_PARITY_PCT as u64,
-            "CMRA parity overflow",
-        )?,
+        checked_u64_mul(expected_data_shards, READER_MAX_CMRA_PARITY_PCT as u64, "CMRA parity overflow")?,
         100,
     )?);
     if tuple.parity_shard_count as u64 > max_parity {
@@ -2008,16 +1487,9 @@ pub(crate) fn validate_cmra_decoder_tuple(tuple: CmraDecoderTuple) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn validate_cmra_writer_parity_lower_bound(
-    tuple: CmraDecoderTuple,
-    bit_rot_buffer_pct: u8,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_cmra_writer_parity_lower_bound(tuple: CmraDecoderTuple, bit_rot_buffer_pct: u8) -> Result<(), FormatError> {
     let min_parity = 2u64.max(ceil_div_u64(
-        checked_u64_mul(
-            tuple.data_shard_count as u64,
-            bit_rot_buffer_pct as u64,
-            "CMRA parity lower-bound overflow",
-        )?,
+        checked_u64_mul(tuple.data_shard_count as u64, bit_rot_buffer_pct as u64, "CMRA parity lower-bound overflow")?,
         100,
     )?);
     if (tuple.parity_shard_count as u64) < min_parity {
@@ -2028,23 +1500,15 @@ pub(crate) fn validate_cmra_writer_parity_lower_bound(
     Ok(())
 }
 
-pub(crate) fn validate_cmra_shard(
-    shard: &CriticalMetadataRecoveryShard,
-    serialized_idx: usize,
-    tuple: CmraDecoderTuple,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_cmra_shard(shard: &CriticalMetadataRecoveryShard, serialized_idx: usize, tuple: CmraDecoderTuple) -> Result<(), FormatError> {
     if shard.shard_index as usize != serialized_idx {
-        return Err(FormatError::InvalidArchive(
-            "CMRA shards are not in canonical order",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA shards are not in canonical order"));
     }
     let data_count = tuple.data_shard_count as usize;
     let shard_size = tuple.shard_size as usize;
     if serialized_idx < data_count {
         if shard.shard_role != 0 {
-            return Err(FormatError::InvalidArchive(
-                "CMRA data shard has wrong role",
-            ));
+            return Err(FormatError::InvalidArchive("CMRA data shard has wrong role"));
         }
         let expected_len = if serialized_idx + 1 == data_count {
             let used = tuple.image_length as usize - serialized_idx * shard_size;
@@ -2057,43 +1521,28 @@ pub(crate) fn validate_cmra_shard(
             shard_size
         };
         if shard.shard_payload_length as usize != expected_len {
-            return Err(FormatError::InvalidArchive(
-                "CMRA data shard payload length is non-canonical",
-            ));
+            return Err(FormatError::InvalidArchive("CMRA data shard payload length is non-canonical"));
         }
-        if serialized_idx + 1 == data_count
-            && shard.payload[expected_len..].iter().any(|byte| *byte != 0)
-        {
-            return Err(FormatError::InvalidArchive(
-                "CMRA final data shard padding is non-zero",
-            ));
+        if serialized_idx + 1 == data_count && shard.payload[expected_len..].iter().any(|byte| *byte != 0) {
+            return Err(FormatError::InvalidArchive("CMRA final data shard padding is non-zero"));
         }
     } else {
         if shard.shard_role != 1 {
-            return Err(FormatError::InvalidArchive(
-                "CMRA parity shard has wrong role",
-            ));
+            return Err(FormatError::InvalidArchive("CMRA parity shard has wrong role"));
         }
         if shard.shard_payload_length as usize != shard_size {
-            return Err(FormatError::InvalidArchive(
-                "CMRA parity shard payload length is non-canonical",
-            ));
+            return Err(FormatError::InvalidArchive("CMRA parity shard payload length is non-canonical"));
         }
     }
     Ok(())
 }
 
-pub(crate) fn validate_critical_metadata_image(
-    image: &CriticalMetadataImage,
-    mode: CmraRecoveryMode,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_critical_metadata_image(image: &CriticalMetadataImage, mode: CmraRecoveryMode) -> Result<(), FormatError> {
     let root_auth_present = image.layout_flags & 0x0000_0001 != 0;
     let key_wrap_layout_present = image.layout_flags & 0x0000_0002 != 0;
     let key_wrap_region = image.region(6);
     if key_wrap_layout_present != key_wrap_region.is_some() {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage key-wrap layout flag mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap layout flag mismatch"));
     }
     let key_wrap_present = key_wrap_layout_present;
     if image.volume_header_offset != 0
@@ -2107,82 +1556,53 @@ pub(crate) fn validate_critical_metadata_image(
                 .checked_add(VOLUME_TRAILER_LEN as u64)
                 .ok_or(FormatError::InvalidArchive("CMRA image boundary overflow"))?
     {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage fixed layout is invalid",
-        ));
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage fixed layout is invalid"));
     }
     if root_auth_present {
-        if image.root_auth_footer_offset == 0
-            || image.root_auth_footer_length == 0
-            || image.root_auth_footer_length > READER_MAX_ROOT_AUTH_FOOTER_LEN
-        {
-            return Err(FormatError::InvalidArchive(
-                "CriticalMetadataImage root-auth range is invalid",
-            ));
+        if image.root_auth_footer_offset == 0 || image.root_auth_footer_length == 0 || image.root_auth_footer_length > READER_MAX_ROOT_AUTH_FOOTER_LEN {
+            return Err(FormatError::InvalidArchive("CriticalMetadataImage root-auth range is invalid"));
         }
-    } else if image.root_auth_footer_offset != 0
-        || image.root_auth_footer_length != 0
-        || image.root_auth_footer_sha256 != [0u8; 32]
-    {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage root-auth fields must be zero when absent",
-        ));
+    } else if image.root_auth_footer_offset != 0 || image.root_auth_footer_length != 0 || image.root_auth_footer_sha256 != [0u8; 32] {
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage root-auth fields must be zero when absent"));
     }
     let block_record_len = image_block_record_len_from_region(image)?;
-    let block_record_len_u64 = u64::try_from(block_record_len)
-        .map_err(|_| FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let block_record_len_u64 = u64::try_from(block_record_len).map_err(|_| FormatError::InvalidArchive("BlockRecord length overflow"))?;
     match mode {
         CmraRecoveryMode::KeyHolding => {
-            let expected_len = image.block_count.checked_mul(block_record_len_u64).ok_or(
-                FormatError::InvalidArchive("BlockRecord region length overflow"),
-            )?;
+            let expected_len = image
+                .block_count
+                .checked_mul(block_record_len_u64)
+                .ok_or(FormatError::InvalidArchive("BlockRecord region length overflow"))?;
             if image.block_records_length != expected_len {
-                return Err(FormatError::InvalidArchive(
-                    "CriticalMetadataImage terminal equations are invalid",
-                ));
+                return Err(FormatError::InvalidArchive("CriticalMetadataImage terminal equations are invalid"));
             }
         }
         CmraRecoveryMode::PublicNoKey => {
             if image.block_records_length % block_record_len_u64 != 0 {
-                return Err(FormatError::InvalidArchive(
-                    "CriticalMetadataImage BlockRecord region is not aligned",
-                ));
+                return Err(FormatError::InvalidArchive("CriticalMetadataImage BlockRecord region is not aligned"));
             }
         }
     }
     let crypto_header_end = image
         .crypto_header_offset
         .checked_add(image.crypto_header_length as u64)
-        .ok_or(FormatError::InvalidArchive(
-            "CryptoHeader boundary overflow",
-        ))?;
+        .ok_or(FormatError::InvalidArchive("CryptoHeader boundary overflow"))?;
     let expected_block_records_offset = if key_wrap_present {
-        let key_wrap_region = key_wrap_region.ok_or(FormatError::InvalidArchive(
-            "missing CriticalMetadataImage key-wrap region",
-        ))?;
+        let key_wrap_region = key_wrap_region.ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage key-wrap region"))?;
         if image.key_wrap_table_offset != crypto_header_end
             || image.key_wrap_table_length == 0
             || key_wrap_region.offset != image.key_wrap_table_offset
             || key_wrap_region.bytes.len() != image.key_wrap_table_length as usize
         {
-            return Err(FormatError::InvalidArchive(
-                "CriticalMetadataImage key-wrap region is malformed",
-            ));
+            return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap region is malformed"));
         }
         image
             .key_wrap_table_offset
             .checked_add(image.key_wrap_table_length as u64)
-            .ok_or(FormatError::InvalidArchive(
-                "KeyWrapTableV1 boundary overflow",
-            ))?
+            .ok_or(FormatError::InvalidArchive("KeyWrapTableV1 boundary overflow"))?
     } else {
-        if image.key_wrap_table_offset != 0
-            || image.key_wrap_table_length != 0
-            || image.key_wrap_table_sha256 != [0u8; 32]
-        {
-            return Err(FormatError::InvalidArchive(
-                "CriticalMetadataImage key-wrap fields must be zero when absent",
-            ));
+        if image.key_wrap_table_offset != 0 || image.key_wrap_table_length != 0 || image.key_wrap_table_sha256 != [0u8; 32] {
+            return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap fields must be zero when absent"));
         }
         crypto_header_end
     };
@@ -2191,38 +1611,26 @@ pub(crate) fn validate_critical_metadata_image(
             != image
                 .block_records_offset
                 .checked_add(image.block_records_length)
-                .ok_or(FormatError::InvalidArchive(
-                    "ManifestFooter boundary overflow",
-                ))?
+                .ok_or(FormatError::InvalidArchive("ManifestFooter boundary overflow"))?
     {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage terminal equations are invalid",
-        ));
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage terminal equations are invalid"));
     }
     let manifest_end = image
         .manifest_footer_offset
         .checked_add(MANIFEST_FOOTER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive(
-            "RootAuthFooter boundary overflow",
-        ))?;
+        .ok_or(FormatError::InvalidArchive("RootAuthFooter boundary overflow"))?;
     if root_auth_present {
         if image.root_auth_footer_offset != manifest_end
             || image
                 .root_auth_footer_offset
                 .checked_add(image.root_auth_footer_length as u64)
-                .ok_or(FormatError::InvalidArchive(
-                    "VolumeTrailer boundary overflow",
-                ))?
+                .ok_or(FormatError::InvalidArchive("VolumeTrailer boundary overflow"))?
                 != image.volume_trailer_offset
         {
-            return Err(FormatError::InvalidArchive(
-                "CriticalMetadataImage root-auth terminal equations are invalid",
-            ));
+            return Err(FormatError::InvalidArchive("CriticalMetadataImage root-auth terminal equations are invalid"));
         }
     } else if image.volume_trailer_offset != manifest_end {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage unsigned terminal equations are invalid",
-        ));
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage unsigned terminal equations are invalid"));
     }
     let expected_types: &[u16] = match (key_wrap_present, root_auth_present) {
         (false, false) => &[1, 2, 3, 5],
@@ -2230,57 +1638,19 @@ pub(crate) fn validate_critical_metadata_image(
         (true, false) => &[1, 2, 6, 3, 5],
         (true, true) => &[1, 2, 6, 3, 4, 5],
     };
-    if image.regions.len() != expected_types.len()
-        || image
-            .regions
-            .iter()
-            .map(|region| region.region_type)
-            .ne(expected_types.iter().copied())
-    {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage regions are not canonical",
-        ));
+    if image.regions.len() != expected_types.len() || image.regions.iter().map(|region| region.region_type).ne(expected_types.iter().copied()) {
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage regions are not canonical"));
     }
-    validate_image_region(
-        image,
-        1,
-        image.volume_header_offset,
-        image.volume_header_length,
-    )?;
-    validate_image_region(
-        image,
-        2,
-        image.crypto_header_offset,
-        image.crypto_header_length,
-    )?;
-    validate_image_region(
-        image,
-        3,
-        image.manifest_footer_offset,
-        image.manifest_footer_length,
-    )?;
+    validate_image_region(image, 1, image.volume_header_offset, image.volume_header_length)?;
+    validate_image_region(image, 2, image.crypto_header_offset, image.crypto_header_length)?;
+    validate_image_region(image, 3, image.manifest_footer_offset, image.manifest_footer_length)?;
     if key_wrap_present {
-        validate_image_region(
-            image,
-            6,
-            image.key_wrap_table_offset,
-            image.key_wrap_table_length,
-        )?;
+        validate_image_region(image, 6, image.key_wrap_table_offset, image.key_wrap_table_length)?;
     }
     if root_auth_present {
-        validate_image_region(
-            image,
-            4,
-            image.root_auth_footer_offset,
-            image.root_auth_footer_length,
-        )?;
+        validate_image_region(image, 4, image.root_auth_footer_offset, image.root_auth_footer_length)?;
     }
-    validate_image_region(
-        image,
-        5,
-        image.volume_trailer_offset,
-        image.volume_trailer_length,
-    )?;
+    validate_image_region(image, 5, image.volume_trailer_offset, image.volume_trailer_length)?;
     if sha256_region(image, 1)? != image.volume_header_sha256
         || sha256_region(image, 2)? != image.crypto_header_sha256
         || (key_wrap_present && sha256_region(image, 6)? != image.key_wrap_table_sha256)
@@ -2290,53 +1660,33 @@ pub(crate) fn validate_critical_metadata_image(
         || (!root_auth_present && image.root_auth_footer_sha256 != [0u8; 32])
         || sha256_region(image, 5)? != image.volume_trailer_sha256
     {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage region digest mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage region digest mismatch"));
     }
     Ok(())
 }
 
-pub(crate) fn image_block_record_len_from_region(
-    image: &CriticalMetadataImage,
-) -> Result<usize, FormatError> {
-    let crypto_region = image
-        .region(2)
-        .ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
+pub(crate) fn image_block_record_len_from_region(image: &CriticalMetadataImage) -> Result<usize, FormatError> {
+    let crypto_region = image.region(2).ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
     let crypto = CryptoHeader::parse(&crypto_region.bytes, image.crypto_header_length)?;
     crypto.fixed.validate_supported_profile()?;
     Ok(crypto.fixed.block_size as usize + BLOCK_RECORD_FRAMING_LEN)
 }
 
-pub(crate) fn validate_image_region(
-    image: &CriticalMetadataImage,
-    region_type: u16,
-    offset: u64,
-    length: u32,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_image_region(image: &CriticalMetadataImage, region_type: u16, offset: u64, length: u32) -> Result<(), FormatError> {
     let region = image
         .region(region_type)
-        .ok_or(FormatError::InvalidArchive(
-            "missing CriticalMetadataImage region",
-        ))?;
+        .ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage region"))?;
     if region.offset != offset || region.bytes.len() != length as usize {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage region range mismatch",
-        ));
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage region range mismatch"));
     }
     Ok(())
 }
 
 /// §30.5.1.1: `image.crypto_header_length` MUST equal
 /// `VolumeHeader.crypto_header_length` (and, transitively, `CryptoHeader.length`).
-fn validate_image_crypto_header_length(
-    image: &CriticalMetadataImage,
-    volume_header: &VolumeHeader,
-) -> Result<(), FormatError> {
+fn validate_image_crypto_header_length(image: &CriticalMetadataImage, volume_header: &VolumeHeader) -> Result<(), FormatError> {
     if image.crypto_header_length != volume_header.crypto_header_length {
-        return Err(FormatError::InvalidArchive(
-            "CMRA crypto header length does not match recovered VolumeHeader",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA crypto header length does not match recovered VolumeHeader"));
     }
     Ok(())
 }
@@ -2353,18 +1703,12 @@ pub(crate) fn validate_image_identity(
         || image.stripe_width != volume_header.stripe_width
         || image.stripe_width != crypto_header.stripe_width
     {
-        return Err(FormatError::InvalidArchive(
-            "CriticalMetadataImage identity does not match selected volume",
-        ));
+        return Err(FormatError::InvalidArchive("CriticalMetadataImage identity does not match selected volume"));
     }
     Ok(())
 }
 
-pub(crate) fn validate_image_key_wrap_table(
-    image: &CriticalMetadataImage,
-    volume_header: &VolumeHeader,
-    kdf_params: &KdfParams,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_image_key_wrap_table(image: &CriticalMetadataImage, volume_header: &VolumeHeader, kdf_params: &KdfParams) -> Result<(), FormatError> {
     match kdf_params {
         KdfParams::RecipientWrap {
             key_wrap_table_length,
@@ -2372,29 +1716,17 @@ pub(crate) fn validate_image_key_wrap_table(
             key_wrap_table_digest,
             ..
         } => {
-            if image.layout_flags & 0x0000_0002 == 0
-                || image.key_wrap_table_length != *key_wrap_table_length
-            {
-                return Err(FormatError::InvalidArchive(
-                    "CriticalMetadataImage key-wrap fields do not match KdfParams",
-                ));
+            if image.layout_flags & 0x0000_0002 == 0 || image.key_wrap_table_length != *key_wrap_table_length {
+                return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap fields do not match KdfParams"));
             }
-            let region = image.region(6).ok_or(FormatError::InvalidArchive(
-                "missing CriticalMetadataImage key-wrap region",
-            ))?;
-            if region.offset != image.key_wrap_table_offset
-                || region.bytes.len() != *key_wrap_table_length as usize
-            {
-                return Err(FormatError::InvalidArchive(
-                    "CriticalMetadataImage key-wrap region is malformed",
-                ));
+            let region = image
+                .region(6)
+                .ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage key-wrap region"))?;
+            if region.offset != image.key_wrap_table_offset || region.bytes.len() != *key_wrap_table_length as usize {
+                return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap region is malformed"));
             }
-            if compute_key_wrap_table_digest(*key_wrap_table_length, &region.bytes)
-                != *key_wrap_table_digest
-            {
-                return Err(FormatError::IntegrityDigestMismatch {
-                    structure: "KeyWrapTableV1",
-                });
+            if compute_key_wrap_table_digest(*key_wrap_table_length, &region.bytes) != *key_wrap_table_digest {
+                return Err(FormatError::IntegrityDigestMismatch { structure: "KeyWrapTableV1" });
             }
             KeyWrapTableV1::parse(
                 &region.bytes,
@@ -2412,25 +1744,18 @@ pub(crate) fn validate_image_key_wrap_table(
                 || image.key_wrap_table_length != 0
                 || image.key_wrap_table_sha256 != [0u8; 32]
             {
-                return Err(FormatError::InvalidArchive(
-                    "CriticalMetadataImage key-wrap fields must be zero when absent",
-                ));
+                return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap fields must be zero when absent"));
             }
             Ok(())
         }
     }
 }
 
-pub(crate) fn sha256_region(
-    image: &CriticalMetadataImage,
-    region_type: u16,
-) -> Result<[u8; 32], FormatError> {
+pub(crate) fn sha256_region(image: &CriticalMetadataImage, region_type: u16) -> Result<[u8; 32], FormatError> {
     Ok(sha256_bytes(
         &image
             .region(region_type)
-            .ok_or(FormatError::InvalidArchive(
-                "missing CriticalMetadataImage region",
-            ))?
+            .ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage region"))?
             .bytes,
     ))
 }
@@ -2441,14 +1766,10 @@ pub(crate) fn validate_recovered_terminal_authority(
     master_key: &MasterKey,
     require_cmra_boundary_magic: bool,
 ) -> Result<RecoveredTerminalAuthority, FormatError> {
-    let volume_header_region = image
-        .region(1)
-        .ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
+    let volume_header_region = image.region(1).ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
     let volume_header = VolumeHeader::parse(&volume_header_region.bytes)?;
     validate_image_crypto_header_length(&image, &volume_header)?;
-    let crypto_region = image
-        .region(2)
-        .ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
+    let crypto_region = image.region(2).ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
     let crypto_header_bytes = crypto_region.bytes.clone();
     let parsed_crypto = CryptoHeader::parse(&crypto_header_bytes, image.crypto_header_length)?;
     let kdf_params = parsed_crypto.kdf_params.clone();
@@ -2469,17 +1790,11 @@ pub(crate) fn validate_recovered_terminal_authority(
         &parsed_crypto.header_hmac,
     )?;
     parsed_crypto.validate_extension_semantics()?;
-    validate_seekable_supported_volume(
-        &volume_header,
-        &parsed_crypto.fixed,
-        &parsed_crypto.extensions,
-    )?;
+    validate_seekable_supported_volume(&volume_header, &parsed_crypto.fixed, &parsed_crypto.extensions)?;
     validate_crypto_class_parity_exactness(&parsed_crypto.fixed)?;
     let crypto_header = parsed_crypto.fixed.clone();
     if crypto_header.bit_rot_buffer_pct == 0 {
-        return Err(FormatError::InvalidArchive(
-            "CMRA startup recovery requires a nonzero bit-rot budget",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA startup recovery requires a nonzero bit-rot budget"));
     }
     drop(parsed_crypto);
 
@@ -2512,48 +1827,29 @@ pub(crate) fn validate_recovered_recipient_wrap_terminal_authority<F>(
     require_cmra_boundary_magic: bool,
 ) -> Result<RecoveredRecipientWrapTerminalAuthority, FormatError>
 where
-    F: FnMut(
-        RecipientWrapRecordContext<'_>,
-    ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
+    F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
-    let volume_header_region = image
-        .region(1)
-        .ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
+    let volume_header_region = image.region(1).ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
     let volume_header = VolumeHeader::parse(&volume_header_region.bytes)?;
     validate_image_crypto_header_length(&image, &volume_header)?;
-    let crypto_region = image
-        .region(2)
-        .ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
+    let crypto_region = image.region(2).ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
     let crypto_header_bytes = crypto_region.bytes.clone();
     let parsed_crypto = CryptoHeader::parse(&crypto_header_bytes, image.crypto_header_length)?;
-    if !matches!(parsed_crypto.kdf_params, KdfParams::RecipientWrap { .. })
-        || !parsed_crypto.fixed.aead_algo.is_encrypted()
-    {
+    if !matches!(parsed_crypto.kdf_params, KdfParams::RecipientWrap { .. }) || !parsed_crypto.fixed.aead_algo.is_encrypted() {
         return Err(FormatError::KeyMaterialMismatch);
     }
     validate_seekable_supported_volume(&volume_header, &parsed_crypto.fixed, &[])?;
     validate_crypto_class_parity_exactness(&parsed_crypto.fixed)?;
     if parsed_crypto.fixed.bit_rot_buffer_pct == 0 {
-        return Err(FormatError::InvalidArchive(
-            "CMRA startup recovery requires a nonzero bit-rot budget",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA startup recovery requires a nonzero bit-rot budget"));
     }
     validate_cmra_writer_parity_lower_bound(tuple, parsed_crypto.fixed.bit_rot_buffer_pct)?;
     validate_image_key_wrap_table(&image, &volume_header, &parsed_crypto.kdf_params)?;
-    let key_wrap_region = image.region(6).ok_or(FormatError::InvalidArchive(
-        "missing CriticalMetadataImage key-wrap region",
-    ))?;
-    let startup_key_wrap_table = parse_startup_key_wrap_table_bytes(
-        &volume_header,
-        &parsed_crypto.kdf_params,
-        key_wrap_region.bytes.clone(),
-    )?;
-    let subkeys = recipient_wrap_subkeys_from_table(
-        &volume_header,
-        &parsed_crypto,
-        &startup_key_wrap_table.table,
-        resolver,
-    )?;
+    let key_wrap_region = image
+        .region(6)
+        .ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage key-wrap region"))?;
+    let startup_key_wrap_table = parse_startup_key_wrap_table_bytes(&volume_header, &parsed_crypto.kdf_params, key_wrap_region.bytes.clone())?;
+    let subkeys = recipient_wrap_subkeys_from_table(&volume_header, &parsed_crypto, &startup_key_wrap_table.table, resolver)?;
     parsed_crypto.validate_extension_semantics()?;
     reject_unsupported_raw_stream_profile(&parsed_crypto.extensions)?;
     let crypto_header = parsed_crypto.fixed.clone();
@@ -2590,13 +1886,7 @@ pub(crate) fn validate_recovered_terminal(
 ) -> Result<V45Terminal, FormatError> {
     let cmra_offset = to_usize(image.body_bytes_before_cmra, "CMRA")?;
     let cmra_boundary_magic_ok = bytes.get(cmra_offset..cmra_offset + 4) == Some(b"TZCR");
-    validate_recovered_terminal_inner(
-        image,
-        tuple,
-        require_cmra_boundary_magic,
-        cmra_boundary_magic_ok,
-        context,
-    )
+    validate_recovered_terminal_inner(image, tuple, require_cmra_boundary_magic, cmra_boundary_magic_ok, context)
 }
 
 pub(crate) fn validate_recovered_terminal_read_at(
@@ -2608,13 +1898,7 @@ pub(crate) fn validate_recovered_terminal_read_at(
 ) -> Result<V45Terminal, FormatError> {
     let mut magic = [0u8; 4];
     reader.read_exact_at(image.body_bytes_before_cmra, &mut magic)?;
-    validate_recovered_terminal_inner(
-        image,
-        tuple,
-        require_cmra_boundary_magic,
-        magic == *b"TZCR",
-        context,
-    )
+    validate_recovered_terminal_inner(image, tuple, require_cmra_boundary_magic, magic == *b"TZCR", context)
 }
 
 pub(crate) fn validate_recovered_terminal_inner(
@@ -2627,45 +1911,30 @@ pub(crate) fn validate_recovered_terminal_inner(
     let subkeys = context.subkeys;
     let volume_header = context.volume_header;
     let crypto_header = context.crypto_header;
-    let volume_header_region = image
-        .region(1)
-        .ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
+    let volume_header_region = image.region(1).ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
     let recovered_volume_header = VolumeHeader::parse(&volume_header_region.bytes)?;
     if &recovered_volume_header != volume_header {
-        return Err(FormatError::InvalidArchive(
-            "CMRA VolumeHeader differs from parsed VolumeHeader",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA VolumeHeader differs from parsed VolumeHeader"));
     }
     validate_image_crypto_header_length(&image, &recovered_volume_header)?;
     validate_image_identity(&image, volume_header, crypto_header)?;
-    let crypto_region = image
-        .region(2)
-        .ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
+    let crypto_region = image.region(2).ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
     let recovered_crypto = CryptoHeader::parse(&crypto_region.bytes, image.crypto_header_length)?;
     if recovered_crypto.fixed != *crypto_header {
-        return Err(FormatError::InvalidArchive(
-            "CMRA CryptoHeader differs from parsed CryptoHeader",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA CryptoHeader differs from parsed CryptoHeader"));
     }
     let recovered_pre_hmac_len = crypto_region
         .bytes
         .len()
         .checked_sub(CRYPTO_HEADER_HMAC_LEN)
-        .ok_or(FormatError::InvalidArchive(
-            "CMRA CryptoHeader is too short",
-        ))?;
+        .ok_or(FormatError::InvalidArchive("CMRA CryptoHeader is too short"))?;
     let parsed_pre_hmac_len = context
         .crypto_header_bytes
         .len()
         .checked_sub(CRYPTO_HEADER_HMAC_LEN)
         .ok_or(FormatError::InvalidArchive("CryptoHeader is too short"))?;
-    if recovered_pre_hmac_len != parsed_pre_hmac_len
-        || crypto_region.bytes[..recovered_pre_hmac_len]
-            != context.crypto_header_bytes[..parsed_pre_hmac_len]
-    {
-        return Err(FormatError::InvalidArchive(
-            "CMRA CryptoHeader differs from parsed CryptoHeader",
-        ));
+    if recovered_pre_hmac_len != parsed_pre_hmac_len || crypto_region.bytes[..recovered_pre_hmac_len] != context.crypto_header_bytes[..parsed_pre_hmac_len] {
+        return Err(FormatError::InvalidArchive("CMRA CryptoHeader differs from parsed CryptoHeader"));
     }
     verify_integrity_tag(
         HmacDomain::CryptoHeader,
@@ -2681,9 +1950,7 @@ pub(crate) fn validate_recovered_terminal_inner(
     recovered_crypto.validate_extension_semantics()?;
     validate_image_key_wrap_table(&image, volume_header, &recovered_crypto.kdf_params)?;
 
-    let manifest_region = image
-        .region(3)
-        .ok_or(FormatError::InvalidArchive("missing ManifestFooter region"))?;
+    let manifest_region = image.region(3).ok_or(FormatError::InvalidArchive("missing ManifestFooter region"))?;
     let manifest_footer = ManifestFooter::parse(&manifest_region.bytes)?;
     validate_manifest_footer(
         volume_header,
@@ -2696,33 +1963,23 @@ pub(crate) fn validate_recovered_terminal_inner(
     manifest_footer.validate_index_root_extent(crypto_header.block_size)?;
 
     let root_auth_footer = if image.layout_flags & 0x0000_0001 != 0 {
-        let root_auth_region = image
-            .region(4)
-            .ok_or(FormatError::InvalidArchive("missing RootAuthFooter region"))?;
+        let root_auth_region = image.region(4).ok_or(FormatError::InvalidArchive("missing RootAuthFooter region"))?;
         let footer = RootAuthFooterV1::parse(&root_auth_region.bytes)?;
-        if footer.format_version != volume_header.format_version
-            || footer.volume_format_rev != volume_header.volume_format_rev
-        {
-            return Err(FormatError::InvalidArchive(
-                "RootAuthFooter format/revision does not match VolumeHeader",
-            ));
+        if footer.format_version != volume_header.format_version || footer.volume_format_rev != volume_header.volume_format_rev {
+            return Err(FormatError::InvalidArchive("RootAuthFooter format/revision does not match VolumeHeader"));
         }
         if footer.archive_uuid != volume_header.archive_uuid
             || footer.session_id != volume_header.session_id
             || footer.footer_length()? != image.root_auth_footer_length
         {
-            return Err(FormatError::InvalidArchive(
-                "RootAuthFooter identity or length does not match terminal image",
-            ));
+            return Err(FormatError::InvalidArchive("RootAuthFooter identity or length does not match terminal image"));
         }
         Some(footer)
     } else {
         None
     };
 
-    let trailer_region = image
-        .region(5)
-        .ok_or(FormatError::InvalidArchive("missing VolumeTrailer region"))?;
+    let trailer_region = image.region(5).ok_or(FormatError::InvalidArchive("missing VolumeTrailer region"))?;
     let trailer = VolumeTrailer::parse(&trailer_region.bytes)?;
     verify_integrity_tag(
         HmacDomain::VolumeTrailer,
@@ -2761,13 +2018,7 @@ pub(crate) fn validate_recovered_public_terminal(
 ) -> Result<V45PublicTerminal, FormatError> {
     let cmra_offset = to_usize(image.body_bytes_before_cmra, "CMRA")?;
     let cmra_boundary_magic_ok = bytes.get(cmra_offset..cmra_offset + 4) == Some(b"TZCR");
-    validate_recovered_public_terminal_inner(
-        image,
-        volume_header,
-        public_crypto_header,
-        require_cmra_boundary_magic,
-        cmra_boundary_magic_ok,
-    )
+    validate_recovered_public_terminal_inner(image, volume_header, public_crypto_header, require_cmra_boundary_magic, cmra_boundary_magic_ok)
 }
 
 pub(crate) fn validate_recovered_public_terminal_read_at(
@@ -2779,13 +2030,7 @@ pub(crate) fn validate_recovered_public_terminal_read_at(
 ) -> Result<V45PublicTerminal, FormatError> {
     let mut magic = [0u8; 4];
     reader.read_exact_at(image.body_bytes_before_cmra, &mut magic)?;
-    validate_recovered_public_terminal_inner(
-        image,
-        volume_header,
-        public_crypto_header,
-        require_cmra_boundary_magic,
-        magic == *b"TZCR",
-    )
+    validate_recovered_public_terminal_inner(image, volume_header, public_crypto_header, require_cmra_boundary_magic, magic == *b"TZCR")
 }
 
 pub(crate) fn validate_recovered_public_terminal_inner(
@@ -2796,52 +2041,31 @@ pub(crate) fn validate_recovered_public_terminal_inner(
     cmra_boundary_magic_ok: bool,
 ) -> Result<V45PublicTerminal, FormatError> {
     if image.layout_flags & 0x0000_0001 == 0 {
-        return Err(FormatError::ReaderUnsupported(
-            "public no-key verification requires root-auth",
-        ));
+        return Err(FormatError::ReaderUnsupported("public no-key verification requires root-auth"));
     }
-    let volume_header_region = image
-        .region(1)
-        .ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
+    let volume_header_region = image.region(1).ok_or(FormatError::InvalidArchive("missing VolumeHeader region"))?;
     let recovered_volume_header = VolumeHeader::parse(&volume_header_region.bytes)?;
     if &recovered_volume_header != volume_header {
-        return Err(FormatError::InvalidArchive(
-            "CMRA VolumeHeader differs from parsed VolumeHeader",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA VolumeHeader differs from parsed VolumeHeader"));
     }
     validate_image_crypto_header_length(&image, &recovered_volume_header)?;
     validate_image_identity(&image, volume_header, &public_crypto_header.fixed)?;
-    let crypto_region = image
-        .region(2)
-        .ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
+    let crypto_region = image.region(2).ok_or(FormatError::InvalidArchive("missing CryptoHeader region"))?;
     let recovered_crypto = CryptoHeader::parse(&crypto_region.bytes, image.crypto_header_length)?;
     if !public_crypto_headers_agree(&recovered_crypto.fixed, &public_crypto_header.fixed)
-        || !public_kdf_profiles_agree(
-            &recovered_crypto.kdf_params,
-            &public_crypto_header.kdf_params,
-        )
+        || !public_kdf_profiles_agree(&recovered_crypto.kdf_params, &public_crypto_header.kdf_params)
     {
-        return Err(FormatError::InvalidArchive(
-            "CMRA CryptoHeader differs from parsed CryptoHeader",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA CryptoHeader differs from parsed CryptoHeader"));
     }
     recovered_crypto.validate_extension_semantics()?;
     validate_image_key_wrap_table(&image, volume_header, &recovered_crypto.kdf_params)?;
 
-    image
-        .region(3)
-        .ok_or(FormatError::InvalidArchive("missing ManifestFooter region"))?;
+    image.region(3).ok_or(FormatError::InvalidArchive("missing ManifestFooter region"))?;
 
-    let root_auth_region = image
-        .region(4)
-        .ok_or(FormatError::InvalidArchive("missing RootAuthFooter region"))?;
+    let root_auth_region = image.region(4).ok_or(FormatError::InvalidArchive("missing RootAuthFooter region"))?;
     let root_auth_footer = RootAuthFooterV1::parse(&root_auth_region.bytes)?;
-    if root_auth_footer.format_version != volume_header.format_version
-        || root_auth_footer.volume_format_rev != volume_header.volume_format_rev
-    {
-        return Err(FormatError::InvalidArchive(
-            "public RootAuthFooter format/revision does not match VolumeHeader",
-        ));
+    if root_auth_footer.format_version != volume_header.format_version || root_auth_footer.volume_format_rev != volume_header.volume_format_rev {
+        return Err(FormatError::InvalidArchive("public RootAuthFooter format/revision does not match VolumeHeader"));
     }
     if root_auth_footer.archive_uuid != volume_header.archive_uuid
         || root_auth_footer.session_id != volume_header.session_id
@@ -2852,9 +2076,7 @@ pub(crate) fn validate_recovered_public_terminal_inner(
         ));
     }
 
-    let trailer_region = image
-        .region(5)
-        .ok_or(FormatError::InvalidArchive("missing VolumeTrailer region"))?;
+    let trailer_region = image.region(5).ok_or(FormatError::InvalidArchive("missing VolumeTrailer region"))?;
     let trailer = VolumeTrailer::parse(&trailer_region.bytes)?;
     validate_trailer_identity(volume_header, &trailer)?;
     validate_v45_public_trailer_profile(&image, &trailer)?;
@@ -2871,19 +2093,14 @@ pub(crate) fn validate_recovered_public_terminal_inner(
     })
 }
 
-pub(crate) fn validate_v45_trailer_equations(
-    image: &CriticalMetadataImage,
-    trailer: &VolumeTrailer,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_v45_trailer_equations(image: &CriticalMetadataImage, trailer: &VolumeTrailer) -> Result<(), FormatError> {
     let root_auth_present = image.layout_flags & 0x0000_0001 != 0;
     if trailer.bytes_written != image.volume_trailer_offset
         || trailer.manifest_footer_offset != image.manifest_footer_offset
         || trailer.manifest_footer_length != MANIFEST_FOOTER_LEN as u32
         || trailer.block_count != image.block_count
     {
-        return Err(FormatError::InvalidArchive(
-            "VolumeTrailer does not match v45 terminal layout",
-        ));
+        return Err(FormatError::InvalidArchive("VolumeTrailer does not match v45 terminal layout"));
     }
     if root_auth_present {
         if trailer.root_auth_flags != 0x0000_0001
@@ -2893,43 +2110,27 @@ pub(crate) fn validate_v45_trailer_equations(
                 != image
                     .manifest_footer_offset
                     .checked_add(MANIFEST_FOOTER_LEN as u64)
-                    .ok_or(FormatError::InvalidArchive(
-                        "RootAuthFooter trailer boundary overflow",
-                    ))?
+                    .ok_or(FormatError::InvalidArchive("RootAuthFooter trailer boundary overflow"))?
             || image
                 .root_auth_footer_offset
                 .checked_add(image.root_auth_footer_length as u64)
-                .ok_or(FormatError::InvalidArchive(
-                    "RootAuthFooter trailer boundary overflow",
-                ))?
+                .ok_or(FormatError::InvalidArchive("RootAuthFooter trailer boundary overflow"))?
                 != image.volume_trailer_offset
         {
-            return Err(FormatError::InvalidArchive(
-                "VolumeTrailer root-auth fields do not match v45 terminal layout",
-            ));
+            return Err(FormatError::InvalidArchive("VolumeTrailer root-auth fields do not match v45 terminal layout"));
         }
-    } else if trailer.root_auth_footer_offset != 0
-        || trailer.root_auth_footer_length != 0
-        || trailer.root_auth_flags != 0
-    {
-        return Err(FormatError::InvalidArchive(
-            "VolumeTrailer root-auth fields must be zero when absent",
-        ));
+    } else if trailer.root_auth_footer_offset != 0 || trailer.root_auth_footer_length != 0 || trailer.root_auth_flags != 0 {
+        return Err(FormatError::InvalidArchive("VolumeTrailer root-auth fields must be zero when absent"));
     }
     Ok(())
 }
 
-pub(crate) fn validate_v45_public_trailer_profile(
-    image: &CriticalMetadataImage,
-    trailer: &VolumeTrailer,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_v45_public_trailer_profile(image: &CriticalMetadataImage, trailer: &VolumeTrailer) -> Result<(), FormatError> {
     if trailer.bytes_written != image.volume_trailer_offset
         || trailer.manifest_footer_offset != image.manifest_footer_offset
         || trailer.manifest_footer_length != MANIFEST_FOOTER_LEN as u32
     {
-        return Err(FormatError::InvalidArchive(
-            "VolumeTrailer does not match v45 public terminal layout",
-        ));
+        return Err(FormatError::InvalidArchive("VolumeTrailer does not match v45 public terminal layout"));
     }
     if trailer.root_auth_flags != 0x0000_0001
         || trailer.root_auth_footer_offset == 0
@@ -2941,15 +2142,11 @@ pub(crate) fn validate_v45_public_trailer_profile(
             != image
                 .manifest_footer_offset
                 .checked_add(MANIFEST_FOOTER_LEN as u64)
-                .ok_or(FormatError::InvalidArchive(
-                    "RootAuthFooter trailer boundary overflow",
-                ))?
+                .ok_or(FormatError::InvalidArchive("RootAuthFooter trailer boundary overflow"))?
         || image
             .root_auth_footer_offset
             .checked_add(image.root_auth_footer_length as u64)
-            .ok_or(FormatError::InvalidArchive(
-                "RootAuthFooter trailer boundary overflow",
-            ))?
+            .ok_or(FormatError::InvalidArchive("RootAuthFooter trailer boundary overflow"))?
             != image.volume_trailer_offset
     {
         return Err(FormatError::InvalidArchive(
@@ -2984,9 +2181,7 @@ pub(crate) fn critical_image_cap() -> Result<u64, FormatError> {
     ]
     .into_iter()
     .try_fold(0u64, |total, value| {
-        total
-            .checked_add(value)
-            .ok_or(FormatError::InvalidArchive("critical image cap overflow"))
+        total.checked_add(value).ok_or(FormatError::InvalidArchive("critical image cap overflow"))
     })
 }
 
@@ -3014,12 +2209,9 @@ pub(crate) fn cmra_worst_case_cap() -> Result<u64, FormatError> {
         )?);
         let tuple = CmraDecoderTuple {
             shard_size: shard_size as u32,
-            data_shard_count: u16::try_from(data)
-                .map_err(|_| FormatError::InvalidArchive("CMRA cap data shard overflow"))?,
-            parity_shard_count: u16::try_from(parity)
-                .map_err(|_| FormatError::InvalidArchive("CMRA cap parity shard overflow"))?,
-            image_length: u32::try_from(cap)
-                .map_err(|_| FormatError::InvalidArchive("CMRA cap image overflow"))?,
+            data_shard_count: u16::try_from(data).map_err(|_| FormatError::InvalidArchive("CMRA cap data shard overflow"))?,
+            parity_shard_count: u16::try_from(parity).map_err(|_| FormatError::InvalidArchive("CMRA cap parity shard overflow"))?,
+            image_length: u32::try_from(cap).map_err(|_| FormatError::InvalidArchive("CMRA cap image overflow"))?,
             image_sha256: [0u8; 32],
         };
         worst = worst.max(cmra_serialized_length(tuple)?);
@@ -3038,8 +2230,7 @@ pub(crate) fn v45_terminal_tail_cap() -> Result<usize, FormatError> {
     ]
     .into_iter()
     .try_fold(0u64, |sum, value| {
-        sum.checked_add(value)
-            .ok_or(FormatError::InvalidArchive("terminal tail cap overflow"))
+        sum.checked_add(value).ok_or(FormatError::InvalidArchive("terminal tail cap overflow"))
     })?;
     usize::try_from(total).map_err(|_| FormatError::InvalidArchive("terminal tail cap overflow"))
 }

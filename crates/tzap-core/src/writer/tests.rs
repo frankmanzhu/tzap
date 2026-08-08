@@ -5,8 +5,7 @@ use crate::entry_metadata::*;
 use crate::format::*;
 use crate::metadata::*;
 use crate::reader::{
-    add_expected_directory_hint_rows, open_archive, open_archive_with_recipient_wrap_resolver,
-    validate_directory_hint_tables_against_expected,
+    add_expected_directory_hint_rows, open_archive, open_archive_with_recipient_wrap_resolver, validate_directory_hint_tables_against_expected,
 };
 use crate::tar_model::{parse_tar_member_group, TarEntryKind};
 use crate::wire::*;
@@ -26,10 +25,7 @@ fn writer_defaults_use_v45_sizing_and_parallel_mode() {
     assert_eq!(options.volume_loss_tolerance, 1);
     assert_eq!(options.fec_data_shards, 224);
     assert_eq!(options.index_fec_data_shards, 16);
-    assert_eq!(
-        options.index_root_fec_data_shards,
-        MIN_INDEX_ROOT_FEC_DATA_SHARDS
-    );
+    assert_eq!(options.index_root_fec_data_shards, MIN_INDEX_ROOT_FEC_DATA_SHARDS);
     assert_eq!(options.bit_rot_buffer_pct, 5);
     assert_eq!(options.jobs, default_jobs());
     assert!(options.jobs >= 1);
@@ -86,13 +82,7 @@ fn ordered_envelope_serializes_zero_parity_without_root_auth_leaf_collection() {
     let payload = deterministic_bytes(options.block_size as usize * 2 + 17);
     let extent = ObjectExtent::new(
         11,
-        plan_encrypted_object(
-            payload.len(),
-            options.fec_data_shards,
-            options.fec_parity_shards,
-            options,
-        )
-        .unwrap(),
+        plan_encrypted_object(payload.len(), options.fec_data_shards, options.fec_parity_shards, options).unwrap(),
     )
     .unwrap();
     assert_eq!(extent.parity_block_count, 0);
@@ -116,8 +106,7 @@ fn ordered_envelope_serializes_zero_parity_without_root_auth_leaf_collection() {
     match result.records {
         OrderedEnvelopeRecords::Serialized(records) => {
             assert_eq!(records.len(), extent.data_block_count as usize);
-            let parsed =
-                BlockRecord::parse(&records[0].bytes, options.block_size as usize).unwrap();
+            let parsed = BlockRecord::parse(&records[0].bytes, options.block_size as usize).unwrap();
             assert_eq!(parsed.block_index, extent.first_block_index);
             assert_eq!(parsed.kind, BlockKind::PayloadData);
             assert!(!parsed.is_last_data());
@@ -168,13 +157,7 @@ fn ordered_envelope_serializes_encrypted_zero_parity_like_materialized_path() {
     let payload = deterministic_bytes(options.block_size as usize * 2 + 17);
     let extent = ObjectExtent::new(
         29,
-        plan_encrypted_object(
-            payload.len(),
-            options.fec_data_shards,
-            options.fec_parity_shards,
-            options,
-        )
-        .unwrap(),
+        plan_encrypted_object(payload.len(), options.fec_data_shards, options.fec_parity_shards, options).unwrap(),
     )
     .unwrap();
     assert_eq!(extent.parity_block_count, 0);
@@ -198,10 +181,7 @@ fn ordered_envelope_serializes_encrypted_zero_parity_like_materialized_path() {
     )
     .unwrap();
     let serialized_bytes = match serialized.records {
-        OrderedEnvelopeRecords::Serialized(records) => records
-            .into_iter()
-            .map(|record| record.bytes)
-            .collect::<Vec<_>>(),
+        OrderedEnvelopeRecords::Serialized(records) => records.into_iter().map(|record| record.bytes).collect::<Vec<_>>(),
         OrderedEnvelopeRecords::Materialized(_) => {
             panic!("zero-parity encrypted envelope should use serialized records")
         }
@@ -221,10 +201,7 @@ fn ordered_envelope_serializes_encrypted_zero_parity_like_materialized_path() {
     )
     .unwrap();
     let materialized_bytes = match materialized.records {
-        OrderedEnvelopeRecords::Materialized(records) => records
-            .iter()
-            .map(BlockRecord::to_bytes)
-            .collect::<Vec<_>>(),
+        OrderedEnvelopeRecords::Materialized(records) => records.iter().map(BlockRecord::to_bytes).collect::<Vec<_>>(),
         OrderedEnvelopeRecords::Serialized(_) => {
             panic!("root-auth leaf collection requires materialized records")
         }
@@ -241,10 +218,7 @@ fn writer_options_reject_zero_jobs() {
     })
     .unwrap_err();
 
-    assert_eq!(
-        err,
-        FormatError::WriterUnsupported("jobs must be at least 1")
-    );
+    assert_eq!(err, FormatError::WriterUnsupported("jobs must be at least 1"));
 }
 
 #[test]
@@ -261,12 +235,7 @@ fn production_writer_defaults_generate_distinct_v4_identities() {
     assert_ne!(first.archive_uuid, second.archive_uuid);
     assert_ne!(first.session_id, second.session_id);
 
-    for raw in [
-        first.archive_uuid,
-        first.session_id,
-        second.archive_uuid,
-        second.session_id,
-    ] {
+    for raw in [first.archive_uuid, first.session_id, second.archive_uuid, second.session_id] {
         let id = Uuid::from_bytes(raw);
         assert_eq!(id.get_version_num(), 4);
     }
@@ -316,18 +285,13 @@ fn writer_extends_shard_for_bounded_hash_prefix_run() {
 
     assert_eq!(shards.len(), 2);
     assert_eq!(shards[0].len(), 54_000);
-    assert!(shards[0]
-        .iter()
-        .skip(9_000)
-        .all(|row| row.path_hash == [1u8; 8]));
+    assert!(shards[0].iter().skip(9_000).all(|row| row.path_hash == [1u8; 8]));
     assert_eq!(shards[1][0].path_hash, [2u8; 8]);
 }
 
 #[test]
 fn writer_splits_oversized_hash_prefix_run_at_writer_ceiling() {
-    let rows = (0..MAX_HASH_PREFIX_RUN_FILES + 1)
-        .map(|idx| test_file_row(idx, [7u8; 8]))
-        .collect::<Vec<_>>();
+    let rows = (0..MAX_HASH_PREFIX_RUN_FILES + 1).map(|idx| test_file_row(idx, [7u8; 8])).collect::<Vec<_>>();
 
     let shards = partition_file_rows(rows).unwrap();
 
@@ -389,13 +353,7 @@ fn writer_builds_directory_hint_rows_for_ancestor_directories() {
         decompressed_size: planned[0].plaintext.len() as u32,
         entry_count: planned[0].entry_count,
     };
-    let table = DirectoryHintTable::parse(
-        &planned[0].plaintext,
-        &locating,
-        2,
-        MetadataLimits::default(),
-    )
-    .unwrap();
+    let table = DirectoryHintTable::parse(&planned[0].plaintext, &locating, 2, MetadataLimits::default()).unwrap();
 
     let root = table.lookup_directory_index(b"").unwrap();
     assert_eq!(table.shard_rows_for_entry(root).unwrap(), &[0, 1]);
@@ -520,13 +478,7 @@ fn directory_hint_rows_include_directory_members_own_paths() {
         decompressed_size: planned[0].plaintext.len() as u32,
         entry_count: planned[0].entry_count,
     };
-    let table = DirectoryHintTable::parse(
-        &planned[0].plaintext,
-        &locating,
-        2,
-        MetadataLimits::default(),
-    )
-    .unwrap();
+    let table = DirectoryHintTable::parse(&planned[0].plaintext, &locating, 2, MetadataLimits::default()).unwrap();
 
     // Leaf directory paths must be locatable rows in the emitted table.
     let empty = table.lookup_directory_index(b"a/empty").unwrap();
@@ -542,17 +494,10 @@ fn directory_hint_rows_include_directory_members_own_paths() {
     for (shard_row_index, rows) in shard_rows.iter().enumerate() {
         for row in rows {
             let kind = match row.member.entry_kind {
-                SourceEntryKind::Directory | SourceEntryKind::ReparseDirectory => {
-                    TarEntryKind::Directory
-                }
+                SourceEntryKind::Directory | SourceEntryKind::ReparseDirectory => TarEntryKind::Directory,
                 _ => TarEntryKind::Regular,
             };
-            add_expected_directory_hint_rows(
-                &mut expected,
-                shard_row_index as u32,
-                &row.path,
-                kind,
-            );
+            add_expected_directory_hint_rows(&mut expected, shard_row_index as u32, &row.path, kind);
         }
     }
     validate_directory_hint_tables_against_expected(&[table], &expected).unwrap();
@@ -561,32 +506,21 @@ fn directory_hint_rows_include_directory_members_own_paths() {
 #[test]
 fn directory_hints_are_required_only_above_v45_threshold() {
     assert!(!should_emit_directory_hints(0));
-    assert!(!should_emit_directory_hints(
-        DIRECTORY_HINT_REQUIRED_FILE_COUNT
-    ));
-    assert!(should_emit_directory_hints(
-        DIRECTORY_HINT_REQUIRED_FILE_COUNT + 1
-    ));
+    assert!(!should_emit_directory_hints(DIRECTORY_HINT_REQUIRED_FILE_COUNT));
+    assert!(should_emit_directory_hints(DIRECTORY_HINT_REQUIRED_FILE_COUNT + 1));
 }
 
 #[test]
 fn regular_file_writer_uses_local_pax_path_for_long_and_non_ascii_paths() {
     let long_path = format!("dir/{}.txt", "a".repeat(120));
     let unicode_path = "unicode/e\u{301}.txt";
-    let files = [
-        RegularFile::new(&long_path, b"long path"),
-        RegularFile::new(unicode_path, b"unicode path"),
-    ];
+    let files = [RegularFile::new(&long_path, b"long path"), RegularFile::new(unicode_path, b"unicode path")];
 
     let (tar_stream, members) = build_tar_stream(&files, 4096).unwrap();
 
     for (member, expected_path, expected_data) in [
         (&members[0], long_path.as_bytes(), b"long path".as_slice()),
-        (
-            &members[1],
-            "unicode/\u{e9}.txt".as_bytes(),
-            b"unicode path".as_slice(),
-        ),
+        (&members[1], "unicode/\u{e9}.txt".as_bytes(), b"unicode path".as_slice()),
     ] {
         let start = member.tar_member_group_start as usize;
         let end = start + member.tar_member_group_size as usize;
@@ -608,10 +542,7 @@ fn regular_file_writer_emits_no_global_metadata_or_tar_eof() {
 
     let (tar_stream, members) = build_tar_stream(&files, 4096).unwrap();
 
-    let member_bytes = members
-        .iter()
-        .map(|member| member.tar_member_group_size)
-        .sum::<u64>();
+    let member_bytes = members.iter().map(|member| member.tar_member_group_size).sum::<u64>();
     assert_eq!(tar_stream.len() as u64, member_bytes);
     assert!(!tar_stream[tar_stream.len() - TAR_BLOCK_LEN * 2..]
         .chunks(TAR_BLOCK_LEN)
@@ -662,18 +593,9 @@ fn sparse_writer_emits_canonical_gnu_sparse_primary_and_all_hole_file() {
         SparseTestSource {
             logical_size: 32,
             extents: vec![
-                SparseExtent {
-                    offset: 4,
-                    length: 3,
-                },
-                SparseExtent {
-                    offset: 16,
-                    length: 2,
-                },
-                SparseExtent {
-                    offset: 30,
-                    length: 2,
-                },
+                SparseExtent { offset: 4, length: 3 },
+                SparseExtent { offset: 16, length: 2 },
+                SparseExtent { offset: 30, length: 2 },
             ],
             extent_bytes: b"abcdeyz".to_vec(),
         },
@@ -698,24 +620,9 @@ fn sparse_writer_emits_canonical_gnu_sparse_primary_and_all_hole_file() {
 #[test]
 fn sparse_writer_rejects_noncanonical_extent_maps() {
     for extents in [
-        vec![SparseExtent {
-            offset: 0,
-            length: 0,
-        }],
-        vec![
-            SparseExtent {
-                offset: 0,
-                length: 2,
-            },
-            SparseExtent {
-                offset: 2,
-                length: 2,
-            },
-        ],
-        vec![SparseExtent {
-            offset: 9,
-            length: 2,
-        }],
+        vec![SparseExtent { offset: 0, length: 0 }],
+        vec![SparseExtent { offset: 0, length: 2 }, SparseExtent { offset: 2, length: 2 }],
+        vec![SparseExtent { offset: 9, length: 2 }],
     ] {
         let source = SparseTestSource {
             logical_size: 10,
@@ -730,16 +637,7 @@ fn sparse_writer_rejects_noncanonical_extent_maps() {
 fn sparse_writer_indexes_logical_size_and_streams_expanded_content() {
     let source = SparseTestSource {
         logical_size: 12,
-        extents: vec![
-            SparseExtent {
-                offset: 2,
-                length: 3,
-            },
-            SparseExtent {
-                offset: 9,
-                length: 2,
-            },
-        ],
+        extents: vec![SparseExtent { offset: 2, length: 3 }, SparseExtent { offset: 9, length: 2 }],
         extent_bytes: b"abcxy".to_vec(),
     };
     let master_key = MasterKey::from_raw_key(&[7u8; 32]).unwrap();
@@ -761,10 +659,7 @@ fn sparse_writer_indexes_logical_size_and_streams_expanded_content() {
     let entry = opened.lookup_index_entry("sparse.bin").unwrap().unwrap();
     assert_eq!(entry.file_data_size, 12);
     assert_ne!(entry.flags & HAS_SPARSE_EXTENTS, 0);
-    assert_eq!(
-        opened.extract_file("sparse.bin").unwrap().unwrap(),
-        b"\0\0abc\0\0\0\0xy\0"
-    );
+    assert_eq!(opened.extract_file("sparse.bin").unwrap().unwrap(), b"\0\0abc\0\0\0\0xy\0");
 }
 
 #[test]
@@ -786,24 +681,11 @@ fn regular_file_writer_round_trips_mode_and_mtime() {
 
 #[test]
 fn regular_file_writer_round_trips_nanosecond_and_pre_epoch_mtimes() {
-    for expected in [
-        ArchiveTimestamp::new(1_700_000_000, 123_456_789),
-        ArchiveTimestamp::new(-1, 500_000_000),
-    ] {
-        let group = build_regular_file_member_group(
-            b"dated.txt",
-            b"dated",
-            0o644,
-            expected,
-            &PortableFileMetadata::default(),
-        )
-        .unwrap();
+    for expected in [ArchiveTimestamp::new(1_700_000_000, 123_456_789), ArchiveTimestamp::new(-1, 500_000_000)] {
+        let group = build_regular_file_member_group(b"dated.txt", b"dated", 0o644, expected, &PortableFileMetadata::default()).unwrap();
         let parsed = parse_tar_member_group(&group, 4096).unwrap();
         assert_eq!(parsed.mtime, expected);
-        assert_eq!(
-            parsed.v45_metadata.portable_mirror.mtime,
-            (expected.seconds, expected.nanoseconds)
-        );
+        assert_eq!(parsed.v45_metadata.portable_mirror.mtime, (expected.seconds, expected.nanoseconds));
     }
 }
 
@@ -817,9 +699,7 @@ fn regular_file_writer_rejects_invalid_timestamp_nanoseconds() {
             ArchiveTimestamp::new(0, 1_000_000_000),
             &PortableFileMetadata::default(),
         ),
-        Err(FormatError::WriterUnsupported(
-            "timestamp nanoseconds must be less than one billion"
-        ))
+        Err(FormatError::WriterUnsupported("timestamp nanoseconds must be less than one billion"))
     ));
 }
 
@@ -827,10 +707,9 @@ fn regular_file_writer_rejects_invalid_timestamp_nanoseconds() {
 fn macos_entitlement_and_superuser_flags_require_system_restore() {
     for flags in [0x0000_0080u64, 0x0008_0000, 0x0010_0000, 0x0080_0000] {
         let mut native = NativeFileMetadata::default();
-        native.primary_pax_records.insert(
-            "TZAP.macos.st-flags".into(),
-            format!("{flags:016x}").into_bytes(),
-        );
+        native
+            .primary_pax_records
+            .insert("TZAP.macos.st-flags".into(), format!("{flags:016x}").into_bytes());
         assert!(native_metadata_requires_system_restore(&native, "macos"));
     }
 }
@@ -859,18 +738,14 @@ fn linux_bsd_macos_immutable_flags_require_system_restore() {
     assert!(native_metadata_requires_system_restore(&native, "macos"));
 
     let mut native = NativeFileMetadata::default();
-    native
-        .primary_pax_records
-        .insert("SCHILY.fflags".into(), "uchg,uappnd".into());
+    native.primary_pax_records.insert("SCHILY.fflags".into(), "uchg,uappnd".into());
     assert!(native_metadata_requires_system_restore(&native, "linux"));
 }
 
 #[test]
 fn windows_reparse_and_attributes_require_system_restore() {
     let mut native = NativeFileMetadata::default();
-    native
-        .primary_pax_records
-        .insert("TZAP.windows.reparse-placeholder".into(), "1".into());
+    native.primary_pax_records.insert("TZAP.windows.reparse-placeholder".into(), "1".into());
     assert!(native_metadata_requires_system_restore(&native, "windows"));
 
     let mut native = NativeFileMetadata::default();
@@ -898,14 +773,7 @@ fn regular_file_writer_round_trips_portable_owner_origin_and_attributes() {
         accessed: None,
         native: NativeFileMetadata::default(),
     };
-    let group = build_regular_file_member_group(
-        b"owned.txt",
-        b"owned",
-        0o640,
-        ArchiveTimestamp::UNIX_EPOCH,
-        &portable_metadata,
-    )
-    .unwrap();
+    let group = build_regular_file_member_group(b"owned.txt", b"owned", 0o640, ArchiveTimestamp::UNIX_EPOCH, &portable_metadata).unwrap();
     let parsed = parse_tar_member_group(&group, 4096).unwrap();
 
     assert!(parsed.v45_metadata.declaration.owner_kind_posix);
@@ -914,15 +782,9 @@ fn regular_file_writer_round_trips_portable_owner_origin_and_attributes() {
     assert_eq!(parsed.v45_metadata.declaration.source_filesystem, "ext4");
     assert_eq!(parsed.v45_metadata.portable_mirror.uid, Some(9_000_000));
     assert_eq!(parsed.v45_metadata.portable_mirror.gid, Some(42));
-    assert_eq!(
-        parsed.v45_metadata.portable_mirror.uname.as_deref(),
-        Some("tést-user".as_bytes())
-    );
+    assert_eq!(parsed.v45_metadata.portable_mirror.uname.as_deref(), Some("tést-user".as_bytes()));
     assert_eq!(parsed.v45_metadata.portable_mirror.attributes, Some(1));
-    assert_ne!(
-        parsed.v45_metadata.file_entry_flags & REQUIRES_SYSTEM_RESTORE,
-        0
-    );
+    assert_ne!(parsed.v45_metadata.file_entry_flags & REQUIRES_SYSTEM_RESTORE, 0);
 }
 
 #[test]
@@ -935,30 +797,15 @@ fn regular_file_writer_serializes_portable_creation_and_access_times() {
         ..PortableFileMetadata::default()
     };
 
-    let group = build_regular_file_member_group(
-        b"timestamps.txt",
-        b"timestamps",
-        0o644,
-        ArchiveTimestamp::UNIX_EPOCH,
-        &portable_metadata,
-    )
-    .unwrap();
+    let group = build_regular_file_member_group(b"timestamps.txt", b"timestamps", 0o644, ArchiveTimestamp::UNIX_EPOCH, &portable_metadata).unwrap();
     let parsed = parse_tar_member_group(&group, 4096).unwrap();
 
     assert_eq!(
-        parsed
-            .v45_metadata
-            .primary_records
-            .get("LIBARCHIVE.creationtime")
-            .map(Vec::as_slice),
+        parsed.v45_metadata.primary_records.get("LIBARCHIVE.creationtime").map(Vec::as_slice),
         Some(b"1600000000.123456789".as_slice())
     );
     assert_eq!(
-        parsed
-            .v45_metadata
-            .primary_records
-            .get("atime")
-            .map(Vec::as_slice),
+        parsed.v45_metadata.primary_records.get("atime").map(Vec::as_slice),
         Some(b"1700000000.987654321".as_slice())
     );
 }
@@ -998,10 +845,7 @@ fn directory_writer_emits_type_and_portable_ownership_metadata() {
     assert_eq!(parsed.v45_metadata.portable_mirror.mode, 0o2750);
     assert_eq!(parsed.v45_metadata.portable_mirror.uid, Some(9_000_000));
     assert_eq!(parsed.v45_metadata.portable_mirror.gid, Some(42));
-    assert_eq!(
-        parsed.v45_metadata.portable_mirror.mtime,
-        (1_700_000_000, 123_456_789)
-    );
+    assert_eq!(parsed.v45_metadata.portable_mirror.mtime, (1_700_000_000, 123_456_789));
 }
 
 #[test]
@@ -1015,30 +859,11 @@ fn posix_special_writer_emits_fifo_and_device_primaries() {
         },
         ..PortableFileMetadata::default()
     };
-    let fifo = build_primary_member_prefix(
-        b"pipe",
-        SourceEntryKind::Fifo,
-        None,
-        0,
-        None,
-        0o640,
-        ArchiveTimestamp::UNIX_EPOCH,
-        &portable,
-    )
-    .unwrap();
-    assert_eq!(
-        parse_tar_member_group(&fifo, 4096).unwrap().kind,
-        crate::tar_model::TarEntryKind::Fifo
-    );
+    let fifo = build_primary_member_prefix(b"pipe", SourceEntryKind::Fifo, None, 0, None, 0o640, ArchiveTimestamp::UNIX_EPOCH, &portable).unwrap();
+    assert_eq!(parse_tar_member_group(&fifo, 4096).unwrap().kind, crate::tar_model::TarEntryKind::Fifo);
 
-    portable
-        .native
-        .primary_pax_records
-        .insert("TZAP.posix.device-major".into(), b"1".to_vec());
-    portable
-        .native
-        .primary_pax_records
-        .insert("TZAP.posix.device-minor".into(), b"3".to_vec());
+    portable.native.primary_pax_records.insert("TZAP.posix.device-major".into(), b"1".to_vec());
+    portable.native.primary_pax_records.insert("TZAP.posix.device-minor".into(), b"3".to_vec());
     let device = build_primary_member_prefix(
         b"null",
         SourceEntryKind::CharacterDevice,
@@ -1073,15 +898,9 @@ fn symlink_writer_emits_target_and_fractional_mtime() {
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
 
     assert_eq!(parsed.kind, crate::tar_model::TarEntryKind::Symlink);
-    assert_eq!(
-        parsed.link_target.as_deref(),
-        Some(b"../target.txt".as_slice())
-    );
+    assert_eq!(parsed.link_target.as_deref(), Some(b"../target.txt".as_slice()));
     assert_eq!(parsed.mtime, mtime);
-    assert_eq!(
-        parsed.v45_metadata.portable_mirror.mtime,
-        (mtime.seconds, mtime.nanoseconds)
-    );
+    assert_eq!(parsed.v45_metadata.portable_mirror.mtime, (mtime.seconds, mtime.nanoseconds));
 }
 
 #[test]
@@ -1115,14 +934,8 @@ fn hardlink_writer_emits_zero_data_alias_with_portable_mirror_only() {
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     assert_eq!(parsed.kind, crate::tar_model::TarEntryKind::Hardlink);
     assert_eq!(parsed.logical_size, 0);
-    assert_eq!(
-        parsed.link_target.as_deref(),
-        Some(b"aliases/alpha".as_slice())
-    );
-    assert_eq!(
-        parsed.v45_metadata.declaration.required_profiles,
-        ["portable-v1"]
-    );
+    assert_eq!(parsed.link_target.as_deref(), Some(b"aliases/alpha".as_slice()));
+    assert_eq!(parsed.v45_metadata.declaration.required_profiles, ["portable-v1"]);
     assert!(parsed.v45_metadata.auxiliary.is_empty());
     assert_eq!(parsed.v45_metadata.portable_mirror.mode, 0o640);
     assert_eq!(parsed.v45_metadata.portable_mirror.uid, Some(1000));
@@ -1132,10 +945,7 @@ fn hardlink_writer_emits_zero_data_alias_with_portable_mirror_only() {
 #[test]
 fn hardlink_writer_rejects_native_file_object_metadata() {
     let mut portable = PortableFileMetadata::default();
-    portable
-        .native
-        .primary_pax_records
-        .insert("TZAP.unix.ctime-observed".into(), b"1".to_vec());
+    portable.native.primary_pax_records.insert("TZAP.unix.ctime-observed".into(), b"1".to_vec());
     assert!(matches!(
         build_primary_member_prefix(
             b"beta",
@@ -1147,9 +957,7 @@ fn hardlink_writer_rejects_native_file_object_metadata() {
             ArchiveTimestamp::UNIX_EPOCH,
             &portable,
         ),
-        Err(FormatError::WriterInvariant(
-            "hardlink alias carries native file-object metadata"
-        ))
+        Err(FormatError::WriterInvariant("hardlink alias carries native file-object metadata"))
     ));
 }
 
@@ -1160,14 +968,7 @@ fn regular_file_writer_rejects_reserved_portable_attribute_bits() {
         ..PortableFileMetadata::default()
     };
     assert_eq!(
-        build_regular_file_member_group(
-            b"attributes.txt",
-            b"data",
-            0o644,
-            ArchiveTimestamp::UNIX_EPOCH,
-            &portable_metadata,
-        )
-        .unwrap_err(),
+        build_regular_file_member_group(b"attributes.txt", b"data", 0o644, ArchiveTimestamp::UNIX_EPOCH, &portable_metadata,).unwrap_err(),
         FormatError::WriterUnsupported("portable attributes contain reserved bits")
     );
 }
@@ -1188,32 +989,15 @@ fn regular_file_writer_emits_and_flags_valid_native_primary_metadata() {
         native,
         ..PortableFileMetadata::default()
     };
-    let group = build_regular_file_member_group(
-        b"native.txt",
-        b"data",
-        0o640,
-        ArchiveTimestamp::UNIX_EPOCH,
-        &metadata,
-    )
-    .unwrap();
+    let group = build_regular_file_member_group(b"native.txt", b"data", 0o640, ArchiveTimestamp::UNIX_EPOCH, &metadata).unwrap();
     let parsed = parse_tar_member_group(&group, 4096).unwrap();
 
+    assert_eq!(parsed.v45_metadata.declaration.required_profiles, vec!["portable-v1", "posix-backup-v1"]);
     assert_eq!(
-        parsed.v45_metadata.declaration.required_profiles,
-        vec!["portable-v1", "posix-backup-v1"]
-    );
-    assert_eq!(
-        parsed
-            .v45_metadata
-            .primary_records
-            .get("LIBARCHIVE.xattr.user.comment")
-            .map(Vec::as_slice),
+        parsed.v45_metadata.primary_records.get("LIBARCHIVE.xattr.user.comment").map(Vec::as_slice),
         Some(b"cHJlc2VydmVk".as_slice())
     );
-    assert_ne!(
-        parsed.v45_metadata.file_entry_flags & HAS_NATIVE_METADATA,
-        0
-    );
+    assert_ne!(parsed.v45_metadata.file_entry_flags & HAS_NATIVE_METADATA, 0);
 }
 
 #[test]
@@ -1222,12 +1006,7 @@ fn regular_file_writer_emits_valid_native_auxiliary_metadata() {
         required_profiles: vec!["posix-backup-v1".into()],
         ..NativeFileMetadata::default()
     };
-    let mut auxiliary = NativeAuxiliaryMetadata::new(
-        "generic.xattr",
-        "posix-backup-v1",
-        RestoreClass::SameOs,
-        b"large xattr value".to_vec(),
-    );
+    let mut auxiliary = NativeAuxiliaryMetadata::new("generic.xattr", "posix-backup-v1", RestoreClass::SameOs, b"large xattr value".to_vec());
     auxiliary.name_encoding = NativeAuxiliaryNameEncoding::Bytes;
     auxiliary.name = b"user.large".to_vec();
     native.auxiliary_records.push(auxiliary);
@@ -1237,23 +1016,13 @@ fn regular_file_writer_emits_valid_native_auxiliary_metadata() {
         ..PortableFileMetadata::default()
     };
 
-    let group = build_regular_file_member_group(
-        b"native-aux.txt",
-        b"contents",
-        0o640,
-        ArchiveTimestamp::from_seconds(12),
-        &metadata,
-    )
-    .unwrap();
+    let group = build_regular_file_member_group(b"native-aux.txt", b"contents", 0o640, ArchiveTimestamp::from_seconds(12), &metadata).unwrap();
     let parsed = parse_tar_member_group(&group, 4096).unwrap();
 
     assert_eq!(parsed.v45_metadata.auxiliary.len(), 1);
     assert_eq!(parsed.v45_metadata.auxiliary[0].kind, "generic.xattr");
     assert_eq!(parsed.v45_metadata.auxiliary[0].decoded_name, b"user.large");
-    assert_ne!(
-        parsed.v45_metadata.file_entry_flags & HAS_AUXILIARY_STREAMS,
-        0
-    );
+    assert_ne!(parsed.v45_metadata.file_entry_flags & HAS_AUXILIARY_STREAMS, 0);
 }
 
 #[test]
@@ -1275,14 +1044,7 @@ fn regular_file_writer_emits_capture_partial_flag_when_capture_report_present() 
         ..PortableFileMetadata::default()
     };
 
-    let group = build_regular_file_member_group(
-        b"capture-report.txt",
-        b"contents",
-        0o640,
-        ArchiveTimestamp::from_seconds(12),
-        &metadata,
-    )
-    .unwrap();
+    let group = build_regular_file_member_group(b"capture-report.txt", b"contents", 0o640, ArchiveTimestamp::from_seconds(12), &metadata).unwrap();
     let parsed = parse_tar_member_group(&group, 4096).unwrap();
 
     assert_eq!(parsed.v45_metadata.auxiliary.len(), 1);
@@ -1330,13 +1092,7 @@ fn streamed_auxiliary_sources_work_across_writer_modes_and_verify_digest() {
 
     let payload = deterministic_bytes(1024 * 1024 + 17);
     let digest: [u8; 32] = Sha256::digest(&payload).into();
-    let mut auxiliary = NativeAuxiliaryMetadata::new_streamed(
-        "generic.xattr",
-        "posix-backup-v1",
-        RestoreClass::SameOs,
-        payload.len() as u64,
-        digest,
-    );
+    let mut auxiliary = NativeAuxiliaryMetadata::new_streamed("generic.xattr", "posix-backup-v1", RestoreClass::SameOs, payload.len() as u64, digest);
     auxiliary.name_encoding = NativeAuxiliaryNameEncoding::Bytes;
     auxiliary.name = b"user.large".to_vec();
     let mut source = StreamedSource {
@@ -1360,53 +1116,16 @@ fn streamed_auxiliary_sources_work_across_writer_modes_and_verify_digest() {
     };
 
     let mut two_pass = MemoryArchiveSink::default();
-    write_archive_sources_to_sink(
-        std::slice::from_ref(&source),
-        &key,
-        options,
-        None,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut two_pass,
-    )
-    .unwrap();
-    open_archive(&two_pass.volumes[0], &key)
-        .unwrap()
-        .verify_content()
-        .unwrap();
+    write_archive_sources_to_sink(std::slice::from_ref(&source), &key, options, None, &KdfParams::Raw, None, None, &mut two_pass).unwrap();
+    open_archive(&two_pass.volumes[0], &key).unwrap().verify_content().unwrap();
 
     let mut single_pass = MemoryArchiveSink::default();
-    write_archive_sources_to_sink_single_pass(
-        std::slice::from_ref(&source),
-        &key,
-        options,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut single_pass,
-    )
-    .unwrap();
-    open_archive(&single_pass.volumes[0], &key)
-        .unwrap()
-        .verify_content()
-        .unwrap();
+    write_archive_sources_to_sink_single_pass(std::slice::from_ref(&source), &key, options, &KdfParams::Raw, None, None, &mut single_pass).unwrap();
+    open_archive(&single_pass.volumes[0], &key).unwrap().verify_content().unwrap();
 
     let mut ordered = MemoryArchiveSink::default();
-    write_archive_sources_to_sink_ordered_parallel(
-        std::slice::from_ref(&source),
-        &key,
-        options,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut ordered,
-    )
-    .unwrap();
-    open_archive(&ordered.volumes[0], &key)
-        .unwrap()
-        .verify_content()
-        .unwrap();
+    write_archive_sources_to_sink_ordered_parallel(std::slice::from_ref(&source), &key, options, &KdfParams::Raw, None, None, &mut ordered).unwrap();
+    open_archive(&ordered.volumes[0], &key).unwrap().verify_content().unwrap();
 
     let mut progress_sink = MemoryArchiveSink::default();
     let mut progress = RecordingWriteProgress::default();
@@ -1421,28 +1140,11 @@ fn streamed_auxiliary_sources_work_across_writer_modes_and_verify_digest() {
         &mut progress,
     )
     .unwrap();
-    assert_eq!(
-        progress.bytes_for(ArchiveWritePhase::EmittingPayload),
-        8 + source.payload.len() as u64
-    );
+    assert_eq!(progress.bytes_for(ArchiveWritePhase::EmittingPayload), 8 + source.payload.len() as u64);
 
-    source.metadata.native.auxiliary_records[0]
-        .streamed_payload
-        .as_mut()
-        .unwrap()
-        .sha256[0] ^= 1;
+    source.metadata.native.auxiliary_records[0].streamed_payload.as_mut().unwrap().sha256[0] ^= 1;
     let mut rejected = MemoryArchiveSink::default();
-    assert!(write_archive_sources_to_sink(
-        std::slice::from_ref(&source),
-        &key,
-        options,
-        None,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut rejected,
-    )
-    .is_err());
+    assert!(write_archive_sources_to_sink(std::slice::from_ref(&source), &key, options, None, &KdfParams::Raw, None, None, &mut rejected,).is_err());
 }
 
 #[test]
@@ -1486,9 +1188,7 @@ fn split_member_frames_carry_exact_boundary_flags() {
     assert!(frames.len() > 2);
     assert_eq!(frames.first().unwrap().flags, 0x0000_0001);
     assert_eq!(frames.last().unwrap().flags, 0x0000_0002);
-    assert!(frames[1..frames.len() - 1]
-        .iter()
-        .all(|frame| frame.flags == 0));
+    assert!(frames[1..frames.len() - 1].iter().all(|frame| frame.flags == 0));
 }
 
 #[test]
@@ -1511,16 +1211,12 @@ fn spanning_payload_derives_exact_multi_frame_multi_envelope_stats() {
     let mut next_block_index = 0u64;
 
     let payload = plan_payload_stream(&files, options, None, &mut next_block_index).unwrap();
-    let expected_tar_total_size =
-        3 * TAR_BLOCK_LEN as u64 + data.len() as u64 + padding_to_512(data.len()) as u64;
+    let expected_tar_total_size = 3 * TAR_BLOCK_LEN as u64 + data.len() as u64 + padding_to_512(data.len()) as u64;
     let (tar_stream, _) = build_tar_stream(&files, options.max_path_length).unwrap();
 
     assert_eq!(payload.tar_members.len(), 1);
     assert_eq!(payload.tar_members[0].tar_member_group_start, 0);
-    assert_eq!(
-        payload.tar_members[0].tar_member_group_size,
-        expected_tar_total_size
-    );
+    assert_eq!(payload.tar_members[0].tar_member_group_size, expected_tar_total_size);
     assert_eq!(payload.tar_total_size, expected_tar_total_size);
     assert_eq!(payload.content_sha256, sha256_bytes(&tar_stream));
     assert_eq!(payload.frames.len(), 15);
@@ -1567,13 +1263,7 @@ fn spanning_payload_derives_exact_multi_frame_multi_envelope_stats() {
     }
 
     let shard_rows = partition_file_rows(sorted_file_rows(&payload.tar_members)).unwrap();
-    let planned_shards = build_index_shard_plaintexts(
-        &shard_rows,
-        &payload.frames,
-        &payload.payload_objects,
-        options,
-    )
-    .unwrap();
+    let planned_shards = build_index_shard_plaintexts(&shard_rows, &payload.frames, &payload.payload_objects, options).unwrap();
     assert_eq!(planned_shards.len(), 1);
     let locating_shard = ShardEntry {
         shard_index: planned_shards[0].shard_index,
@@ -1586,40 +1276,23 @@ fn spanning_payload_derives_exact_multi_frame_multi_envelope_stats() {
         first_path_hash: planned_shards[0].first_path_hash,
         last_path_hash: planned_shards[0].last_path_hash,
     };
-    let shard = IndexShard::parse(
-        &planned_shards[0].plaintext,
-        &locating_shard,
-        MetadataLimits::default(),
-    )
-    .unwrap();
+    let shard = IndexShard::parse(&planned_shards[0].plaintext, &locating_shard, MetadataLimits::default()).unwrap();
     assert_eq!(shard.header.file_count, 1);
     assert_eq!(shard.header.frame_count, 15);
     assert_eq!(shard.header.envelope_count, 7);
     assert_eq!(shard.files[0].first_frame_index, 0);
     assert_eq!(shard.files[0].frame_count, 15);
-    assert_eq!(
-        shard.files[0].tar_member_group_size,
-        expected_tar_total_size
-    );
+    assert_eq!(shard.files[0].tar_member_group_size, expected_tar_total_size);
     assert_eq!(shard.files[0].file_data_size, data.len() as u64);
 
     for (idx, frame) in shard.frames.iter().enumerate() {
         assert_eq!(frame.frame_index, idx as u64);
         assert_eq!(frame.envelope_index, payload.frames[idx].envelope_index);
-        assert_eq!(
-            frame.offset_in_envelope,
-            payload.frames[idx].offset_in_envelope
-        );
+        assert_eq!(frame.offset_in_envelope, payload.frames[idx].offset_in_envelope);
         assert_eq!(frame.compressed_size, payload.frames[idx].compressed_size);
-        assert_eq!(
-            frame.decompressed_size,
-            payload.frames[idx].decompressed_size
-        );
+        assert_eq!(frame.decompressed_size, payload.frames[idx].decompressed_size);
         assert_eq!(frame.flags, payload.frames[idx].flags);
-        assert_eq!(
-            frame.tar_stream_offset,
-            payload.frames[idx].tar_stream_offset
-        );
+        assert_eq!(frame.tar_stream_offset, payload.frames[idx].tar_stream_offset);
     }
 
     for (idx, envelope) in shard.envelopes.iter().enumerate() {
@@ -1628,19 +1301,9 @@ fn spanning_payload_derives_exact_multi_frame_multi_envelope_stats() {
         assert_eq!(envelope.data_block_count, 1);
         assert_eq!(envelope.parity_block_count, 0);
         assert_eq!(envelope.encrypted_size, options.block_size);
-        assert_eq!(
-            envelope.plaintext_size,
-            payload.payload_objects[idx].plaintext_size
-        );
-        let envelope_frames: Vec<_> = payload
-            .frames
-            .iter()
-            .filter(|frame| frame.envelope_index == idx as u64)
-            .collect();
-        assert_eq!(
-            envelope.first_frame_index,
-            envelope_frames.first().unwrap().frame_index
-        );
+        assert_eq!(envelope.plaintext_size, payload.payload_objects[idx].plaintext_size);
+        let envelope_frames: Vec<_> = payload.frames.iter().filter(|frame| frame.envelope_index == idx as u64).collect();
+        assert_eq!(envelope.first_frame_index, envelope_frames.first().unwrap().frame_index);
         assert_eq!(envelope.frame_count, envelope_frames.len() as u32);
     }
 
@@ -1658,8 +1321,7 @@ fn spanning_payload_derives_exact_multi_frame_multi_envelope_stats() {
         None,
     )
     .unwrap();
-    let index_root =
-        IndexRoot::parse(&plan.index_root_plaintext, false, MetadataLimits::default()).unwrap();
+    let index_root = IndexRoot::parse(&plan.index_root_plaintext, false, MetadataLimits::default()).unwrap();
 
     assert_eq!(index_root.header.frame_count, 15);
     assert_eq!(index_root.header.envelope_count, 7);
@@ -1681,11 +1343,7 @@ fn writes_empty_archive_with_authentic_bootstrap_structures() {
 
     let crypto_start = VOLUME_HEADER_LEN;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &bytes[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&bytes[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let subkeys = Subkeys::derive(&master_key, &archive.archive_uuid, &archive.session_id).unwrap();
     verify_hmac(
         HmacDomain::CryptoHeader,
@@ -1697,12 +1355,9 @@ fn writes_empty_archive_with_authentic_bootstrap_structures() {
     )
     .unwrap();
 
-    let locator =
-        CriticalRecoveryLocator::parse(&bytes[bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN..])
-            .unwrap();
+    let locator = CriticalRecoveryLocator::parse(&bytes[bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN..]).unwrap();
     let trailer_offset = locator.volume_trailer_offset as usize;
-    let trailer =
-        VolumeTrailer::parse(&bytes[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
+    let trailer = VolumeTrailer::parse(&bytes[trailer_offset..trailer_offset + VOLUME_TRAILER_LEN]).unwrap();
     assert_eq!(trailer.bytes_written, trailer_offset as u64);
     verify_hmac(
         HmacDomain::VolumeTrailer,
@@ -1757,10 +1412,7 @@ fn parity_auto_scaling_rejects_non_convergent_budget() {
     )
     .unwrap_err();
 
-    assert_eq!(
-        err,
-        FormatError::WriterUnsupported("parity calculation did not converge")
-    );
+    assert_eq!(err, FormatError::WriterUnsupported("parity calculation did not converge"));
 }
 
 #[test]
@@ -1790,10 +1442,7 @@ fn index_root_data_shard_maximum_obeys_v45_minimum() {
     })
     .unwrap();
 
-    assert_eq!(
-        planned.index_root_fec_data_shards,
-        MIN_INDEX_ROOT_FEC_DATA_SHARDS
-    );
+    assert_eq!(planned.index_root_fec_data_shards, MIN_INDEX_ROOT_FEC_DATA_SHARDS);
 }
 
 #[test]
@@ -1835,12 +1484,8 @@ fn single_pass_writer_predeclares_metadata_class_before_payload_streaming() {
     .unwrap();
 
     assert!(planned.index_root_fec_data_shards > DEFAULT_INDEX_ROOT_FEC_DATA_SHARDS);
-    let index_root_payload_len = payload_len_for_encrypted_data_blocks(
-        u32::from(planned.index_root_fec_data_shards - 1),
-        planned,
-    );
-    let metadata_class =
-        plan_index_root_metadata_class(planned, index_root_payload_len, None).unwrap();
+    let index_root_payload_len = payload_len_for_encrypted_data_blocks(u32::from(planned.index_root_fec_data_shards - 1), planned);
+    let metadata_class = plan_index_root_metadata_class(planned, index_root_payload_len, None).unwrap();
 
     assert_eq!(metadata_class.options, planned);
 }
@@ -1848,8 +1493,7 @@ fn single_pass_writer_predeclares_metadata_class_before_payload_streaming() {
 #[test]
 fn metadata_class_planning_rejects_oversized_index_root() {
     let options = single_volume_metadata_test_options();
-    let index_root_payload_len =
-        payload_len_for_encrypted_data_blocks(u16::MAX as u32 + 1, options);
+    let index_root_payload_len = payload_len_for_encrypted_data_blocks(u16::MAX as u32 + 1, options);
 
     let err = plan_index_root_metadata_class(options, index_root_payload_len, None).unwrap_err();
 
@@ -1869,15 +1513,11 @@ fn metadata_class_planning_rejects_index_root_u32_encrypted_size_overflow() {
 #[test]
 fn metadata_class_planning_rejects_oversized_dictionary() {
     let options = single_volume_metadata_test_options();
-    let dictionary_payload_len =
-        payload_len_for_encrypted_data_blocks(u16::MAX as u32 + 1, options);
+    let dictionary_payload_len = payload_len_for_encrypted_data_blocks(u16::MAX as u32 + 1, options);
 
     let err = plan_index_root_metadata_class(options, 1, Some(dictionary_payload_len)).unwrap_err();
 
-    assert_eq!(
-        err,
-        FormatError::WriterUnsupported("dictionary object too large")
-    );
+    assert_eq!(err, FormatError::WriterUnsupported("dictionary object too large"));
 }
 
 #[test]
@@ -1894,10 +1534,7 @@ fn metadata_class_planning_rejects_gf16_total_overflow_for_dictionary() {
 
     let err = plan_index_root_metadata_class(options, 1, Some(dictionary_payload_len)).unwrap_err();
 
-    assert_eq!(
-        err,
-        FormatError::WriterUnsupported("dictionary object too large")
-    );
+    assert_eq!(err, FormatError::WriterUnsupported("dictionary object too large"));
 }
 
 #[test]
@@ -1923,11 +1560,7 @@ fn written_archive_authenticates_final_index_root_fec_class() {
     let volume_header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = VOLUME_HEADER_LEN;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &archive.bytes[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&archive.bytes[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let subkeys = Subkeys::derive(&master_key, &archive.archive_uuid, &archive.session_id).unwrap();
     verify_hmac(
         HmacDomain::CryptoHeader,
@@ -1942,10 +1575,7 @@ fn written_archive_authenticates_final_index_root_fec_class() {
     assert!(crypto_header.fixed.index_root_fec_data_shards > MIN_INDEX_ROOT_FEC_DATA_SHARDS);
     assert_eq!(crypto_header.fixed.index_root_fec_parity_shards, 0);
     let opened = open_archive(&archive.bytes, &master_key).unwrap();
-    assert_eq!(
-        opened.extract_file("uses-dictionary.txt").unwrap(),
-        Some(b"payload".to_vec())
-    );
+    assert_eq!(opened.extract_file("uses-dictionary.txt").unwrap(), Some(b"payload".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -2141,26 +1771,17 @@ fn root_auth_writer_accepts_128_kib_authenticator_value() {
     let opened = open_archive(&archive.bytes, &master_key).unwrap();
     let footer = opened.root_auth_footer.as_ref().unwrap();
     assert_eq!(footer.authenticator_id, 0xcafe);
-    assert_eq!(
-        footer.authenticator_value.as_slice(),
-        expected_value.as_slice()
-    );
+    assert_eq!(footer.authenticator_value.as_slice(), expected_value.as_slice());
 
     let verification = opened
-        .verify_root_auth_with(|footer, _| {
-            Ok(footer.authenticator_id == 0xcafe
-                && footer.authenticator_value.as_slice() == expected_value.as_slice())
-        })
+        .verify_root_auth_with(|footer, _| Ok(footer.authenticator_id == 0xcafe && footer.authenticator_value.as_slice() == expected_value.as_slice()))
         .unwrap();
     assert_eq!(verification.authenticator_id, 0xcafe);
 }
 
 #[test]
 fn streaming_writer_sink_round_trips_archive() {
-    let files = [
-        RegularFile::new("alpha.txt", b"alpha"),
-        RegularFile::new("nested/beta.txt", b"beta payload"),
-    ];
+    let files = [RegularFile::new("alpha.txt", b"alpha"), RegularFile::new("nested/beta.txt", b"beta payload")];
     let master_key = MasterKey::from_raw_key(&[7u8; 32]).unwrap();
     let mut sink = MemoryArchiveSink::default();
 
@@ -2178,10 +1799,7 @@ fn streaming_writer_sink_round_trips_archive() {
 
     assert_eq!(summary.volume_count, 1);
     let opened = crate::reader::open_archive(&sink.volumes[0], &master_key).unwrap();
-    assert_eq!(
-        opened.extract_file("nested/beta.txt").unwrap(),
-        Some(b"beta payload".to_vec())
-    );
+    assert_eq!(opened.extract_file("nested/beta.txt").unwrap(), Some(b"beta payload".to_vec()));
 }
 
 #[test]
@@ -2202,25 +1820,15 @@ fn ordered_sink_writer_round_trips_recipientwrap_records() {
     .unwrap();
 
     assert_eq!(summary.volume_count, 1);
-    let opened =
-        open_archive_with_recipient_wrap_resolver(&sink.volumes[0], |_| Ok(vec![master_key.0]))
-            .unwrap();
-    assert_eq!(
-        opened.extract_file("wrapped.txt").unwrap(),
-        Some(b"recipient sink payload".to_vec())
-    );
+    let opened = open_archive_with_recipient_wrap_resolver(&sink.volumes[0], |_| Ok(vec![master_key.0])).unwrap();
+    assert_eq!(opened.extract_file("wrapped.txt").unwrap(), Some(b"recipient sink payload".to_vec()));
 }
 
 #[test]
 fn ordered_sink_writer_indexes_v45_metadata_flags_from_member_semantics() {
     let mut sparse_payload = vec![0u8; TAR_BLOCK_LEN];
     sparse_payload[..2].copy_from_slice(b"0\n");
-    let mut sparse_fork = NativeAuxiliaryMetadata::new(
-        "macos.resource-fork",
-        "macos-backup-v1",
-        RestoreClass::SameOs,
-        sparse_payload,
-    );
+    let mut sparse_fork = NativeAuxiliaryMetadata::new("macos.resource-fork", "macos-backup-v1", RestoreClass::SameOs, sparse_payload);
     sparse_fork.flags = 1;
     sparse_fork.logical_size = 4096;
 
@@ -2273,24 +1881,15 @@ fn ordered_sink_writer_indexes_v45_metadata_flags_from_member_semantics() {
     let opened = open_archive(&sink.volumes[0], &master_key).unwrap();
     opened.verify().unwrap();
     let entries = opened.list_index_entries().unwrap();
-    let sparse = entries
-        .iter()
-        .find(|entry| entry.path == "sparse-fork.bin")
-        .unwrap();
+    let sparse = entries.iter().find(|entry| entry.path == "sparse-fork.bin").unwrap();
     assert_ne!(sparse.flags & HAS_SPARSE_EXTENTS, 0);
-    let portable_only = entries
-        .iter()
-        .find(|entry| entry.path == "portable-only.bin")
-        .unwrap();
+    let portable_only = entries.iter().find(|entry| entry.path == "portable-only.bin").unwrap();
     assert_eq!(portable_only.flags & HAS_NATIVE_METADATA, 0);
 }
 
 #[test]
 fn single_pass_sink_writer_round_trips_recipientwrap_records() {
-    let files = [RegularFile::new(
-        "wrapped.txt",
-        b"recipient single-pass sink payload",
-    )];
+    let files = [RegularFile::new("wrapped.txt", b"recipient single-pass sink payload")];
     let master_key = MasterKey::from_raw_key(&[9u8; 32]).unwrap();
     let mut sink = MemoryArchiveSink::default();
 
@@ -2306,9 +1905,7 @@ fn single_pass_sink_writer_round_trips_recipientwrap_records() {
     .unwrap();
 
     assert_eq!(summary.volume_count, 1);
-    let opened =
-        open_archive_with_recipient_wrap_resolver(&sink.volumes[0], |_| Ok(vec![master_key.0]))
-            .unwrap();
+    let opened = open_archive_with_recipient_wrap_resolver(&sink.volumes[0], |_| Ok(vec![master_key.0])).unwrap();
     assert_eq!(
         opened.extract_file("wrapped.txt").unwrap(),
         Some(b"recipient single-pass sink payload".to_vec())
@@ -2318,10 +1915,7 @@ fn single_pass_sink_writer_round_trips_recipientwrap_records() {
 
 #[test]
 fn single_pass_sink_writer_round_trips_recipientwrap_root_auth() {
-    let files = [RegularFile::new(
-        "wrapped.txt",
-        b"recipient single-pass signed payload",
-    )];
+    let files = [RegularFile::new("wrapped.txt", b"recipient single-pass signed payload")];
     let master_key = MasterKey::from_raw_key(&[9u8; 32]).unwrap();
     let mut sink = MemoryArchiveSink::default();
 
@@ -2342,14 +1936,9 @@ fn single_pass_sink_writer_round_trips_recipientwrap_root_auth() {
     .unwrap();
 
     assert_eq!(summary.volume_count, 1);
-    let opened =
-        open_archive_with_recipient_wrap_resolver(&sink.volumes[0], |_| Ok(vec![master_key.0]))
-            .unwrap();
+    let opened = open_archive_with_recipient_wrap_resolver(&sink.volumes[0], |_| Ok(vec![master_key.0])).unwrap();
     let verification = opened
-        .verify_root_auth_with(|footer, archive_root| {
-            Ok(footer.authenticator_id == 0x44
-                && footer.authenticator_value.as_slice() == archive_root)
-        })
+        .verify_root_auth_with(|footer, archive_root| Ok(footer.authenticator_id == 0x44 && footer.authenticator_value.as_slice() == archive_root))
         .unwrap();
     assert_eq!(verification.volume_format_rev, VOLUME_FORMAT_REV_45);
 }
@@ -2366,16 +1955,8 @@ fn single_pass_writer_rejects_recipientwrap_kdf_without_records_before_writing()
         key_wrap_table_digest: [0u8; 32],
     };
 
-    let err = write_archive_sources_to_sink_single_pass(
-        &files,
-        &master_key,
-        single_volume_metadata_test_options(),
-        &kdf_params,
-        None,
-        None,
-        &mut sink,
-    )
-    .unwrap_err();
+    let err =
+        write_archive_sources_to_sink_single_pass(&files, &master_key, single_volume_metadata_test_options(), &kdf_params, None, None, &mut sink).unwrap_err();
 
     match err {
         ArchiveWriteError::Format(FormatError::WriterUnsupported(message)) => {
@@ -2398,16 +1979,8 @@ fn ordered_sink_writer_rejects_recipientwrap_kdf_without_records_before_writing(
         key_wrap_table_digest: [0u8; 32],
     };
 
-    let err = write_archive_sources_to_sink_ordered_parallel(
-        &files,
-        &master_key,
-        single_volume_metadata_test_options(),
-        &kdf_params,
-        None,
-        None,
-        &mut sink,
-    )
-    .unwrap_err();
+    let err = write_archive_sources_to_sink_ordered_parallel(&files, &master_key, single_volume_metadata_test_options(), &kdf_params, None, None, &mut sink)
+        .unwrap_err();
 
     match err {
         ArchiveWriteError::Format(FormatError::WriterUnsupported(message)) => {
@@ -2443,16 +2016,7 @@ fn streaming_writer_bounds_source_reads_and_sink_writes_for_large_file() {
     .unwrap();
     let mut sink = TrackingArchiveSink::default();
 
-    let summary = write_archive_sources_to_sink_single_pass(
-        &[file],
-        &master_key,
-        options,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut sink,
-    )
-    .unwrap();
+    let summary = write_archive_sources_to_sink_single_pass(&[file], &master_key, options, &KdfParams::Raw, None, None, &mut sink).unwrap();
 
     let stats = stats.borrow();
     assert_eq!(stats.open_count, 1);
@@ -2460,10 +2024,7 @@ fn streaming_writer_bounds_source_reads_and_sink_writes_for_large_file() {
     assert!(stats.max_read_request <= options.chunk_size as usize);
     assert_eq!(summary.volume_count, 1);
     assert_eq!(summary.archive_bytes, sink.volume_bytes.iter().sum());
-    assert_eq!(
-        summary.bootstrap_sidecar_bytes,
-        sink.bootstrap_sidecar_bytes
-    );
+    assert_eq!(summary.bootstrap_sidecar_bytes, sink.bootstrap_sidecar_bytes);
     assert!(sink.max_write_len <= 128 * 1024);
 }
 
@@ -2492,29 +2053,13 @@ fn sink_writer_progress_reports_source_bytes_for_each_multi_pass_phase() {
     let mut sink = MemoryArchiveSink::default();
     let mut progress = RecordingWriteProgress::default();
 
-    let summary = write_archive_sources_to_sink_with_progress(
-        &[file],
-        &master_key,
-        options,
-        None,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut sink,
-        &mut progress,
-    )
-    .unwrap();
+    let summary =
+        write_archive_sources_to_sink_with_progress(&[file], &master_key, options, None, &KdfParams::Raw, None, None, &mut sink, &mut progress).unwrap();
 
     let stats = stats.borrow();
     assert!(stats.open_count > 1);
-    assert_eq!(
-        progress.bytes_for(ArchiveWritePhase::PlanningPayload),
-        file_size as u64
-    );
-    assert_eq!(
-        progress.bytes_for(ArchiveWritePhase::EmittingPayload),
-        file_size as u64
-    );
+    assert_eq!(progress.bytes_for(ArchiveWritePhase::PlanningPayload), file_size as u64);
+    assert_eq!(progress.bytes_for(ArchiveWritePhase::EmittingPayload), file_size as u64);
     assert_eq!(summary.volume_count, 1);
     assert!(!sink.volumes.is_empty());
 }
@@ -2544,18 +2089,7 @@ fn sink_writer_progress_reports_multi_pass_phases_and_phase_bytes() {
     let mut sink = MemoryArchiveSink::default();
     let mut progress = RecordingWriteProgress::default();
 
-    write_archive_sources_to_sink_with_progress(
-        &[file],
-        &master_key,
-        options,
-        None,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut sink,
-        &mut progress,
-    )
-    .unwrap();
+    write_archive_sources_to_sink_with_progress(&[file], &master_key, options, None, &KdfParams::Raw, None, None, &mut sink, &mut progress).unwrap();
 
     assert_eq!(
         progress.phases,
@@ -2566,14 +2100,8 @@ fn sink_writer_progress_reports_multi_pass_phases_and_phase_bytes() {
             ArchiveWritePhase::EmittingMetadata,
         ]
     );
-    assert_eq!(
-        progress.bytes_for(ArchiveWritePhase::PlanningPayload),
-        file_size as u64
-    );
-    assert_eq!(
-        progress.bytes_for(ArchiveWritePhase::EmittingPayload),
-        file_size as u64
-    );
+    assert_eq!(progress.bytes_for(ArchiveWritePhase::PlanningPayload), file_size as u64);
+    assert_eq!(progress.bytes_for(ArchiveWritePhase::EmittingPayload), file_size as u64);
 }
 
 #[test]
@@ -2599,24 +2127,9 @@ fn sink_writer_progress_reports_each_volume_size_replanning_attempt() {
     let mut sink = MemoryArchiveSink::default();
     let mut progress = RecordingWriteProgress::default();
 
-    write_archive_sources_to_sink_with_progress(
-        &[file],
-        &master_key,
-        options,
-        None,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut sink,
-        &mut progress,
-    )
-    .unwrap();
+    write_archive_sources_to_sink_with_progress(&[file], &master_key, options, None, &KdfParams::Raw, None, None, &mut sink, &mut progress).unwrap();
 
-    let planning_attempts = progress
-        .phases
-        .iter()
-        .filter(|phase| **phase == ArchiveWritePhase::PlanningPayload)
-        .count();
+    let planning_attempts = progress.phases.iter().filter(|phase| **phase == ArchiveWritePhase::PlanningPayload).count();
     assert!(planning_attempts > 1);
     assert_eq!(
         progress.phases.len(),
@@ -2624,29 +2137,17 @@ fn sink_writer_progress_reports_each_volume_size_replanning_attempt() {
         "each planning attempt has payload and metadata phases before emission",
     );
     for phases in progress.phases[..planning_attempts * 2].chunks_exact(2) {
-        assert_eq!(
-            phases,
-            [
-                ArchiveWritePhase::PlanningPayload,
-                ArchiveWritePhase::PlanningMetadata,
-            ]
-        );
+        assert_eq!(phases, [ArchiveWritePhase::PlanningPayload, ArchiveWritePhase::PlanningMetadata,]);
     }
     assert_eq!(
         &progress.phases[planning_attempts * 2..],
-        [
-            ArchiveWritePhase::EmittingPayload,
-            ArchiveWritePhase::EmittingMetadata,
-        ]
+        [ArchiveWritePhase::EmittingPayload, ArchiveWritePhase::EmittingMetadata,]
     );
     assert_eq!(
         progress.bytes_for(ArchiveWritePhase::PlanningPayload),
         file_size as u64 * planning_attempts as u64,
     );
-    assert_eq!(
-        progress.bytes_for(ArchiveWritePhase::EmittingPayload),
-        file_size as u64,
-    );
+    assert_eq!(progress.bytes_for(ArchiveWritePhase::EmittingPayload), file_size as u64,);
 }
 
 #[test]
@@ -2663,29 +2164,10 @@ fn single_pass_progress_reports_emission_phases() {
     let mut sink = MemoryArchiveSink::default();
     let mut progress = RecordingWriteProgress::default();
 
-    write_archive_sources_to_sink_single_pass_with_progress(
-        &[file],
-        &master_key,
-        options,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut sink,
-        &mut progress,
-    )
-    .unwrap();
+    write_archive_sources_to_sink_single_pass_with_progress(&[file], &master_key, options, &KdfParams::Raw, None, None, &mut sink, &mut progress).unwrap();
 
-    assert_eq!(
-        progress.phases,
-        vec![
-            ArchiveWritePhase::EmittingPayload,
-            ArchiveWritePhase::EmittingMetadata,
-        ]
-    );
-    assert_eq!(
-        progress.bytes_for(ArchiveWritePhase::EmittingPayload),
-        file_size as u64
-    );
+    assert_eq!(progress.phases, vec![ArchiveWritePhase::EmittingPayload, ArchiveWritePhase::EmittingMetadata,]);
+    assert_eq!(progress.bytes_for(ArchiveWritePhase::EmittingPayload), file_size as u64);
 }
 
 #[test]
@@ -2702,29 +2184,10 @@ fn ordered_parallel_progress_reports_emission_phases() {
     let mut sink = MemoryArchiveSink::default();
     let mut progress = RecordingWriteProgress::default();
 
-    write_archive_sources_to_sink_ordered_parallel_with_progress(
-        &[file],
-        &master_key,
-        options,
-        &KdfParams::Raw,
-        None,
-        None,
-        &mut sink,
-        &mut progress,
-    )
-    .unwrap();
+    write_archive_sources_to_sink_ordered_parallel_with_progress(&[file], &master_key, options, &KdfParams::Raw, None, None, &mut sink, &mut progress).unwrap();
 
-    assert_eq!(
-        progress.phases,
-        vec![
-            ArchiveWritePhase::EmittingPayload,
-            ArchiveWritePhase::EmittingMetadata,
-        ]
-    );
-    assert_eq!(
-        progress.bytes_for(ArchiveWritePhase::EmittingPayload),
-        file_size as u64
-    );
+    assert_eq!(progress.phases, vec![ArchiveWritePhase::EmittingPayload, ArchiveWritePhase::EmittingMetadata,]);
+    assert_eq!(progress.bytes_for(ArchiveWritePhase::EmittingPayload), file_size as u64);
 }
 
 fn progress_test_writer_options() -> WriterOptions {
@@ -2846,12 +2309,10 @@ impl ArchiveWriteSink for TrackingArchiveSink {
     }
 
     fn write_volume(&mut self, volume_index: usize, bytes: &[u8]) -> Result<(), ArchiveWriteError> {
-        let volume =
-            self.volume_bytes
-                .get_mut(volume_index)
-                .ok_or(FormatError::WriterInvariant(
-                    "tracking sink volume index is out of bounds",
-                ))?;
+        let volume = self
+            .volume_bytes
+            .get_mut(volume_index)
+            .ok_or(FormatError::WriterInvariant("tracking sink volume index is out of bounds"))?;
         *volume += bytes.len() as u64;
         self.max_write_len = self.max_write_len.max(bytes.len());
         Ok(())
@@ -2900,20 +2361,11 @@ fn assert_path_specific_member_group(group: &[u8]) {
     let mut saw_main = false;
     while cursor < group.len() {
         let header = &group[cursor..cursor + TAR_BLOCK_LEN];
-        assert!(
-            header.iter().any(|byte| *byte != 0),
-            "writer emitted tar zero block inside member group"
-        );
+        assert!(header.iter().any(|byte| *byte != 0), "writer emitted tar zero block inside member group");
         let typeflag = header[156];
         assert_ne!(typeflag, b'g', "writer emitted global PAX metadata");
-        assert!(
-            !matches!(typeflag, b'V' | b'M' | b'N'),
-            "writer emitted global GNU metadata"
-        );
-        assert!(
-            matches!(typeflag, b'x' | b'0'),
-            "writer emitted unexpected tar record type {typeflag:?}"
-        );
+        assert!(!matches!(typeflag, b'V' | b'M' | b'N'), "writer emitted global GNU metadata");
+        assert!(matches!(typeflag, b'x' | b'0'), "writer emitted unexpected tar record type {typeflag:?}");
         if typeflag == b'0' {
             saw_main = true;
         }
@@ -2977,25 +2429,13 @@ fn crypto_header_extension_area_emits_only_terminator() {
     let archive_uuid = [1u8; 16];
     let session_id = [2u8; 16];
     let volume_format_rev = volume_format_revision_for_options(&options, &KdfParams::None);
-    let header = build_crypto_header(
-        options,
-        volume_format_rev,
-        false,
-        &subkeys,
-        &archive_uuid,
-        &session_id,
-        &KdfParams::None,
-    )
-    .unwrap();
+    let header = build_crypto_header(options, volume_format_rev, false, &subkeys, &archive_uuid, &session_id, &KdfParams::None).unwrap();
 
     let kdf_payload = serialize_kdf_params(&KdfParams::None).unwrap();
     let extension_start = CRYPTO_HEADER_FIXED_LEN + kdf_payload.len();
     let extension = &header[extension_start..extension_start + CRYPTO_EXTENSION_HEADER_LEN];
     assert_eq!(extension, &[0u8; CRYPTO_EXTENSION_HEADER_LEN]);
-    assert_eq!(
-        header.len(),
-        extension_start + CRYPTO_EXTENSION_HEADER_LEN + CRYPTO_HEADER_HMAC_LEN
-    );
+    assert_eq!(header.len(), extension_start + CRYPTO_EXTENSION_HEADER_LEN + CRYPTO_HEADER_HMAC_LEN);
 
     let extensions = scan_crypto_extension_tlvs(extension).unwrap();
     assert!(extensions.is_empty());
@@ -3047,9 +2487,6 @@ fn seekable_dictionary_extent_requires_non_zero_extent_fields() {
         shards: Vec::new(),
         directory_hint_shards: Vec::new(),
     };
-    let err =
-        crate::reader::validation::dictionary_extent_from_index_root(&index_root).unwrap_err();
-    assert!(
-        matches!(err, FormatError::InvalidArchive(message) if message == "dictionary extent missing from IndexRoot")
-    );
+    let err = crate::reader::validation::dictionary_extent_from_index_root(&index_root).unwrap_err();
+    assert!(matches!(err, FormatError::InvalidArchive(message) if message == "dictionary extent missing from IndexRoot"));
 }

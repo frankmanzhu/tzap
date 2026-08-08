@@ -6,63 +6,37 @@ pub fn compress_zstd_frame(plaintext: &[u8], level: i32) -> Result<Vec<u8>, Form
     compress_zstd_frame_with_jobs(plaintext, level, 1)
 }
 
-pub fn compress_zstd_frame_with_jobs(
-    plaintext: &[u8],
-    level: i32,
-    jobs: usize,
-) -> Result<Vec<u8>, FormatError> {
+pub fn compress_zstd_frame_with_jobs(plaintext: &[u8], level: i32, jobs: usize) -> Result<Vec<u8>, FormatError> {
     if jobs <= 1 {
-        return zstd::bulk::compress(plaintext, level)
-            .map_err(|_| FormatError::ZstdCompressionFailure);
+        return zstd::bulk::compress(plaintext, level).map_err(|_| FormatError::ZstdCompressionFailure);
     }
-    let jobs = u32::try_from(jobs)
-        .map_err(|_| FormatError::WriterUnsupported("jobs exceeds zstd worker limit"))?;
-    let mut compressor =
-        zstd::bulk::Compressor::new(level).map_err(|_| FormatError::ZstdCompressionFailure)?;
+    let jobs = u32::try_from(jobs).map_err(|_| FormatError::WriterUnsupported("jobs exceeds zstd worker limit"))?;
+    let mut compressor = zstd::bulk::Compressor::new(level).map_err(|_| FormatError::ZstdCompressionFailure)?;
     compressor
         .set_parameter(zstd_safe::CParameter::NbWorkers(jobs))
         .map_err(|_| FormatError::ZstdCompressionFailure)?;
-    compressor
-        .compress(plaintext)
-        .map_err(|_| FormatError::ZstdCompressionFailure)
+    compressor.compress(plaintext).map_err(|_| FormatError::ZstdCompressionFailure)
 }
 
-pub fn compress_zstd_frame_with_dictionary(
-    plaintext: &[u8],
-    level: i32,
-    dictionary: &[u8],
-) -> Result<Vec<u8>, FormatError> {
+pub fn compress_zstd_frame_with_dictionary(plaintext: &[u8], level: i32, dictionary: &[u8]) -> Result<Vec<u8>, FormatError> {
     compress_zstd_frame_with_dictionary_and_jobs(plaintext, level, dictionary, 1)
 }
 
-pub fn compress_zstd_frame_with_dictionary_and_jobs(
-    plaintext: &[u8],
-    level: i32,
-    dictionary: &[u8],
-    jobs: usize,
-) -> Result<Vec<u8>, FormatError> {
-    let mut compressor = zstd::bulk::Compressor::with_dictionary(level, dictionary)
-        .map_err(|_| FormatError::ZstdCompressionFailure)?;
+pub fn compress_zstd_frame_with_dictionary_and_jobs(plaintext: &[u8], level: i32, dictionary: &[u8], jobs: usize) -> Result<Vec<u8>, FormatError> {
+    let mut compressor = zstd::bulk::Compressor::with_dictionary(level, dictionary).map_err(|_| FormatError::ZstdCompressionFailure)?;
     if jobs > 1 {
-        let jobs = u32::try_from(jobs)
-            .map_err(|_| FormatError::WriterUnsupported("jobs exceeds zstd worker limit"))?;
+        let jobs = u32::try_from(jobs).map_err(|_| FormatError::WriterUnsupported("jobs exceeds zstd worker limit"))?;
         compressor
             .set_parameter(zstd_safe::CParameter::NbWorkers(jobs))
             .map_err(|_| FormatError::ZstdCompressionFailure)?;
     }
-    compressor
-        .compress(plaintext)
-        .map_err(|_| FormatError::ZstdCompressionFailure)
+    compressor.compress(plaintext).map_err(|_| FormatError::ZstdCompressionFailure)
 }
 
-pub fn decompress_exact_zstd_frame(
-    compressed: &[u8],
-    expected_decompressed_size: usize,
-) -> Result<Vec<u8>, FormatError> {
+pub fn decompress_exact_zstd_frame(compressed: &[u8], expected_decompressed_size: usize) -> Result<Vec<u8>, FormatError> {
     validate_metadata_decompressed_size(expected_decompressed_size)?;
     validate_exact_zstd_frame(compressed)?;
-    let decompressed = zstd::bulk::decompress(compressed, expected_decompressed_size)
-        .map_err(|_| FormatError::ZstdDecompressionFailure)?;
+    let decompressed = zstd::bulk::decompress(compressed, expected_decompressed_size).map_err(|_| FormatError::ZstdDecompressionFailure)?;
     if decompressed.len() != expected_decompressed_size {
         return Err(FormatError::ZstdDecompressedSizeMismatch {
             expected: expected_decompressed_size,
@@ -72,17 +46,11 @@ pub fn decompress_exact_zstd_frame(
     Ok(decompressed)
 }
 
-pub fn decompress_exact_zstd_frame_with_dictionary(
-    compressed: &[u8],
-    expected_decompressed_size: usize,
-    dictionary: &[u8],
-) -> Result<Vec<u8>, FormatError> {
+pub fn decompress_exact_zstd_frame_with_dictionary(compressed: &[u8], expected_decompressed_size: usize, dictionary: &[u8]) -> Result<Vec<u8>, FormatError> {
     validate_metadata_decompressed_size(expected_decompressed_size)?;
     validate_exact_zstd_frame(compressed)?;
     let decompressed = zstd::bulk::Decompressor::with_dictionary(dictionary)
-        .and_then(|mut decompressor| {
-            decompressor.decompress(compressed, expected_decompressed_size)
-        })
+        .and_then(|mut decompressor| decompressor.decompress(compressed, expected_decompressed_size))
         .map_err(|_| FormatError::ZstdDecompressionFailure)?;
     if decompressed.len() != expected_decompressed_size {
         return Err(FormatError::ZstdDecompressedSizeMismatch {
@@ -100,17 +68,14 @@ pub fn validate_exact_zstd_frame(compressed: &[u8]) -> Result<(), FormatError> {
     if compressed.len() < 4 || compressed[0..4] != ZSTD_MAGIC {
         return Err(FormatError::NotStandardZstdFrame);
     }
-    let frame_size = zstd_safe::find_frame_compressed_size(compressed)
-        .map_err(|_| FormatError::InvalidZstdFrame)?;
+    let frame_size = zstd_safe::find_frame_compressed_size(compressed).map_err(|_| FormatError::InvalidZstdFrame)?;
     if frame_size != compressed.len() {
         return Err(FormatError::TrailingBytesAfterZstdFrame);
     }
     Ok(())
 }
 
-fn validate_metadata_decompressed_size(
-    expected_decompressed_size: usize,
-) -> Result<(), FormatError> {
+fn validate_metadata_decompressed_size(expected_decompressed_size: usize) -> Result<(), FormatError> {
     if expected_decompressed_size > READER_MAX_METADATA_OBJECT_SIZE as usize {
         Err(FormatError::ReaderResourceLimitExceeded {
             field: "decompressed_size",
@@ -153,10 +118,7 @@ mod tests {
         );
 
         let skippable = [0x50, 0x2a, 0x4d, 0x18, 0, 0, 0, 0];
-        assert_eq!(
-            validate_exact_zstd_frame(&skippable).unwrap_err(),
-            FormatError::NotStandardZstdFrame
-        );
+        assert_eq!(validate_exact_zstd_frame(&skippable).unwrap_err(), FormatError::NotStandardZstdFrame);
     }
 
     #[test]
@@ -164,10 +126,7 @@ mod tests {
         let compressed = compress_zstd_frame(b"payload", 1).unwrap();
         assert_eq!(
             decompress_exact_zstd_frame(&compressed, 100).unwrap_err(),
-            FormatError::ZstdDecompressedSizeMismatch {
-                expected: 100,
-                actual: 7
-            }
+            FormatError::ZstdDecompressedSizeMismatch { expected: 100, actual: 7 }
         );
     }
 
@@ -204,9 +163,7 @@ mod tests {
         let dictionary = b"common prefix common prefix common prefix";
         let plaintext = b"common prefix payload";
         let compressed = compress_zstd_frame_with_dictionary(plaintext, 3, dictionary).unwrap();
-        let decompressed =
-            decompress_exact_zstd_frame_with_dictionary(&compressed, plaintext.len(), dictionary)
-                .unwrap();
+        let decompressed = decompress_exact_zstd_frame_with_dictionary(&compressed, plaintext.len(), dictionary).unwrap();
         assert_eq!(decompressed, plaintext);
     }
 }

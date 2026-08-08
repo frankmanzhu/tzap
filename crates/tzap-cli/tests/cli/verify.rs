@@ -101,10 +101,7 @@ fn cli_verify_fast_reports_distinct_stdout_and_json() {
         .clone();
     let value: Value = serde_json::from_slice(&json_output).unwrap();
     assert_eq!(value.get("ok").unwrap().as_bool(), Some(true));
-    assert_eq!(
-        value.get("verification_mode").unwrap().as_str(),
-        Some("fast")
-    );
+    assert_eq!(value.get("verification_mode").unwrap().as_str(), Some("fast"));
     assert_eq!(value.get("file_count").unwrap().as_u64(), Some(1));
     assert!(value
         .get("diagnostics")
@@ -172,9 +169,7 @@ fn cli_verify_fast_rejects_archive_stdin() {
         .write_stdin("")
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "--fast requires seekable archive paths",
-        ));
+        .stderr(predicate::str::contains("--fast requires seekable archive paths"));
 }
 
 #[test]
@@ -201,12 +196,7 @@ fn cli_verify_fast_rejects_full_root_auth_and_repair_options() {
             public_key.to_str().unwrap(),
             archive.to_str().unwrap(),
         ],
-        vec![
-            "verify",
-            "--fast",
-            "--write-repaired",
-            archive.to_str().unwrap(),
-        ],
+        vec!["verify", "--fast", "--write-repaired", archive.to_str().unwrap()],
     ] {
         Command::cargo_bin("tzap")
             .unwrap()
@@ -226,13 +216,7 @@ fn cli_verify_reads_unencrypted_archive_without_key_source() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -286,13 +270,7 @@ fn cli_verify_json_success_reports_machine_readable_summary() {
 
     let output = Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--json",
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), "--json", archive.to_str().unwrap()])
         .assert()
         .success()
         .get_output()
@@ -317,10 +295,7 @@ fn cli_verify_json_success_reports_machine_readable_summary() {
     } else {
         serde_json::json!(["portable-v1"])
     };
-    assert_eq!(
-        metadata.get("profiles_present").unwrap(),
-        &expected_profiles
-    );
+    assert_eq!(metadata.get("profiles_present").unwrap(), &expected_profiles);
     let metadata_entries = metadata.get("entries").unwrap().as_array().unwrap();
     assert_eq!(metadata_entries.len(), 1);
     assert_eq!(
@@ -345,9 +320,7 @@ fn cli_verify_write_repaired_writes_sibling_for_crc_erased_payload_block() {
     let repaired = temp.path().join("sample.repaired.tzap");
 
     fs::write(&keyfile, KEY_HEX).unwrap();
-    let payload = (0..12_000)
-        .map(|idx| ((idx * 37 + 11) % 251) as u8)
-        .collect::<Vec<_>>();
+    let payload = (0..12_000).map(|idx| ((idx * 37 + 11) % 251) as u8).collect::<Vec<_>>();
     fs::write(&input, payload).unwrap();
 
     Command::cargo_bin("tzap")
@@ -369,13 +342,7 @@ fn cli_verify_write_repaired_writes_sibling_for_crc_erased_payload_block() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--write-repaired",
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), "--write-repaired", archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(1 volume(s), 1 file(s))"))
@@ -385,12 +352,7 @@ fn cli_verify_write_repaired_writes_sibling_for_crc_erased_payload_block() {
     assert!(repaired.exists());
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            repaired.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), repaired.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(1 volume(s), 1 file(s))"));
@@ -405,9 +367,7 @@ fn cli_verify_write_repaired_writes_sibling_for_malformed_payload_block_slot() {
     let repaired = temp.path().join("sample.repaired.tzap");
 
     fs::write(&keyfile, KEY_HEX).unwrap();
-    let payload = (0..12_000)
-        .map(|idx| ((idx * 41 + 7) % 251) as u8)
-        .collect::<Vec<_>>();
+    let payload = (0..12_000).map(|idx| ((idx * 41 + 7) % 251) as u8).collect::<Vec<_>>();
     fs::write(&input, payload).unwrap();
 
     Command::cargo_bin("tzap")
@@ -429,13 +389,7 @@ fn cli_verify_write_repaired_writes_sibling_for_malformed_payload_block_slot() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--write-repaired",
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), "--write-repaired", archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(1 volume(s), 1 file(s))"))
@@ -445,12 +399,7 @@ fn cli_verify_write_repaired_writes_sibling_for_malformed_payload_block_slot() {
     assert!(repaired.exists());
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            repaired.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), repaired.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(1 volume(s), 1 file(s))"));
@@ -485,12 +434,7 @@ fn cli_verify_recovers_malformed_volume_header_from_cmra() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(1 volume(s), 1 file(s))"));
@@ -521,19 +465,10 @@ fn cli_verify_quiet_conflicts_with_json_mode() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--quiet",
-            "--json",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--quiet", "--json", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .code(2)
-        .stderr(
-            predicate::str::contains("cannot be used with").and(predicate::str::contains("--json")),
-        );
+        .stderr(predicate::str::contains("cannot be used with").and(predicate::str::contains("--json")));
 }
 
 #[test]
@@ -561,13 +496,7 @@ fn cli_verify_quiet_suppress_success_output_only() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--quiet",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--quiet", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::is_empty());
@@ -607,19 +536,13 @@ fn cli_verify_with_stripped_dictionary_sidecar_uses_terminal_archive_metadata() 
     let archive_bytes = fs::read(&archive).unwrap();
     let volume_header = VolumeHeader::parse(&archive_bytes[..VOLUME_HEADER_LEN]).unwrap();
     let bootstrap_original = fs::read(&bootstrap).unwrap();
-    let mut bootstrap_header =
-        BootstrapSidecarHeader::parse(&bootstrap_original[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
+    let mut bootstrap_header = BootstrapSidecarHeader::parse(&bootstrap_original[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     bootstrap_header.flags &= !0x04;
     bootstrap_header.dictionary_records_offset = 0;
     bootstrap_header.dictionary_records_length = 0;
 
     let master_key = MasterKey::from_raw_key(&master_key_from_hex(KEY_HEX)).unwrap();
-    let subkeys = Subkeys::derive(
-        &master_key,
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(&master_key, &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     let stripped_header = bootstrap_header.to_bytes();
     let sidecar_hmac = compute_hmac(
         HmacDomain::BootstrapSidecar,
@@ -634,20 +557,15 @@ fn cli_verify_with_stripped_dictionary_sidecar_uses_terminal_archive_metadata() 
     let mut payload_end = BOOTSTRAP_SIDECAR_HEADER_LEN as u64;
     if bootstrap_header.has_manifest_footer() {
         assert_eq!(bootstrap_header.manifest_footer_offset, payload_end);
-        payload_end = payload_end
-            .checked_add(bootstrap_header.manifest_footer_length as u64)
-            .unwrap();
+        payload_end = payload_end.checked_add(bootstrap_header.manifest_footer_length as u64).unwrap();
     }
     if bootstrap_header.has_index_root_records() {
         assert_eq!(bootstrap_header.index_root_records_offset, payload_end);
-        payload_end = payload_end
-            .checked_add(bootstrap_header.index_root_records_length as u64)
-            .unwrap();
+        payload_end = payload_end.checked_add(bootstrap_header.index_root_records_length as u64).unwrap();
     }
 
     let mut stripped_bootstrap_bytes = stripped.to_vec();
-    stripped_bootstrap_bytes
-        .extend_from_slice(&bootstrap_original[BOOTSTRAP_SIDECAR_HEADER_LEN..payload_end as usize]);
+    stripped_bootstrap_bytes.extend_from_slice(&bootstrap_original[BOOTSTRAP_SIDECAR_HEADER_LEN..payload_end as usize]);
     fs::write(&stripped_bootstrap, stripped_bootstrap_bytes).unwrap();
 
     Command::cargo_bin("tzap")
@@ -695,12 +613,7 @@ fn cli_verify_autodiscovers_sibling_volumes_from_middle_volume() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            volume_1.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), volume_1.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(3 volume(s), 1 file(s))"));
@@ -737,12 +650,7 @@ fn cli_verify_autodiscovery_recovers_when_vol000_is_damaged() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            volume_0.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), volume_0.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(2 volume(s), 1 file(s))"));
@@ -758,12 +666,7 @@ fn cli_verify_missing_archive_file_is_io_error() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            missing.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), missing.to_str().unwrap()])
         .assert()
         .code(3)
         .stderr(predicate::str::contains("io-error"));
@@ -779,13 +682,7 @@ fn cli_verify_json_failure_reports_error_object() {
 
     let output = Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--json",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            missing.to_str().unwrap(),
-        ])
+        .args(["verify", "--json", "--keyfile", keyfile.to_str().unwrap(), missing.to_str().unwrap()])
         .assert()
         .code(3)
         .get_output()
@@ -808,13 +705,7 @@ fn cli_verify_quiet_still_prints_diagnostics_on_failure() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--quiet",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            missing.to_str().unwrap(),
-        ])
+        .args(["verify", "--quiet", "--keyfile", keyfile.to_str().unwrap(), missing.to_str().unwrap()])
         .assert()
         .code(3)
         .stderr(predicate::str::contains("io-error"));
@@ -897,12 +788,7 @@ fn cli_verify_missing_unrecoverable_volume_reports_missing_volume() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            volume_0.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), volume_0.to_str().unwrap()])
         .assert()
         .code(11)
         .stderr(predicate::str::contains("missing-volume"));
@@ -978,12 +864,7 @@ fn cli_verify_one_volume_archive_with_keyfile_reports_summary_with_counts() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(1 volume(s), 1 file(s))"));

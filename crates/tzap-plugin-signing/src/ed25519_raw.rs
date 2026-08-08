@@ -35,20 +35,11 @@ pub struct Ed25519RootAuthVerifierInput<'a> {
     pub authenticator_value: &'a [u8],
 }
 
-pub fn signing_input(
-    archive_uuid: &[u8; 16],
-    session_id: &[u8; 16],
-    archive_root: &[u8; 32],
-) -> [u8; 64] {
+pub fn signing_input(archive_uuid: &[u8; 16], session_id: &[u8; 16], archive_root: &[u8; 32]) -> [u8; 64] {
     signing_input_for_root_auth_spec_id(&ROOT_AUTH_SPEC_ID, archive_uuid, session_id, archive_root)
 }
 
-pub fn signing_input_for_root_auth_spec_id(
-    root_auth_spec_id: &[u8; 24],
-    archive_uuid: &[u8; 16],
-    session_id: &[u8; 16],
-    archive_root: &[u8; 32],
-) -> [u8; 64] {
+pub fn signing_input_for_root_auth_spec_id(root_auth_spec_id: &[u8; 24], archive_uuid: &[u8; 16], session_id: &[u8; 16], archive_root: &[u8; 32]) -> [u8; 64] {
     let mut hasher = Sha512::new();
     hasher.update(ED25519_SIGNING_DOMAIN);
     hasher.update(root_auth_spec_id);
@@ -61,10 +52,7 @@ pub fn signing_input_for_root_auth_spec_id(
     out
 }
 
-pub fn authenticator_value(
-    signing_key: &SigningKey,
-    signing_input: &[u8; 64],
-) -> [u8; ED25519_AUTHENTICATOR_VALUE_LEN as usize] {
+pub fn authenticator_value(signing_key: &SigningKey, signing_input: &[u8; 64]) -> [u8; ED25519_AUTHENTICATOR_VALUE_LEN as usize] {
     let signature: Signature = signing_key.sign(signing_input);
     let mut out = [0u8; ED25519_AUTHENTICATOR_VALUE_LEN as usize];
     out[0..2].copy_from_slice(&ED25519_SIG_SCHEME_PURE.to_le_bytes());
@@ -72,16 +60,8 @@ pub fn authenticator_value(
     out
 }
 
-pub fn authenticator_value_for_request(
-    signing_key: &SigningKey,
-    request: &RootAuthSigningRequest,
-) -> [u8; ED25519_AUTHENTICATOR_VALUE_LEN as usize] {
-    let signing_input = signing_input_for_root_auth_spec_id(
-        &request.root_auth_spec_id,
-        &request.archive_uuid,
-        &request.session_id,
-        &request.archive_root,
-    );
+pub fn authenticator_value_for_request(signing_key: &SigningKey, request: &RootAuthSigningRequest) -> [u8; ED25519_AUTHENTICATOR_VALUE_LEN as usize] {
+    let signing_input = signing_input_for_root_auth_spec_id(&request.root_auth_spec_id, &request.archive_uuid, &request.session_id, &request.archive_root);
     authenticator_value(signing_key, &signing_input)
 }
 
@@ -131,10 +111,7 @@ pub fn verify_root_auth(
         (None, _) => return Ed25519RootAuthOutcome::UnsupportedIdentity,
     };
 
-    if verifying_key
-        .verify_strict(input.signing_input, &signature)
-        .is_err()
-    {
+    if verifying_key.verify_strict(input.signing_input, &signature).is_err() {
         return Ed25519RootAuthOutcome::Invalid;
     }
 
@@ -143,12 +120,8 @@ pub fn verify_root_auth(
     }
     let key_id = verifying_key.to_bytes();
     match mode {
-        Ed25519VerificationMode::KeyHoldingRootAuth => {
-            Ed25519RootAuthOutcome::RootAuthContentVerified { key_id }
-        }
-        Ed25519VerificationMode::PublicNoKey => {
-            Ed25519RootAuthOutcome::PublicDataBlockCommitmentVerified { key_id }
-        }
+        Ed25519VerificationMode::KeyHoldingRootAuth => Ed25519RootAuthOutcome::RootAuthContentVerified { key_id },
+        Ed25519VerificationMode::PublicNoKey => Ed25519RootAuthOutcome::PublicDataBlockCommitmentVerified { key_id },
     }
 }
 
@@ -158,17 +131,10 @@ pub fn verify_root_auth_footer(
     trusted_public_key: Option<[u8; 32]>,
     mode: Ed25519VerificationMode,
 ) -> Ed25519RootAuthOutcome {
-    let Ok(root_auth_spec_id) =
-        root_auth_spec_id_for_revision(footer.format_version, footer.volume_format_rev)
-    else {
+    let Ok(root_auth_spec_id) = root_auth_spec_id_for_revision(footer.format_version, footer.volume_format_rev) else {
         return Ed25519RootAuthOutcome::Invalid;
     };
-    let signing_input = signing_input_for_root_auth_spec_id(
-        &root_auth_spec_id,
-        &footer.archive_uuid,
-        &footer.session_id,
-        archive_root,
-    );
+    let signing_input = signing_input_for_root_auth_spec_id(&root_auth_spec_id, &footer.archive_uuid, &footer.session_id, archive_root);
     verify_root_auth(
         Ed25519RootAuthVerifierInput {
             signing_input: &signing_input,
@@ -182,11 +148,7 @@ pub fn verify_root_auth_footer(
     )
 }
 
-pub fn verify_after_root_auth(
-    verification: &RootAuthVerification,
-    footer: &RootAuthFooterV1,
-    trusted_public_key: Option<[u8; 32]>,
-) -> Ed25519RootAuthOutcome {
+pub fn verify_after_root_auth(verification: &RootAuthVerification, footer: &RootAuthFooterV1, trusted_public_key: Option<[u8; 32]>) -> Ed25519RootAuthOutcome {
     verify_root_auth_footer(
         footer,
         &verification.archive_root,
@@ -211,10 +173,7 @@ fn parse_authenticator_value(value: &[u8]) -> Option<Signature> {
 mod tests {
     use super::*;
     use rand::rngs::OsRng;
-    use tzap_core::format::{
-        FORMAT_VERSION, ROOT_AUTH_SPEC_ID, ROOT_AUTH_SPEC_ID_V45, VOLUME_FORMAT_REV,
-        VOLUME_FORMAT_REV_45,
-    };
+    use tzap_core::format::{FORMAT_VERSION, ROOT_AUTH_SPEC_ID, ROOT_AUTH_SPEC_ID_V45, VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45};
 
     #[test]
     fn ed25519_authenticator_value_round_trips_strict_profile() {
@@ -231,11 +190,7 @@ mod tests {
         };
 
         assert_eq!(
-            verify_root_auth(
-                input,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth(input, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::RootAuthContentVerified { key_id: public_key }
         );
         assert_eq!(
@@ -243,11 +198,7 @@ mod tests {
             Ed25519RootAuthOutcome::SelfSignedConsistent
         );
         assert_eq!(
-            verify_root_auth(
-                input,
-                Some(public_key),
-                Ed25519VerificationMode::PublicNoKey,
-            ),
+            verify_root_auth(input, Some(public_key), Ed25519VerificationMode::PublicNoKey,),
             Ed25519RootAuthOutcome::PublicDataBlockCommitmentVerified { key_id: public_key }
         );
     }
@@ -283,20 +234,12 @@ mod tests {
         };
 
         assert_eq!(
-            verify_root_auth_footer(
-                &footer,
-                &request.archive_root,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth_footer(&footer, &request.archive_root, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::RootAuthContentVerified { key_id: public_key }
         );
     }
 
-    fn footer_for_request(
-        signing_key: &SigningKey,
-        request: &RootAuthSigningRequest,
-    ) -> RootAuthFooterV1 {
+    fn footer_for_request(signing_key: &SigningKey, request: &RootAuthSigningRequest) -> RootAuthFooterV1 {
         let public_key = signing_key.verifying_key().to_bytes();
         let value = authenticator_value_for_request(signing_key, request);
         RootAuthFooterV1 {
@@ -333,12 +276,7 @@ mod tests {
 
         // Non-canonical trusted key (sign bit set) -> Invalid.
         assert_eq!(
-            verify_root_auth_footer(
-                &footer,
-                &request.archive_root,
-                Some([0xFF; 32]),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth_footer(&footer, &request.archive_root, Some([0xFF; 32]), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::Invalid
         );
 
@@ -346,12 +284,7 @@ mod tests {
         let mut small_order = [0u8; 32];
         small_order[0] = 1;
         assert_eq!(
-            verify_root_auth_footer(
-                &footer,
-                &request.archive_root,
-                Some(small_order),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth_footer(&footer, &request.archive_root, Some(small_order), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::Invalid
         );
 
@@ -359,12 +292,7 @@ mod tests {
         let mut wrong_root = request.archive_root;
         wrong_root[0] ^= 0x01;
         assert_eq!(
-            verify_root_auth_footer(
-                &footer,
-                &wrong_root,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth_footer(&footer, &wrong_root, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::Invalid
         );
 
@@ -408,12 +336,7 @@ mod tests {
         let mut footer = footer_for_request(&signing_key, &request);
         footer.signer_identity_bytes = vec![0x42; 16];
         assert_eq!(
-            verify_root_auth_footer(
-                &footer,
-                &request.archive_root,
-                None,
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth_footer(&footer, &request.archive_root, None, Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::Invalid
         );
     }
@@ -449,12 +372,7 @@ mod tests {
         };
 
         assert_eq!(
-            verify_root_auth_footer(
-                &footer,
-                &request.archive_root,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth_footer(&footer, &request.archive_root, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::RootAuthContentVerified { key_id: public_key }
         );
 
@@ -465,8 +383,7 @@ mod tests {
             ..request
         };
         let mut wrong_spec_footer = footer;
-        wrong_spec_footer.authenticator_value =
-            authenticator_value_for_request(&signing_key, &wrong_spec_request).to_vec();
+        wrong_spec_footer.authenticator_value = authenticator_value_for_request(&signing_key, &wrong_spec_request).to_vec();
 
         assert_eq!(
             verify_root_auth_footer(
@@ -495,11 +412,7 @@ mod tests {
         };
 
         assert_eq!(
-            verify_root_auth(
-                input,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth(input, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::Invalid
         );
 
@@ -509,11 +422,7 @@ mod tests {
             ..input
         };
         assert_eq!(
-            verify_root_auth(
-                input,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth(input, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::Invalid
         );
     }
@@ -534,11 +443,7 @@ mod tests {
         };
 
         assert_eq!(
-            verify_root_auth(
-                input,
-                Some(other_key.verifying_key().to_bytes()),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth(input, Some(other_key.verifying_key().to_bytes()), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::Invalid
         );
     }
@@ -558,11 +463,7 @@ mod tests {
         };
 
         assert_eq!(
-            verify_root_auth(
-                input,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth(input, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::RootAuthContentVerified { key_id: public_key }
         );
         assert_eq!(
@@ -576,11 +477,7 @@ mod tests {
             ..input
         };
         assert_eq!(
-            verify_root_auth(
-                input,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth(input, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::Invalid
         );
     }
@@ -600,11 +497,7 @@ mod tests {
         };
 
         assert_eq!(
-            verify_root_auth(
-                input,
-                Some(public_key),
-                Ed25519VerificationMode::KeyHoldingRootAuth,
-            ),
+            verify_root_auth(input, Some(public_key), Ed25519VerificationMode::KeyHoldingRootAuth,),
             Ed25519RootAuthOutcome::UnsupportedIdentity
         );
     }

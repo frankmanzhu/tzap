@@ -6,9 +6,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn read_workspace_file(path: &str) -> String {
-    fs::read_to_string(workspace_root().join(path))
-        .unwrap()
-        .replace("\r\n", "\n")
+    fs::read_to_string(workspace_root().join(path)).unwrap().replace("\r\n", "\n")
 }
 
 fn assert_contains_in_order(text: &str, labels: &[&str]) {
@@ -41,9 +39,7 @@ fn ci_workflow_has_cross_platform_matrix() {
     assert!(workflow.contains("Install QEMU"));
     assert!(workflow.contains("qemu-aarch64-static"));
     assert!(workflow.contains("Install cross"));
-    assert!(
-        workflow.contains("cross build --locked --release -p tzap --target ${{ matrix.target }}")
-    );
+    assert!(workflow.contains("cross build --locked --release -p tzap --target ${{ matrix.target }}"));
     assert!(workflow.contains("Smoke test release binary"));
     assert!(workflow.contains("matrix.run_fmt"));
     assert!(workflow.contains("cargo fmt --all -- --check"));
@@ -120,10 +116,7 @@ fn release_workflow_has_smoke_checks() {
         "cargo install cargo-audit --locked",
         "cargo audit",
     ] {
-        assert!(
-            workflow.contains(command),
-            "release workflow missing preflight command {command:?}"
-        );
+        assert!(workflow.contains(command), "release workflow missing preflight command {command:?}");
     }
 
     assert!(workflow.contains("Smoke test artifact (Unix)"));
@@ -133,9 +126,7 @@ fn release_workflow_has_smoke_checks() {
     assert!(workflow.contains("tzap.exe"));
     assert!(workflow.contains("tar -xzf \"dist/${{ matrix.archive }}\""));
     assert!(workflow.contains("Expand-Archive -Path \"dist/${{ matrix.archive }}\""));
-    assert!(workflow.contains(
-        "create --password-stdin --argon2-t-cost 1 --argon2-m-cost-kib 8 --argon2-parallelism 1"
-    ));
+    assert!(workflow.contains("create --password-stdin --argon2-t-cost 1 --argon2-m-cost-kib 8 --argon2-parallelism 1"));
     assert!(workflow.contains("list --password-stdin"));
     assert!(workflow.contains("verify --password-stdin"));
     assert!(workflow.contains("extract --password-stdin --directory"));
@@ -199,15 +190,10 @@ fn release_workflow_uploads_checksum_artifacts() {
     assert!(workflow.contains("subject-path: dist/*"));
     assert!(workflow.contains("Install cosign"));
     assert!(workflow.contains("uses: sigstore/cosign-installer@v3"));
-    assert!(
-        workflow.contains("cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS")
-    );
+    assert!(workflow.contains("cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS"));
     assert!(workflow.contains("Attest checksum manifest"));
     assert!(workflow.contains("subject-path: dist/SHA256SUMS"));
-    assert_contains_in_order(
-        &workflow,
-        &["homebrew:", "needs: build", "brew install --formula"],
-    );
+    assert_contains_in_order(&workflow, &["homebrew:", "needs: build", "brew install --formula"]);
     assert!(workflow.contains("tzap-org/tzap-release-test"));
     assert!(!workflow.contains("frankmanzhu/tzap-release-test"));
     assert!(workflow.contains("HOMEBREW_NO_SANDBOX_LINUX: 1"));

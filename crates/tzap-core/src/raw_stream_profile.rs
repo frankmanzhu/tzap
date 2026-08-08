@@ -3,11 +3,9 @@ use crate::wire::ExtensionTlv;
 
 pub const RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG: u16 = 0x0007;
 #[cfg(test)]
-pub const RAW_STREAM_CONTENT_MODEL_EXTENSION_CRITICAL_TAG: u16 =
-    0x8000 | RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG;
+pub const RAW_STREAM_CONTENT_MODEL_EXTENSION_CRITICAL_TAG: u16 = 0x8000 | RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG;
 pub const RAW_STREAM_CONTENT_MODEL_VALUE: &[u8] = b"raw_stream_v1";
-pub const RAW_STREAM_UNSUPPORTED_MESSAGE: &str =
-    "raw-stream content profile is not supported by the revision-45 tar reader";
+pub const RAW_STREAM_UNSUPPORTED_MESSAGE: &str = "raw-stream content profile is not supported by the revision-45 tar reader";
 
 #[cfg(test)]
 pub const RAW_STREAM_INDEX_ROOT_V1_MAGIC: [u8; 8] = *b"TZRSIDX1";
@@ -37,21 +35,14 @@ pub fn serialize_raw_stream_content_model_extension() -> Vec<u8> {
     bytes
 }
 
-pub fn validate_raw_stream_content_model_extension(
-    is_critical: bool,
-    value: &[u8],
-) -> Result<(), FormatError> {
+pub fn validate_raw_stream_content_model_extension(is_critical: bool, value: &[u8]) -> Result<(), FormatError> {
     if !is_critical || value != RAW_STREAM_CONTENT_MODEL_VALUE {
-        return Err(FormatError::MalformedKnownExtension(
-            RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG,
-        ));
+        return Err(FormatError::MalformedKnownExtension(RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG));
     }
     Ok(())
 }
 
-pub fn content_profile_from_extensions(
-    extensions: &[ExtensionTlv<'_>],
-) -> Result<ContentProfile, FormatError> {
+pub fn content_profile_from_extensions(extensions: &[ExtensionTlv<'_>]) -> Result<ContentProfile, FormatError> {
     let mut profile = ContentProfile::TarMember;
     for extension in extensions {
         let ext_tag = extension.tag & 0x7fff;
@@ -64,14 +55,10 @@ pub fn content_profile_from_extensions(
     Ok(profile)
 }
 
-pub fn reject_unsupported_raw_stream_profile(
-    extensions: &[ExtensionTlv<'_>],
-) -> Result<(), FormatError> {
+pub fn reject_unsupported_raw_stream_profile(extensions: &[ExtensionTlv<'_>]) -> Result<(), FormatError> {
     match content_profile_from_extensions(extensions)? {
         ContentProfile::TarMember => Ok(()),
-        ContentProfile::RawStreamV1 => Err(FormatError::ReaderUnsupported(
-            RAW_STREAM_UNSUPPORTED_MESSAGE,
-        )),
+        ContentProfile::RawStreamV1 => Err(FormatError::ReaderUnsupported(RAW_STREAM_UNSUPPORTED_MESSAGE)),
     }
 }
 
@@ -94,16 +81,8 @@ pub struct RawStreamIndexRootV1 {
 #[cfg(test)]
 impl RawStreamIndexRootV1 {
     pub fn parse(bytes: &[u8]) -> Result<Self, FormatError> {
-        expect_len(
-            "RawStreamIndexRootV1",
-            RAW_STREAM_INDEX_ROOT_V1_LEN,
-            bytes.len(),
-        )?;
-        expect_magic(
-            "RawStreamIndexRootV1",
-            RAW_STREAM_INDEX_ROOT_V1_MAGIC,
-            &bytes[0..8],
-        )?;
+        expect_len("RawStreamIndexRootV1", RAW_STREAM_INDEX_ROOT_V1_LEN, bytes.len())?;
+        expect_magic("RawStreamIndexRootV1", RAW_STREAM_INDEX_ROOT_V1_MAGIC, &bytes[0..8])?;
         let version = read_u16(bytes, 8, "RawStreamIndexRootV1")?;
         if version != RAW_STREAM_INDEX_ROOT_V1_VERSION {
             return Err(FormatError::InvalidMetadata {
@@ -281,21 +260,13 @@ impl RawEnvelopeEntryV1 {
 #[cfg(test)]
 fn expect_len(structure: &'static str, expected: usize, actual: usize) -> Result<(), FormatError> {
     if actual != expected {
-        return Err(FormatError::InvalidLength {
-            structure,
-            expected,
-            actual,
-        });
+        return Err(FormatError::InvalidLength { structure, expected, actual });
     }
     Ok(())
 }
 
 #[cfg(test)]
-fn expect_magic(
-    structure: &'static str,
-    expected: [u8; 8],
-    actual: &[u8],
-) -> Result<(), FormatError> {
+fn expect_magic(structure: &'static str, expected: [u8; 8], actual: &[u8]) -> Result<(), FormatError> {
     if actual != expected {
         return Err(FormatError::BadMagic { structure });
     }
@@ -311,11 +282,7 @@ fn expect_zero(structure: &'static str, bytes: &[u8]) -> Result<(), FormatError>
 }
 
 #[cfg(test)]
-fn read_array_8(
-    bytes: &[u8],
-    offset: usize,
-    structure: &'static str,
-) -> Result<[u8; 8], FormatError> {
+fn read_array_8(bytes: &[u8], offset: usize, structure: &'static str) -> Result<[u8; 8], FormatError> {
     bytes
         .get(offset..offset + 8)
         .ok_or(FormatError::InvalidLength {
@@ -332,11 +299,7 @@ fn read_array_8(
 }
 
 #[cfg(test)]
-fn read_array_32(
-    bytes: &[u8],
-    offset: usize,
-    structure: &'static str,
-) -> Result<[u8; 32], FormatError> {
+fn read_array_32(bytes: &[u8], offset: usize, structure: &'static str) -> Result<[u8; 32], FormatError> {
     bytes
         .get(offset..offset + 32)
         .ok_or(FormatError::InvalidLength {
@@ -354,55 +317,43 @@ fn read_array_32(
 
 #[cfg(test)]
 fn read_u16(bytes: &[u8], offset: usize, structure: &'static str) -> Result<u16, FormatError> {
-    let raw = bytes
-        .get(offset..offset + 2)
-        .ok_or(FormatError::InvalidLength {
-            structure,
-            expected: offset + 2,
-            actual: bytes.len(),
-        })?;
-    Ok(u16::from_le_bytes(raw.try_into().map_err(|_| {
-        FormatError::InvalidLength {
-            structure,
-            expected: offset + 2,
-            actual: bytes.len(),
-        }
+    let raw = bytes.get(offset..offset + 2).ok_or(FormatError::InvalidLength {
+        structure,
+        expected: offset + 2,
+        actual: bytes.len(),
+    })?;
+    Ok(u16::from_le_bytes(raw.try_into().map_err(|_| FormatError::InvalidLength {
+        structure,
+        expected: offset + 2,
+        actual: bytes.len(),
     })?))
 }
 
 #[cfg(test)]
 fn read_u32(bytes: &[u8], offset: usize, structure: &'static str) -> Result<u32, FormatError> {
-    let raw = bytes
-        .get(offset..offset + 4)
-        .ok_or(FormatError::InvalidLength {
-            structure,
-            expected: offset + 4,
-            actual: bytes.len(),
-        })?;
-    Ok(u32::from_le_bytes(raw.try_into().map_err(|_| {
-        FormatError::InvalidLength {
-            structure,
-            expected: offset + 4,
-            actual: bytes.len(),
-        }
+    let raw = bytes.get(offset..offset + 4).ok_or(FormatError::InvalidLength {
+        structure,
+        expected: offset + 4,
+        actual: bytes.len(),
+    })?;
+    Ok(u32::from_le_bytes(raw.try_into().map_err(|_| FormatError::InvalidLength {
+        structure,
+        expected: offset + 4,
+        actual: bytes.len(),
     })?))
 }
 
 #[cfg(test)]
 fn read_u64(bytes: &[u8], offset: usize, structure: &'static str) -> Result<u64, FormatError> {
-    let raw = bytes
-        .get(offset..offset + 8)
-        .ok_or(FormatError::InvalidLength {
-            structure,
-            expected: offset + 8,
-            actual: bytes.len(),
-        })?;
-    Ok(u64::from_le_bytes(raw.try_into().map_err(|_| {
-        FormatError::InvalidLength {
-            structure,
-            expected: offset + 8,
-            actual: bytes.len(),
-        }
+    let raw = bytes.get(offset..offset + 8).ok_or(FormatError::InvalidLength {
+        structure,
+        expected: offset + 8,
+        actual: bytes.len(),
+    })?;
+    Ok(u64::from_le_bytes(raw.try_into().map_err(|_| FormatError::InvalidLength {
+        structure,
+        expected: offset + 8,
+        actual: bytes.len(),
     })?))
 }
 
@@ -427,22 +378,15 @@ mod tests {
 
     use crate::crypto::{compute_hmac, HmacDomain, MasterKey, Subkeys};
     use crate::format::{
-        AeadAlgo, CompressionAlgo, FecAlgo, KdfAlgo, CRYPTO_EXTENSION_HEADER_LEN,
-        CRYPTO_HEADER_FIXED_LEN, CRYPTO_HEADER_HMAC_LEN, FORMAT_VERSION, VOLUME_FORMAT_REV,
-        VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
+        AeadAlgo, CompressionAlgo, FecAlgo, KdfAlgo, CRYPTO_EXTENSION_HEADER_LEN, CRYPTO_HEADER_FIXED_LEN, CRYPTO_HEADER_HMAC_LEN, FORMAT_VERSION,
+        VOLUME_FORMAT_REV, VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN,
     };
-    use crate::non_seekable_reader::{
-        verify_non_seekable_stream, verify_non_seekable_stream_with_bootstrap_sidecar,
-        NonSeekableReaderOptions,
-    };
+    use crate::non_seekable_reader::{verify_non_seekable_stream, verify_non_seekable_stream_with_bootstrap_sidecar, NonSeekableReaderOptions};
     use crate::reader::{
-        open_archive, open_archive_with_bootstrap_sidecar, open_non_seekable_archive,
-        public_no_key_verify_archive_with, sequential_extract_tar_stream,
+        open_archive, open_archive_with_bootstrap_sidecar, open_non_seekable_archive, public_no_key_verify_archive_with, sequential_extract_tar_stream,
     };
     use crate::tar_model::parse_tar_member_group;
-    use crate::wire::{
-        validate_crypto_extension_semantics, CryptoHeaderFixed, ExtensionTlv, VolumeHeader,
-    };
+    use crate::wire::{validate_crypto_extension_semantics, CryptoHeaderFixed, ExtensionTlv, VolumeHeader};
 
     use super::*;
 
@@ -496,10 +440,7 @@ mod tests {
             first_frame_index: 19,
             frame_count: 20,
         };
-        assert_eq!(
-            RawEnvelopeEntryV1::parse(&envelope.to_bytes()).unwrap(),
-            envelope
-        );
+        assert_eq!(RawEnvelopeEntryV1::parse(&envelope.to_bytes()).unwrap(), envelope);
     }
 
     #[test]
@@ -509,15 +450,11 @@ mod tests {
             u16::from_le_bytes(tlv[0..2].try_into().unwrap()),
             RAW_STREAM_CONTENT_MODEL_EXTENSION_CRITICAL_TAG
         );
-        assert_eq!(
-            u32::from_le_bytes(tlv[2..6].try_into().unwrap()),
-            RAW_STREAM_CONTENT_MODEL_VALUE.len() as u32
-        );
+        assert_eq!(u32::from_le_bytes(tlv[2..6].try_into().unwrap()), RAW_STREAM_CONTENT_MODEL_VALUE.len() as u32);
         assert_eq!(&tlv[6..], RAW_STREAM_CONTENT_MODEL_VALUE);
 
         assert_eq!(
-            validate_raw_stream_content_model_extension(false, RAW_STREAM_CONTENT_MODEL_VALUE)
-                .unwrap_err(),
+            validate_raw_stream_content_model_extension(false, RAW_STREAM_CONTENT_MODEL_VALUE).unwrap_err(),
             FormatError::MalformedKnownExtension(RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG)
         );
         assert_eq!(
@@ -533,37 +470,19 @@ mod tests {
         let expected = FormatError::ReaderUnsupported(RAW_STREAM_UNSUPPORTED_MESSAGE);
 
         assert_eq!(open_archive(&archive, &master_key).unwrap_err(), expected);
+        assert_eq!(sequential_extract_tar_stream(&archive, &master_key).unwrap_err(), expected);
+        assert_eq!(verify_non_seekable_stream(Cursor::new(&archive), &master_key).unwrap_err(), expected);
         assert_eq!(
-            sequential_extract_tar_stream(&archive, &master_key).unwrap_err(),
+            open_archive_with_bootstrap_sidecar(&archive, b"not a sidecar", &master_key).unwrap_err(),
             expected
         );
+        assert_eq!(open_non_seekable_archive(&archive, &master_key, Some(b"not a sidecar")).unwrap_err(), expected);
         assert_eq!(
-            verify_non_seekable_stream(Cursor::new(&archive), &master_key).unwrap_err(),
-            expected
-        );
-        assert_eq!(
-            open_archive_with_bootstrap_sidecar(&archive, b"not a sidecar", &master_key)
+            verify_non_seekable_stream_with_bootstrap_sidecar(Cursor::new(&archive), b"not a sidecar", &master_key, NonSeekableReaderOptions::default(),)
                 .unwrap_err(),
             expected
         );
-        assert_eq!(
-            open_non_seekable_archive(&archive, &master_key, Some(b"not a sidecar")).unwrap_err(),
-            expected
-        );
-        assert_eq!(
-            verify_non_seekable_stream_with_bootstrap_sidecar(
-                Cursor::new(&archive),
-                b"not a sidecar",
-                &master_key,
-                NonSeekableReaderOptions::default(),
-            )
-            .unwrap_err(),
-            expected
-        );
-        assert_eq!(
-            public_no_key_verify_archive_with(&archive, |_, _| Ok(true)).unwrap_err(),
-            expected
-        );
+        assert_eq!(public_no_key_verify_archive_with(&archive, |_, _| Ok(true)).unwrap_err(), expected);
     }
 
     #[test]
@@ -577,18 +496,10 @@ mod tests {
         let mut nonzero_padding = tar_member(b"file.txt", b'0', b"a", b"");
         nonzero_padding[513] = 1;
 
-        let mut pax_size_exceeds_group =
-            tar_member(b"PaxHeaders/file", b'x', &pax_record("size", b"4096"), b"");
-        pax_size_exceeds_group.extend_from_slice(&tar_member_with_declared_size(
-            b"file", b'0', 0, b"short", b"",
-        ));
+        let mut pax_size_exceeds_group = tar_member(b"PaxHeaders/file", b'x', &pax_record("size", b"4096"), b"");
+        pax_size_exceeds_group.extend_from_slice(&tar_member_with_declared_size(b"file", b'0', 0, b"short", b""));
 
-        let metadata_only = tar_member(
-            b"PaxHeaders/file",
-            b'x',
-            &pax_record("path", b"safe.txt"),
-            b"",
-        );
+        let metadata_only = tar_member(b"PaxHeaders/file", b'x', &pax_record("path", b"safe.txt"), b"");
 
         let poison_cases = vec![
             (
@@ -611,11 +522,7 @@ mod tests {
                 tar_member(b"/absolute", b'0', b"abc", b""),
                 FormatError::UnsafeArchivePath,
             ),
-            (
-                "bad checksum",
-                bad_checksum,
-                FormatError::InvalidArchive("tar header checksum mismatch"),
-            ),
+            ("bad checksum", bad_checksum, FormatError::InvalidArchive("tar header checksum mismatch")),
             (
                 "nonzero padding",
                 nonzero_padding,
@@ -633,9 +540,7 @@ mod tests {
             (
                 "metadata without main entry",
                 metadata_only,
-                FormatError::InvalidArchive(
-                    "tar member group has metadata records but no main entry",
-                ),
+                FormatError::InvalidArchive("tar member group has metadata records but no main entry"),
             ),
         ];
 
@@ -644,11 +549,7 @@ mod tests {
             assert!(parse_tar_member_group(&tar_body, 4096).is_err(), "{name}");
 
             let archive = minimal_raw_profile_archive_with_body(&master_key, &tar_body);
-            assert_eq!(
-                open_archive(&archive, &master_key).unwrap_err(),
-                expected,
-                "{name}: seekable open"
-            );
+            assert_eq!(open_archive(&archive, &master_key).unwrap_err(), expected, "{name}: seekable open");
             assert_eq!(
                 sequential_extract_tar_stream(&archive, &master_key).unwrap_err(),
                 expected,
@@ -675,10 +576,7 @@ mod tests {
         };
 
         validate_crypto_extension_semantics(std::slice::from_ref(&extension)).unwrap();
-        assert_eq!(
-            content_profile_from_extensions(&[extension]).unwrap(),
-            ContentProfile::TarMember
-        );
+        assert_eq!(content_profile_from_extensions(&[extension]).unwrap(), ContentProfile::TarMember);
     }
 
     fn minimal_raw_profile_archive(master_key: &MasterKey) -> Vec<u8> {
@@ -690,11 +588,7 @@ mod tests {
         let session_id = [2; 16];
         let subkeys = Subkeys::derive(master_key, &archive_uuid, &session_id).unwrap();
         let extension = serialize_raw_stream_content_model_extension();
-        let crypto_len = CRYPTO_HEADER_FIXED_LEN
-            + 2
-            + extension.len()
-            + CRYPTO_EXTENSION_HEADER_LEN
-            + CRYPTO_HEADER_HMAC_LEN;
+        let crypto_len = CRYPTO_HEADER_FIXED_LEN + 2 + extension.len() + CRYPTO_EXTENSION_HEADER_LEN + CRYPTO_HEADER_HMAC_LEN;
         let fixed = CryptoHeaderFixed {
             length: crypto_len as u32,
             compression_algo: CompressionAlgo::ZstdFramed,
@@ -722,13 +616,7 @@ mod tests {
         crypto.extend_from_slice(&extension);
         crypto.extend_from_slice(&0u16.to_le_bytes());
         crypto.extend_from_slice(&0u32.to_le_bytes());
-        let hmac = compute_hmac(
-            HmacDomain::CryptoHeader,
-            &subkeys.mac_key,
-            &archive_uuid,
-            &session_id,
-            &crypto,
-        );
+        let hmac = compute_hmac(HmacDomain::CryptoHeader, &subkeys.mac_key, &archive_uuid, &session_id, &crypto);
         crypto.extend_from_slice(&hmac);
 
         let header = VolumeHeader {
@@ -745,10 +633,7 @@ mod tests {
         let mut archive = header.to_bytes().to_vec();
         archive.extend_from_slice(&crypto);
         archive.extend_from_slice(body);
-        archive.resize(
-            VOLUME_HEADER_LEN + crypto.len() + body.len() + VOLUME_TRAILER_LEN,
-            0,
-        );
+        archive.resize(VOLUME_HEADER_LEN + crypto.len() + body.len() + VOLUME_TRAILER_LEN, 0);
         archive
     }
 
@@ -774,13 +659,7 @@ mod tests {
         tar_member_with_declared_size(path, kind, data.len(), data, link)
     }
 
-    fn tar_member_with_declared_size(
-        path: &[u8],
-        kind: u8,
-        declared_size: usize,
-        data: &[u8],
-        link: &[u8],
-    ) -> Vec<u8> {
+    fn tar_member_with_declared_size(path: &[u8], kind: u8, declared_size: usize, data: &[u8], link: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&tar_header(path, kind, declared_size, link));
         out.extend_from_slice(data);

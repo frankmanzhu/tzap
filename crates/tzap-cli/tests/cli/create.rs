@@ -61,12 +61,7 @@ fn cli_create_requires_key_source_before_running() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("no key source provided"));
@@ -163,14 +158,7 @@ fn cli_create_stdin_modes_reject_incompatible_stdin_consumers() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--tar-stdin",
-            "--password-stdin",
-            "-o",
-            output.to_str().unwrap(),
-            "-",
-        ])
+        .args(["create", "--tar-stdin", "--password-stdin", "-o", output.to_str().unwrap(), "-"])
         .assert()
         .code(16)
         .stderr(predicate::str::contains(
@@ -179,20 +167,11 @@ fn cli_create_stdin_modes_reject_incompatible_stdin_consumers() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--tar-stdin",
-            "--password",
-            "-o",
-            output.to_str().unwrap(),
-            "-",
-        ])
+        .args(["create", "--tar-stdin", "--password", "-o", output.to_str().unwrap(), "-"])
         .write_stdin(tar_stream(&[("payload.txt", b"payload".as_slice())]))
         .assert()
         .code(16)
-        .stderr(predicate::str::contains(
-            "--password cannot be used when stdin carries archive payload bytes",
-        ));
+        .stderr(predicate::str::contains("--password cannot be used when stdin carries archive payload bytes"));
 }
 
 #[test]
@@ -215,9 +194,7 @@ fn cli_create_stdin_modes_reject_dictionary_before_reading_it() {
         ])
         .assert()
         .code(16)
-        .stderr(predicate::str::contains(
-            "--dictionary is not supported with stdin create modes",
-        ));
+        .stderr(predicate::str::contains("--dictionary is not supported with stdin create modes"));
 }
 
 #[test]
@@ -242,21 +219,11 @@ fn cli_create_stdin_modes_reject_volume_size_and_stdout_output() {
         ])
         .assert()
         .code(16)
-        .stderr(predicate::str::contains(
-            "--volume-size is not supported with stdin create modes",
-        ));
+        .stderr(predicate::str::contains("--volume-size is not supported with stdin create modes"));
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--tar-stdin",
-            "--keyfile",
-            "missing-key.hex",
-            "-o",
-            "-",
-            "-",
-        ])
+        .args(["create", "--tar-stdin", "--keyfile", "missing-key.hex", "-o", "-", "-"])
         .assert()
         .code(16)
         .stderr(predicate::str::contains("--output - is not archive stdout"));
@@ -305,9 +272,7 @@ fn cli_create_stdin_modes_reject_unsupported_multi_volume_shapes() {
         ])
         .assert()
         .code(16)
-        .stderr(predicate::str::contains(
-            "--volume-loss-tolerance > 0 is not supported with stdin create modes",
-        ));
+        .stderr(predicate::str::contains("--volume-loss-tolerance > 0 is not supported with stdin create modes"));
 }
 
 #[test]
@@ -329,9 +294,7 @@ fn cli_create_stdin_modes_reject_mixed_ordinary_input_paths() {
         ])
         .assert()
         .code(16)
-        .stderr(predicate::str::contains(
-            "stdin create modes require exactly one archive input path: -",
-        ));
+        .stderr(predicate::str::contains("stdin create modes require exactly one archive input path: -"));
 }
 
 #[test]
@@ -341,20 +304,10 @@ fn cli_create_raw_stdin_requires_member_name_and_valid_size() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--raw-stdin",
-            "--keyfile",
-            "missing-key.hex",
-            "-o",
-            output.to_str().unwrap(),
-            "-",
-        ])
+        .args(["create", "--raw-stdin", "--keyfile", "missing-key.hex", "-o", output.to_str().unwrap(), "-"])
         .assert()
         .code(16)
-        .stderr(predicate::str::contains(
-            "--raw-stdin requires --stdin-name PATH",
-        ));
+        .stderr(predicate::str::contains("--raw-stdin requires --stdin-name PATH"));
 
     Command::cargo_bin("tzap")
         .unwrap()
@@ -397,9 +350,7 @@ fn cli_create_stdin_modes_reject_conflicting_mode_flags() {
         ])
         .assert()
         .code(16)
-        .stderr(predicate::str::contains(
-            "--tar-stdin and --raw-stdin cannot be used together",
-        ));
+        .stderr(predicate::str::contains("--tar-stdin and --raw-stdin cannot be used together"));
 }
 
 #[test]
@@ -408,25 +359,13 @@ fn cli_create_stdin_modes_reject_raw_adjunct_flags_without_raw_stdin() {
     let output = temp.path().join("stdin.tzap");
 
     for (args, expected) in [
-        (
-            vec!["--stdin-name", "data.bin"],
-            "--stdin-name requires --raw-stdin",
-        ),
-        (
-            vec!["--stdin-size", "4K"],
-            "--stdin-size requires --raw-stdin",
-        ),
+        (vec!["--stdin-name", "data.bin"], "--stdin-name requires --raw-stdin"),
+        (vec!["--stdin-size", "4K"], "--stdin-size requires --raw-stdin"),
         (vec!["--spool-stdin"], "--spool-stdin requires --raw-stdin"),
     ] {
         let mut command_args = vec!["create"];
         command_args.extend(args);
-        command_args.extend([
-            "--keyfile",
-            "missing-key.hex",
-            "-o",
-            output.to_str().unwrap(),
-            "-",
-        ]);
+        command_args.extend(["--keyfile", "missing-key.hex", "-o", output.to_str().unwrap(), "-"]);
 
         Command::cargo_bin("tzap")
             .unwrap()
@@ -460,9 +399,7 @@ fn cli_create_raw_stdin_spool_rejects_known_size() {
         ])
         .assert()
         .code(16)
-        .stderr(predicate::str::contains(
-            "--spool-stdin is for unknown-size raw stdin; omit --stdin-size",
-        ));
+        .stderr(predicate::str::contains("--spool-stdin is for unknown-size raw stdin; omit --stdin-size"));
 }
 
 #[test]
@@ -496,26 +433,12 @@ fn cli_create_tar_stdin_round_trips_list_verify_and_extract() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--jobs",
-            "2",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            output.to_str().unwrap(),
-        ])
+        .args(["verify", "--jobs", "2", "--keyfile", keyfile.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .success();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--jobs",
-            "2",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            output.to_str().unwrap(),
-        ])
+        .args(["list", "--jobs", "2", "--keyfile", keyfile.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("alpha.txt"))
@@ -536,10 +459,7 @@ fn cli_create_tar_stdin_round_trips_list_verify_and_extract() {
         .assert()
         .success();
 
-    assert_eq!(
-        fs::read(extract_dir.join("dir/beta.txt")).unwrap(),
-        b"beta payload"
-    );
+    assert_eq!(fs::read(extract_dir.join("dir/beta.txt")).unwrap(), b"beta payload");
 }
 
 #[test]
@@ -551,9 +471,7 @@ fn cli_create_tar_stdin_multi_volume_round_trips_list_verify_and_extract() {
     let volume_0 = numbered_volume_path(&output_base, 0);
     let volume_1 = numbered_volume_path(&output_base, 1);
     let volume_2 = numbered_volume_path(&output_base, 2);
-    let payload = (0..150_000)
-        .map(|index| (index % 251) as u8)
-        .collect::<Vec<_>>();
+    let payload = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
     fs::write(&keyfile, KEY_HEX).unwrap();
 
     Command::cargo_bin("tzap")
@@ -569,10 +487,7 @@ fn cli_create_tar_stdin_multi_volume_round_trips_list_verify_and_extract() {
             output_base.to_str().unwrap(),
             "-",
         ])
-        .write_stdin(tar_stream(&[
-            ("alpha.txt", b"alpha payload".as_slice()),
-            ("dir/beta.bin", payload.as_slice()),
-        ]))
+        .write_stdin(tar_stream(&[("alpha.txt", b"alpha payload".as_slice()), ("dir/beta.bin", payload.as_slice())]))
         .assert()
         .success()
         .stderr(predicate::str::contains("created 2 member(s)"))
@@ -642,9 +557,7 @@ fn cli_create_tar_stdin_multi_volume_signed_archive_verifies_public_root_auth() 
     let volume_0 = numbered_volume_path(&output_base, 0);
     let volume_1 = numbered_volume_path(&output_base, 1);
     let volume_2 = numbered_volume_path(&output_base, 2);
-    let payload = (0..150_000)
-        .map(|index| (index % 251) as u8)
-        .collect::<Vec<_>>();
+    let payload = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
     fs::write(&keyfile, KEY_HEX).unwrap();
 
     Command::cargo_bin("tzap")
@@ -693,9 +606,7 @@ fn cli_create_tar_stdin_multi_volume_signed_archive_verifies_public_root_auth() 
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "public_data_block_commitment_verified",
-        ));
+        .stdout(predicate::str::contains("public_data_block_commitment_verified"));
 }
 
 #[test]
@@ -748,9 +659,7 @@ fn cli_create_tar_stdin_signed_archive_verifies_public_root_auth() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "public_data_block_commitment_verified",
-        ));
+        .stdout(predicate::str::contains("public_data_block_commitment_verified"));
 }
 
 #[test]
@@ -858,22 +767,12 @@ fn cli_create_raw_stdin_known_size_round_trips_list_verify_and_extract() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            output.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .success();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            output.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("raw/data.bin"));
@@ -902,9 +801,7 @@ fn cli_create_raw_stdin_known_size_multi_volume_round_trips_list_verify_and_extr
     let volume_0 = numbered_volume_path(&output_base, 0);
     let volume_1 = numbered_volume_path(&output_base, 1);
     let volume_2 = numbered_volume_path(&output_base, 2);
-    let payload = (0..150_000)
-        .map(|index| (index % 251) as u8)
-        .collect::<Vec<_>>();
+    let payload = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
     let size = payload.len().to_string();
     fs::write(&keyfile, KEY_HEX).unwrap();
 
@@ -993,9 +890,7 @@ fn cli_create_raw_stdin_known_size_multi_volume_signed_archive_verifies_public_r
     let volume_0 = numbered_volume_path(&output_base, 0);
     let volume_1 = numbered_volume_path(&output_base, 1);
     let volume_2 = numbered_volume_path(&output_base, 2);
-    let payload = (0..150_000)
-        .map(|index| (index % 251) as u8)
-        .collect::<Vec<_>>();
+    let payload = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
     let size = payload.len().to_string();
     fs::write(&keyfile, KEY_HEX).unwrap();
 
@@ -1049,9 +944,7 @@ fn cli_create_raw_stdin_known_size_multi_volume_signed_archive_verifies_public_r
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "public_data_block_commitment_verified",
-        ));
+        .stdout(predicate::str::contains("public_data_block_commitment_verified"));
 }
 
 #[test]
@@ -1110,9 +1003,7 @@ fn cli_create_raw_stdin_known_size_signed_archive_verifies_public_root_auth() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "public_data_block_commitment_verified",
-        ));
+        .stdout(predicate::str::contains("public_data_block_commitment_verified"));
 }
 
 #[test]
@@ -1168,9 +1059,7 @@ fn cli_create_raw_stdin_spool_multi_volume_round_trips_list_verify_and_extract()
     let volume_0 = numbered_volume_path(&output_base, 0);
     let volume_1 = numbered_volume_path(&output_base, 1);
     let volume_2 = numbered_volume_path(&output_base, 2);
-    let payload = (0..150_000)
-        .map(|index| (index % 251) as u8)
-        .collect::<Vec<_>>();
+    let payload = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
     fs::write(&keyfile, KEY_HEX).unwrap();
 
     Command::cargo_bin("tzap")
@@ -1244,10 +1133,7 @@ fn cli_create_raw_stdin_spool_multi_volume_round_trips_list_verify_and_extract()
         .assert()
         .success();
 
-    assert_eq!(
-        fs::read(extract_dir.join("raw/spooled.bin")).unwrap(),
-        payload
-    );
+    assert_eq!(fs::read(extract_dir.join("raw/spooled.bin")).unwrap(), payload);
 }
 
 #[test]
@@ -1326,9 +1212,7 @@ fn cli_create_raw_stdin_spool_multi_volume_signed_archive_verifies_public_root_a
     let output_base = temp.path().join("raw-spool-signed-mv.tzap");
     let volume_0 = numbered_volume_path(&output_base, 0);
     let volume_1 = numbered_volume_path(&output_base, 1);
-    let payload = (0..150_000)
-        .map(|index| (index % 251) as u8)
-        .collect::<Vec<_>>();
+    let payload = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
     fs::write(&keyfile, KEY_HEX).unwrap();
 
     Command::cargo_bin("tzap")
@@ -1379,9 +1263,7 @@ fn cli_create_raw_stdin_spool_multi_volume_signed_archive_verifies_public_root_a
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "public_data_block_commitment_verified",
-        ));
+        .stdout(predicate::str::contains("public_data_block_commitment_verified"));
 }
 
 #[test]
@@ -1430,9 +1312,7 @@ fn cli_create_raw_stdin_known_size_mismatch_removes_output_path() {
         .write_stdin(b"toolong".as_slice())
         .assert()
         .code(11)
-        .stderr(predicate::str::contains(
-            "raw stdin exceeds declared --stdin-size",
-        ));
+        .stderr(predicate::str::contains("raw stdin exceeds declared --stdin-size"));
     assert!(!long_output.exists());
 }
 
@@ -1497,9 +1377,7 @@ fn cli_create_raw_stdin_known_size_multi_volume_mismatch_removes_output_paths() 
         .write_stdin(b"toolong".as_slice())
         .assert()
         .code(11)
-        .stderr(predicate::str::contains(
-            "raw stdin exceeds declared --stdin-size",
-        ));
+        .stderr(predicate::str::contains("raw stdin exceeds declared --stdin-size"));
     assert!(!long_output.exists());
     assert!(long_volumes.iter().all(|path| !path.exists()));
 }
@@ -1584,10 +1462,7 @@ fn cli_create_signed_archive_and_verify_root_auth_profiles() {
         ])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("(1 volume(s), 1 file(s))")
-                .and(predicate::str::contains("root-auth: OK ed25519")),
-        );
+        .stdout(predicate::str::contains("(1 volume(s), 1 file(s))").and(predicate::str::contains("root-auth: OK ed25519")));
 
     let output = Command::cargo_bin("tzap")
         .unwrap()
@@ -1624,12 +1499,8 @@ fn cli_create_signed_archive_and_verify_root_auth_profiles() {
         .success()
         .stdout(
             predicate::str::contains("OK public-no-key")
-                .and(predicate::str::contains(
-                    "public_data_block_commitment_verified",
-                ))
-                .and(predicate::str::contains(
-                    "public_physical_completeness_unverified",
-                ))
+                .and(predicate::str::contains("public_data_block_commitment_verified"))
+                .and(predicate::str::contains("public_physical_completeness_unverified"))
                 .and(predicate::str::contains("public_recovery_margin_unchecked")),
         );
 
@@ -1651,10 +1522,7 @@ fn cli_create_signed_archive_and_verify_root_auth_profiles() {
     let value: Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(value["ok"], true);
     assert_eq!(value["verification_mode"], "public-no-key");
-    assert_eq!(
-        value["root_auth"]["status"],
-        "public_data_block_commitment_verified"
-    );
+    assert_eq!(value["root_auth"]["status"], "public_data_block_commitment_verified");
     assert_eq!(value["root_auth"]["key_id"], public_hex.trim());
     assert!(value["public_diagnostics"]
         .as_array()
@@ -1674,11 +1542,7 @@ fn cli_create_x509_signed_archive_and_verify_certificate_details() {
     let archive = temp.path().join("signed-x509.tzap");
 
     let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-    let (leaf_cert, leaf_key) = test_leaf_cert(
-        "Acme Release Signing",
-        root_cert.as_ref(),
-        root_key.as_ref(),
-    );
+    let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
     fs::write(&keyfile, KEY_HEX).unwrap();
     fs::write(&root_ca, root_cert.to_pem().unwrap()).unwrap();
     fs::write(&signer_cert, leaf_cert.to_pem().unwrap()).unwrap();
@@ -1719,17 +1583,11 @@ fn cli_create_x509_signed_archive_and_verify_certificate_details() {
         .success()
         .stdout(
             predicate::str::contains("root-auth: OK x509")
-                .and(predicate::str::contains(
-                    "root-auth signer: CN=Acme Release Signing",
-                ))
-                .and(predicate::str::contains(
-                    "root-auth issuer: CN=Acme Test Root CA",
-                ))
+                .and(predicate::str::contains("root-auth signer: CN=Acme Release Signing"))
+                .and(predicate::str::contains("root-auth issuer: CN=Acme Test Root CA"))
                 .and(predicate::str::contains("root-auth signed-at:"))
                 .and(predicate::str::contains("root-auth chain-validation-time:"))
-                .and(predicate::str::contains(
-                    "root-auth x509-policy: signature-scheme=rsa-pss-sha256",
-                )),
+                .and(predicate::str::contains("root-auth x509-policy: signature-scheme=rsa-pss-sha256")),
         );
 
     let output = Command::cargo_bin("tzap")
@@ -1755,27 +1613,15 @@ fn cli_create_x509_signed_archive_and_verify_certificate_details() {
     assert_eq!(value["root_auth"]["issuer"], "CN=Acme Test Root CA");
     assert_eq!(value["root_auth"]["time_source"], "signer_claimed");
     assert_eq!(value["root_auth"]["signature_scheme"], "rsa-pss-sha256");
-    assert_eq!(
-        value["root_auth"]["x509_time_policy"],
-        "verifier_current_time"
-    );
-    assert_eq!(
-        value["root_auth"]["chain_time_basis"],
-        "verifier_current_time"
-    );
+    assert_eq!(value["root_auth"]["x509_time_policy"], "verifier_current_time");
+    assert_eq!(value["root_auth"]["chain_time_basis"], "verifier_current_time");
     assert_eq!(value["root_auth"]["trusted_timestamp"], false);
     assert_eq!(value["root_auth"]["revocation_checked"], false);
-    assert_eq!(
-        value["root_auth"]["key_usage_policy"],
-        "archive_signature_minimal"
-    );
+    assert_eq!(value["root_auth"]["key_usage_policy"], "archive_signature_minimal");
     assert_eq!(value["root_auth"]["eku_policy"], "none");
     assert_eq!(value["root_auth"]["trust_store_policy"], "caller_roots");
     assert!(value["root_auth"]["chain_validation_time_unix_seconds"].is_number());
-    assert_eq!(
-        value["root_auth"]["trust_anchor_subject"],
-        "CN=Acme Test Root CA"
-    );
+    assert_eq!(value["root_auth"]["trust_anchor_subject"], "CN=Acme Test Root CA");
 
     Command::cargo_bin("tzap")
         .unwrap()
@@ -1791,12 +1637,8 @@ fn cli_create_x509_signed_archive_and_verify_certificate_details() {
         .stdout(
             predicate::str::contains("OK public-no-key")
                 .and(predicate::str::contains("root-auth: OK public-no-key x509"))
-                .and(predicate::str::contains(
-                    "root-auth signer: CN=Acme Release Signing",
-                ))
-                .and(predicate::str::contains(
-                    "public_data_block_commitment_verified",
-                )),
+                .and(predicate::str::contains("root-auth signer: CN=Acme Release Signing"))
+                .and(predicate::str::contains("public_data_block_commitment_verified")),
         );
 
     let output = Command::cargo_bin("tzap")
@@ -1819,20 +1661,11 @@ fn cli_create_x509_signed_archive_and_verify_certificate_details() {
     assert_eq!(value["verification_mode"], "public-no-key");
     assert_eq!(value["root_auth"]["authenticator"], "x509");
     assert_eq!(value["root_auth"]["signature_scheme"], "rsa-pss-sha256");
-    assert_eq!(
-        value["root_auth"]["x509_time_policy"],
-        "verifier_current_time"
-    );
+    assert_eq!(value["root_auth"]["x509_time_policy"], "verifier_current_time");
     assert_eq!(value["root_auth"]["revocation_checked"], false);
-    assert_eq!(
-        value["root_auth"]["status"],
-        "public_data_block_commitment_verified"
-    );
+    assert_eq!(value["root_auth"]["status"], "public_data_block_commitment_verified");
     assert_eq!(value["root_auth"]["subject"], "CN=Acme Release Signing");
-    assert_eq!(
-        value["root_auth"]["trust_anchor_subject"],
-        "CN=Acme Test Root CA"
-    );
+    assert_eq!(value["root_auth"]["trust_anchor_subject"], "CN=Acme Test Root CA");
 }
 
 #[test]
@@ -2002,12 +1835,7 @@ fn cli_create_directory_tree_is_deterministic_and_includes_nested_files() {
 
     let output = Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .get_output()
@@ -2015,13 +1843,8 @@ fn cli_create_directory_tree_is_deterministic_and_includes_nested_files() {
         .clone();
     let listing = String::from_utf8_lossy(&output);
 
-    let base = input_root
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap();
-    let expected = format!(
-        "{base}\n{base}/.hidden\n{base}/a.txt\n{base}/b.txt\n{base}/zeta\n{base}/zeta/a.txt\n{base}/zeta/c.txt\n"
-    );
+    let base = input_root.file_name().and_then(|name| name.to_str()).unwrap();
+    let expected = format!("{base}\n{base}/.hidden\n{base}/a.txt\n{base}/b.txt\n{base}/zeta\n{base}/zeta/a.txt\n{base}/zeta/c.txt\n");
     assert_eq!(listing, expected);
 }
 
@@ -2051,22 +1874,14 @@ fn cli_create_preserves_empty_directories() {
 
     let output = Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .get_output()
         .stdout
         .clone();
 
-    assert_eq!(
-        String::from_utf8_lossy(&output),
-        "input\ninput/empty\ninput/keep.txt\n",
-    );
+    assert_eq!(String::from_utf8_lossy(&output), "input\ninput/empty\ninput/keep.txt\n",);
 }
 
 #[test]
@@ -2094,17 +1909,10 @@ fn cli_create_supports_unicode_archive_paths() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            input.file_name().and_then(|name| name.to_str()).unwrap(),
-        ));
+        .stdout(predicate::str::contains(input.file_name().and_then(|name| name.to_str()).unwrap()));
 }
 
 #[test]
@@ -2146,12 +1954,7 @@ fn cli_create_supports_long_archive_paths() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains(&archive_member));
@@ -2271,12 +2074,7 @@ fn cli_create_with_dictionary_file_succeeds() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("hello.txt\n"));
@@ -2496,26 +2294,13 @@ fn cli_create_archives_char_device_descriptor() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            output.to_str().unwrap(),
-            "/dev/null",
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", output.to_str().unwrap(), "/dev/null"])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--long",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            output.to_str().unwrap(),
-        ])
+        .args(["list", "--long", "--keyfile", keyfile.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("character-device"));
@@ -2534,13 +2319,7 @@ fn cli_create_archives_unopenable_block_device_descriptor_when_privileged() {
     let input = temp.path().join("unused-block-device");
     let output = temp.path().join("block.tzap");
     let input_c = CString::new(input.as_os_str().as_bytes()).unwrap();
-    let status = unsafe {
-        libc::mknod(
-            input_c.as_ptr(),
-            libc::S_IFBLK | 0o600,
-            libc::makedev(240, 2),
-        )
-    };
+    let status = unsafe { libc::mknod(input_c.as_ptr(), libc::S_IFBLK | 0o600, libc::makedev(240, 2)) };
     if status != 0 {
         let error = std::io::Error::last_os_error();
         if error.raw_os_error() == Some(libc::EPERM) {
@@ -2551,13 +2330,7 @@ fn cli_create_archives_unopenable_block_device_descriptor_when_privileged() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -2580,14 +2353,7 @@ fn cli_create_rejects_windows_reserved_device_path_input() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            output.to_str().unwrap(),
-            "CON",
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", output.to_str().unwrap(), "CON"])
         .assert()
         .failure();
 }
@@ -2743,14 +2509,7 @@ fn cli_create_rejects_archive_stdout_output_sentinel_before_writing() {
     Command::cargo_bin("tzap")
         .unwrap()
         .current_dir(temp.path())
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            "-",
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", "-", input.to_str().unwrap()])
         .assert()
         .code(16)
         .stderr(predicate::str::contains("unsupported-feature"))
@@ -2786,9 +2545,7 @@ fn cli_create_rejects_sidecar_stdout_output_sentinel_before_writing() {
         .assert()
         .code(16)
         .stderr(predicate::str::contains("unsupported-feature"))
-        .stderr(predicate::str::contains(
-            "--bootstrap-out - is not sidecar stdout",
-        ));
+        .stderr(predicate::str::contains("--bootstrap-out - is not sidecar stdout"));
 
     assert!(!archive.exists());
     assert!(!dash_output.exists());
@@ -2850,16 +2607,8 @@ fn cli_create_with_volume_size_splits_archive_by_target_size() {
     }
     assert!(volumes.len() > 1);
 
-    let mut args = vec![
-        "verify".to_owned(),
-        "--keyfile".to_owned(),
-        keyfile.to_str().unwrap().to_owned(),
-    ];
-    args.extend(
-        volumes
-            .iter()
-            .map(|volume| volume.to_str().unwrap().to_owned()),
-    );
+    let mut args = vec!["verify".to_owned(), "--keyfile".to_owned(), keyfile.to_str().unwrap().to_owned()];
+    args.extend(volumes.iter().map(|volume| volume.to_str().unwrap().to_owned()));
     Command::cargo_bin("tzap")
         .unwrap()
         .args(args)
@@ -2896,9 +2645,7 @@ fn cli_create_rejects_bootstrap_out_with_multi_volume_with_unsupported_error() {
         .assert()
         .code(16)
         .stderr(predicate::str::contains("unsupported-feature"))
-        .stderr(predicate::str::contains(
-            "--bootstrap-out is currently supported only for single-volume output",
-        ));
+        .stderr(predicate::str::contains("--bootstrap-out is currently supported only for single-volume output"));
     assert!(!numbered_volume_path(&archive, 0).exists());
     assert!(!numbered_volume_path(&archive, 1).exists());
     assert!(!bootstrap.exists());
@@ -2933,9 +2680,7 @@ fn cli_create_rejects_bootstrap_out_with_volume_size_before_writing() {
         .code(16)
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains("unsupported-feature"))
-        .stderr(predicate::str::contains(
-            "--bootstrap-out is currently supported only for single-volume output",
-        ));
+        .stderr(predicate::str::contains("--bootstrap-out is currently supported only for single-volume output"));
     assert!(!archive.exists());
     assert!(!numbered_volume_path(&archive, 0).exists());
     assert!(!bootstrap.exists());

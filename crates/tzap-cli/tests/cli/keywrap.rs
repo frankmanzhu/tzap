@@ -119,9 +119,7 @@ fn cli_create_list_verify_and_extract_with_keyfile() {
         ])
         .assert()
         .success()
-        .stderr(predicate::str::contains(
-            "created 1 member(s), 16 bytes in, ",
-        ))
+        .stderr(predicate::str::contains("created 1 member(s), 16 bytes in, "))
         .stderr(predicate::str::contains(
             "1 volume(s), data:parity 224:1, no volume-loss tolerance, bit-rot buffer 5%",
         ));
@@ -142,12 +140,7 @@ fn cli_create_list_verify_and_extract_with_keyfile() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("OK"));
@@ -166,10 +159,7 @@ fn cli_create_list_verify_and_extract_with_keyfile() {
         .assert()
         .success();
 
-    assert_eq!(
-        fs::read(extract_dir.join("hello.txt")).unwrap(),
-        b"hello from tzap\n"
-    );
+    assert_eq!(fs::read(extract_dir.join("hello.txt")).unwrap(), b"hello from tzap\n");
 }
 
 #[test]
@@ -206,65 +196,35 @@ fn cli_create_list_verify_and_extract_with_recipient_wrap() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "-o",
-            plaintext_archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "-o", plaintext_archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--recipient-key",
-            recipient_key_path.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--recipient-key", recipient_key_path.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("recipient.txt\n"));
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--recipient-key",
-            recipient_key_path.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--recipient-key", recipient_key_path.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("OK"));
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--json",
-            "--recipient-key",
-            recipient_key_path.to_str().unwrap(),
-            "-",
-        ])
+        .args(["verify", "--json", "--recipient-key", recipient_key_path.to_str().unwrap(), "-"])
         .write_stdin(fs::read(&archive).unwrap())
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            r#""decryption_keywrap":"recipientwrap_opened""#,
-        ));
+        .stdout(predicate::str::contains(r#""decryption_keywrap":"recipientwrap_opened""#));
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--json",
-            "--recipient-key",
-            recipient_key_path.to_str().unwrap(),
-            "-",
-        ])
+        .args(["verify", "--json", "--recipient-key", recipient_key_path.to_str().unwrap(), "-"])
         .write_stdin(fs::read(&plaintext_archive).unwrap())
         .assert()
         .code(10)
@@ -276,12 +236,7 @@ fn cli_create_list_verify_and_extract_with_recipient_wrap() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--recipient-key",
-            recipient_key_path.to_str().unwrap(),
-            "-",
-        ])
+        .args(["verify", "--recipient-key", recipient_key_path.to_str().unwrap(), "-"])
         .write_stdin(fs::read(&archive).unwrap())
         .assert()
         .success()
@@ -289,18 +244,10 @@ fn cli_create_list_verify_and_extract_with_recipient_wrap() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--recipient-key",
-            wrong_key_path.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--recipient-key", wrong_key_path.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .code(10)
-        .stderr(
-            predicate::str::contains("wrong-key")
-                .and(predicate::str::contains("recipient private key")),
-        );
+        .stderr(predicate::str::contains("wrong-key").and(predicate::str::contains("recipient private key")));
 
     Command::cargo_bin("tzap")
         .unwrap()
@@ -316,10 +263,7 @@ fn cli_create_list_verify_and_extract_with_recipient_wrap() {
         .assert()
         .success();
 
-    assert_eq!(
-        fs::read(extract_dir.join("recipient.txt")).unwrap(),
-        b"recipient wrapped\n"
-    );
+    assert_eq!(fs::read(extract_dir.join("recipient.txt")).unwrap(), b"recipient wrapped\n");
 }
 
 #[test]
@@ -347,10 +291,7 @@ fn cli_verify_accepts_multivolume_recipient_wrap() {
     )
     .unwrap();
     let archive = write_archive_with_recipient_wrap_records(
-        &[RegularFile::new(
-            "wrapped.txt",
-            b"multi recipient wrapped\n",
-        )],
+        &[RegularFile::new("wrapped.txt", b"multi recipient wrapped\n")],
         &master,
         WriterOptions {
             stripe_width: 2,
@@ -675,12 +616,7 @@ fn cli_create_with_password_stdin_strips_line_endings_and_preserves_spaces() {
             ],
         ),
     ] {
-        Command::cargo_bin("tzap")
-            .unwrap()
-            .args(args.clone())
-            .write_stdin(pass)
-            .assert()
-            .success();
+        Command::cargo_bin("tzap").unwrap().args(args.clone()).write_stdin(pass).assert().success();
 
         Command::cargo_bin("tzap")
             .unwrap()
@@ -832,9 +768,7 @@ fn cli_keyfile_with_invalid_hex_and_wrong_length_is_rejected() {
         ])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains(
-            "keyfile must contain either 32 raw bytes or 64 hex characters",
-        ));
+        .stderr(predicate::str::contains("keyfile must contain either 32 raw bytes or 64 hex characters"));
 }
 
 #[test]
@@ -881,10 +815,7 @@ fn cli_extract_with_password_prompt_and_stdin_fallback() {
         .success()
         .stderr(predicate::str::contains("Passphrase:"));
 
-    assert_eq!(
-        fs::read(output_dir.join("secret.txt")).unwrap(),
-        b"payload\n"
-    );
+    assert_eq!(fs::read(output_dir.join("secret.txt")).unwrap(), b"payload\n");
 }
 
 #[test]
@@ -967,10 +898,7 @@ fn cli_extract_with_passphrase_is_supported_and_safe() {
         .assert()
         .success();
 
-    assert_eq!(
-        fs::read(output.join("secret.txt")).unwrap(),
-        b"passphrase payload\n"
-    );
+    assert_eq!(fs::read(output.join("secret.txt")).unwrap(), b"passphrase payload\n");
 }
 
 #[test]
@@ -980,9 +908,7 @@ fn cli_extracts_password_multivolume_archive_with_missing_recoverable_volume() {
     let output_base = temp.path().join("password-volume.tzap");
     let output = temp.path().join("out");
     let passphrase = "split passphrase recovery\n";
-    let expected = (0..128 * 1024)
-        .map(|idx| ((idx * 17 + 29) % 251) as u8)
-        .collect::<Vec<_>>();
+    let expected = (0..128 * 1024).map(|idx| ((idx * 17 + 29) % 251) as u8).collect::<Vec<_>>();
 
     fs::write(&input, &expected).unwrap();
 
@@ -1031,8 +957,5 @@ fn cli_extracts_password_multivolume_archive_with_missing_recoverable_volume() {
         .success()
         .stderr(predicate::str::contains("extracted 1 file(s)"));
 
-    assert_eq!(
-        fs::read(output.join("password-volume.bin")).unwrap(),
-        expected
-    );
+    assert_eq!(fs::read(output.join("password-volume.bin")).unwrap(), expected);
 }

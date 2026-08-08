@@ -7,19 +7,12 @@ use anyhow::{Context, Result};
 use serde_json::json;
 use tzap_core::format::{FormatError, FORMAT_VERSION, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV};
 use tzap_core::reader::{ArchiveEntry, ArchiveIndexEntry};
-use tzap_core::{
-    ArchiveWriteError, ExtractError, MetadataDiagnostic, MetadataVerificationReport, RestorePolicy,
-    TarEntryKind, WriterTimings,
-};
+use tzap_core::{ArchiveWriteError, ExtractError, MetadataDiagnostic, MetadataVerificationReport, RestorePolicy, TarEntryKind, WriterTimings};
 
 use crate::commands::UsageError;
 
 pub(crate) fn emit_trust_info(json_output: bool) -> io::Result<()> {
-    let build_profile = if cfg!(debug_assertions) {
-        "debug"
-    } else {
-        "release"
-    };
+    let build_profile = if cfg!(debug_assertions) { "debug" } else { "release" };
     if json_output {
         println!(
             "{}",
@@ -40,11 +33,7 @@ pub(crate) fn emit_trust_info(json_output: bool) -> io::Result<()> {
     println!("tzap {}", env!("CARGO_PKG_VERSION"));
     println!("repository: {}", env!("CARGO_PKG_REPOSITORY"));
     println!("build-profile: {build_profile}");
-    println!(
-        "target: {}-{}",
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    );
+    println!("target: {}-{}", std::env::consts::OS, std::env::consts::ARCH);
     println!("official-tzap-root-source: embedded");
     println!("official-tzap-root-sha256: {OFFICIAL_TZAP_ROOT_CERT_SHA256}");
     Ok(())
@@ -115,10 +104,7 @@ pub(crate) fn emit_create_timing_report_with_labels(
     eprintln!("  scan inputs: {}", format_duration(scan_inputs));
     eprintln!("  read inputs: {}", format_duration(read_inputs));
     eprintln!("  {core_writer_label}: {}", format_duration(core_writer));
-    eprintln!(
-        "  {write_outputs_label}: {}",
-        format_duration(write_outputs)
-    );
+    eprintln!("  {write_outputs_label}: {}", format_duration(write_outputs));
     eprintln!("  other CLI: {}", format_duration(other_cli));
     eprintln!("  total: {}", format_duration(total));
     eprintln!("writer timings:");
@@ -145,12 +131,7 @@ pub(crate) fn emit_success_stdout(quiet: bool, message: &str) -> io::Result<()> 
 pub(crate) fn metadata_diagnostic_line(path: &str, diagnostic: &MetadataDiagnostic) -> String {
     let mut line = format!(
         "tzap: degraded-metadata: {}: {}: {}: {:?}/{:?}: {}",
-        path,
-        diagnostic.profile,
-        diagnostic.metadata_class,
-        diagnostic.operation,
-        diagnostic.status,
-        diagnostic.message
+        path, diagnostic.profile, diagnostic.metadata_class, diagnostic.operation, diagnostic.status, diagnostic.message
     );
     if let (Some(policy), Some(phase)) = (diagnostic.restore_policy, diagnostic.restore_phase) {
         line.push_str(&format!(" [policy={policy:?} phase={phase}]"));
@@ -164,11 +145,7 @@ pub(crate) fn metadata_diagnostic_line(path: &str, diagnostic: &MetadataDiagnost
     line
 }
 
-pub(crate) fn emit_member_metadata_diagnostics(
-    quiet: bool,
-    path: &str,
-    diagnostics: &[MetadataDiagnostic],
-) -> io::Result<()> {
+pub(crate) fn emit_member_metadata_diagnostics(quiet: bool, path: &str, diagnostics: &[MetadataDiagnostic]) -> io::Result<()> {
     if quiet {
         return Ok(());
     }
@@ -181,36 +158,20 @@ pub(crate) fn emit_member_metadata_diagnostics(
 pub(crate) fn metadata_diagnostic_lines_for_entries(entries: &[ArchiveEntry]) -> Vec<String> {
     entries
         .iter()
-        .flat_map(|entry| {
-            entry
-                .diagnostics
-                .iter()
-                .map(|diagnostic| metadata_diagnostic_line(&entry.path, diagnostic))
-        })
+        .flat_map(|entry| entry.diagnostics.iter().map(|diagnostic| metadata_diagnostic_line(&entry.path, diagnostic)))
         .collect()
 }
 
 #[cfg(test)]
-pub(crate) fn metadata_diagnostic_lines_for_paths(
-    entries: &[ArchiveEntry],
-    paths: &[String],
-) -> Vec<String> {
+pub(crate) fn metadata_diagnostic_lines_for_paths(entries: &[ArchiveEntry], paths: &[String]) -> Vec<String> {
     paths
         .iter()
         .filter_map(|path| entries.iter().find(|entry| entry.path == *path))
-        .flat_map(|entry| {
-            entry
-                .diagnostics
-                .iter()
-                .map(|diagnostic| metadata_diagnostic_line(&entry.path, diagnostic))
-        })
+        .flat_map(|entry| entry.diagnostics.iter().map(|diagnostic| metadata_diagnostic_line(&entry.path, diagnostic)))
         .collect()
 }
 
-pub(crate) fn emit_entry_metadata_diagnostics(
-    quiet: bool,
-    entries: &[ArchiveEntry],
-) -> io::Result<()> {
+pub(crate) fn emit_entry_metadata_diagnostics(quiet: bool, entries: &[ArchiveEntry]) -> io::Result<()> {
     if quiet {
         return Ok(());
     }
@@ -265,30 +226,15 @@ pub(crate) fn metadata_verification_json(report: &MetadataVerificationReport) ->
     })
 }
 
-pub(crate) fn metadata_verification_stdout_lines(
-    report: &MetadataVerificationReport,
-) -> Vec<String> {
+pub(crate) fn metadata_verification_stdout_lines(report: &MetadataVerificationReport) -> Vec<String> {
     let mut lines = vec![format!(
         "metadata: capture={} full-fidelity={} profiles=[{}] auxiliary-kinds=[{}]",
-        if report.all_capture_complete {
-            "complete"
-        } else {
-            "partial"
-        },
-        if report.full_fidelity_possible {
-            "possible"
-        } else {
-            "not-possible"
-        },
+        if report.all_capture_complete { "complete" } else { "partial" },
+        if report.full_fidelity_possible { "possible" } else { "not-possible" },
         report.profiles_present.join(","),
         report.auxiliary_kinds_present.join(","),
     )];
-    for policy in [
-        RestorePolicy::Content,
-        RestorePolicy::Portable,
-        RestorePolicy::SameOs,
-        RestorePolicy::System,
-    ] {
+    for policy in [RestorePolicy::Content, RestorePolicy::Portable, RestorePolicy::SameOs, RestorePolicy::System] {
         let complete = report
             .entries
             .iter()
@@ -308,10 +254,7 @@ pub(crate) fn metadata_verification_stdout_lines(
     lines
 }
 
-pub(crate) fn emit_metadata_verification_stdout(
-    quiet: bool,
-    report: &MetadataVerificationReport,
-) -> io::Result<()> {
+pub(crate) fn emit_metadata_verification_stdout(quiet: bool, report: &MetadataVerificationReport) -> io::Result<()> {
     if quiet {
         return Ok(());
     }
@@ -358,12 +301,7 @@ pub(crate) fn archive_entry_kind_label(kind: TarEntryKind) -> &'static str {
     }
 }
 
-pub(crate) fn emit_verify_json_error(
-    archives: &[String],
-    volume_count: Option<u64>,
-    file_count: Option<u64>,
-    err: &anyhow::Error,
-) -> Result<()> {
+pub(crate) fn emit_verify_json_error(archives: &[String], volume_count: Option<u64>, file_count: Option<u64>, err: &anyhow::Error) -> Result<()> {
     let diagnostic = classify_error(err);
     if diagnostic.label == "unsupported-revision" {
         let payload = json!({
@@ -371,11 +309,7 @@ pub(crate) fn emit_verify_json_error(
             "archives": archives,
             "error": unsupported_revision_error_json(err, diagnostic.action),
         });
-        println!(
-            "{}",
-            serde_json::to_string(&payload)
-                .context("failed to encode verify error output as JSON")?
-        );
+        println!("{}", serde_json::to_string(&payload).context("failed to encode verify error output as JSON")?);
         return Ok(());
     }
     let mut payload = json!({
@@ -393,17 +327,11 @@ pub(crate) fn emit_verify_json_error(
     if let Some(file_count) = file_count {
         payload["file_count"] = json!(file_count);
     }
-    println!(
-        "{}",
-        serde_json::to_string(&payload).context("failed to encode verify error output as JSON")?
-    );
+    println!("{}", serde_json::to_string(&payload).context("failed to encode verify error output as JSON")?);
     Ok(())
 }
 
-pub(crate) fn unsupported_revision_error_json(
-    err: &anyhow::Error,
-    action: &'static str,
-) -> serde_json::Value {
+pub(crate) fn unsupported_revision_error_json(err: &anyhow::Error, action: &'static str) -> serde_json::Value {
     for cause in err.chain() {
         if let Some(format) = cause.downcast_ref::<FormatError>() {
             match format {
@@ -532,9 +460,7 @@ pub(crate) fn classify_error(err: &anyhow::Error) -> Diagnostic {
 
 pub(crate) fn classify_io_error(err: &io::Error) -> Diagnostic {
     match err.kind() {
-        io::ErrorKind::PermissionDenied
-        | io::ErrorKind::NotFound
-        | io::ErrorKind::AlreadyExists => Diagnostic {
+        io::ErrorKind::PermissionDenied | io::ErrorKind::NotFound | io::ErrorKind::AlreadyExists => Diagnostic {
             label: "io-error",
             exit_code: EXIT_IO,
             action: "check file paths and permissions",

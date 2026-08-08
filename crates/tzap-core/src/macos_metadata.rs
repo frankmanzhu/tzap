@@ -1,6 +1,5 @@
 use crate::{
-    canonical_base64_encode, encode_percent_name, ArchiveTimestamp, NativeAuxiliaryMetadata,
-    NativeAuxiliaryNameEncoding, NativeFileMetadata, RestoreClass,
+    canonical_base64_encode, encode_percent_name, ArchiveTimestamp, NativeAuxiliaryMetadata, NativeAuxiliaryNameEncoding, NativeFileMetadata, RestoreClass,
 };
 use sha2::{Digest as _, Sha256};
 use std::ffi::CString;
@@ -40,16 +39,10 @@ pub struct CapturedMacosMetadata {
 }
 
 pub fn capture_macos_metadata(input: &Path, symlink: bool) -> io::Result<CapturedMacosMetadata> {
-    let file = if symlink {
-        open_symlink(input)?
-    } else {
-        open_metadata_file(input)?
-    };
+    let file = if symlink { open_symlink(input)? } else { open_metadata_file(input)? };
     let metadata = file.metadata()?;
     if metadata.file_type().is_symlink() != symlink {
-        return Err(io::Error::other(
-            "input kind changed before metadata capture",
-        ));
+        return Err(io::Error::other("input kind changed before metadata capture"));
     }
     let identity = metadata_identity(&metadata);
     let native = capture_from_file(input, &file, identity, symlink)?;
@@ -60,43 +53,27 @@ pub fn capture_macos_metadata(input: &Path, symlink: bool) -> io::Result<Capture
     Ok(CapturedMacosMetadata { native, identity })
 }
 
-pub fn open_macos_resource_fork(
-    input: &Path,
-    symlink: bool,
-    expected_identity: MacosMetadataIdentity,
-    expected_size: u64,
-) -> io::Result<Box<dyn Read>> {
+pub fn open_macos_resource_fork(input: &Path, symlink: bool, expected_identity: MacosMetadataIdentity, expected_size: u64) -> io::Result<Box<dyn Read>> {
     let source = if symlink {
         ResourceForkSource::Symlink(open_symlink(input)?)
     } else {
         ResourceForkSource::File(open_regular_resource_fork(input)?)
     };
-    Ok(Box::new(ResourceForkReader::new(
-        source,
-        expected_identity,
-        Some(expected_size),
-    )?))
+    Ok(Box::new(ResourceForkReader::new(source, expected_identity, Some(expected_size))?))
 }
 
-fn capture_from_file(
-    input: &Path,
-    file: &File,
-    identity: MacosMetadataIdentity,
-    symlink: bool,
-) -> io::Result<NativeFileMetadata> {
+fn capture_from_file(input: &Path, file: &File, identity: MacosMetadataIdentity, symlink: bool) -> io::Result<NativeFileMetadata> {
     use std::os::unix::fs::FileTypeExt as _;
 
     let mut native = NativeFileMetadata::default();
-    native.primary_pax_records.insert(
-        "TZAP.macos.st-flags".into(),
-        format!("{:016x}", identity.flags).into_bytes(),
-    );
+    native
+        .primary_pax_records
+        .insert("TZAP.macos.st-flags".into(), format!("{:016x}", identity.flags).into_bytes());
     native.primary_pax_records.insert(
         "TZAP.unix.ctime-observed".into(),
         ArchiveTimestamp::new(
             identity.changed_seconds,
-            u32::try_from(identity.changed_nanoseconds)
-                .map_err(|_| io::Error::other("negative macOS ctime nanoseconds"))?,
+            u32::try_from(identity.changed_nanoseconds).map_err(|_| io::Error::other("negative macOS ctime nanoseconds"))?,
         )
         .canonical_pax_value()
         .map_err(invalid_metadata)?,
@@ -105,26 +82,17 @@ fn capture_from_file(
         "LIBARCHIVE.creationtime".into(),
         ArchiveTimestamp::new(
             identity.created_seconds,
-            u32::try_from(identity.created_nanoseconds)
-                .map_err(|_| io::Error::other("negative macOS birthtime nanoseconds"))?,
+            u32::try_from(identity.created_nanoseconds).map_err(|_| io::Error::other("negative macOS birthtime nanoseconds"))?,
         )
         .canonical_pax_value()
         .map_err(invalid_metadata)?,
     );
 
     let metadata = file.metadata()?;
-    let device_without_metadata_api =
-        metadata.file_type().is_char_device() || metadata.file_type().is_block_device();
+    let device_without_metadata_api = metadata.file_type().is_char_device() || metadata.file_type().is_block_device();
     let names = match file.list_xattr() {
         Ok(names) => names.collect::<Vec<_>>(),
-        Err(error)
-            if device_without_metadata_api
-                && error
-                    .raw_os_error()
-                    .is_some_and(|code| code == libc::EPERM || code == libc::ENOTSUP) =>
-        {
-            Vec::new()
-        }
+        Err(error) if device_without_metadata_api && error.raw_os_error().is_some_and(|code| code == libc::EPERM || code == libc::ENOTSUP) => Vec::new(),
         Err(error) => return Err(error),
     };
 
@@ -137,9 +105,7 @@ fn capture_from_file(
             } else {
                 ResourceForkSource::File(open_regular_resource_fork(input)?)
             };
-            native
-                .auxiliary_records
-                .push(capture_resource_fork(source, identity)?);
+            native.auxiliary_records.push(capture_resource_fork(source, identity)?);
             continue;
         }
 
@@ -160,11 +126,7 @@ fn capture_from_file(
         }
 
         let encoded_size = value.len().saturating_mul(4).div_ceil(3);
-        if inline_xattr_bytes
-            .saturating_add(name_bytes.len())
-            .saturating_add(encoded_size)
-            > INLINE_XATTR_BUDGET
-        {
+        if inline_xattr_bytes.saturating_add(name_bytes.len()).saturating_add(encoded_size) > INLINE_XATTR_BUDGET {
             let mut record = NativeAuxiliaryMetadata::new(
                 "generic.xattr",
                 if name_bytes.starts_with(b"com.apple.") {
@@ -185,50 +147,27 @@ fn capture_from_file(
         } else {
             let encoded_name = encode_percent_name(name_bytes).map_err(invalid_metadata)?;
             let encoded_value = canonical_base64_encode(&value);
-            inline_xattr_bytes = inline_xattr_bytes
-                .saturating_add(encoded_name.len())
-                .saturating_add(encoded_value.len());
-            native
-                .primary_pax_records
-                .insert(format!("LIBARCHIVE.xattr.{encoded_name}"), encoded_value);
+            inline_xattr_bytes = inline_xattr_bytes.saturating_add(encoded_name.len()).saturating_add(encoded_value.len());
+            native.primary_pax_records.insert(format!("LIBARCHIVE.xattr.{encoded_name}"), encoded_value);
         }
     }
 
     let acl = match capture_acl(file) {
         Ok(acl) => acl,
-        Err(error)
-            if device_without_metadata_api
-                && error
-                    .raw_os_error()
-                    .is_some_and(|code| code == libc::EPERM || code == libc::ENOTSUP) =>
-        {
-            None
-        }
+        Err(error) if device_without_metadata_api && error.raw_os_error().is_some_and(|code| code == libc::EPERM || code == libc::ENOTSUP) => None,
         Err(error) => return Err(error),
     };
     if let Some(acl) = acl {
-        let mut record = NativeAuxiliaryMetadata::new(
-            "macos.acl-native",
-            "macos-backup-v1",
-            RestoreClass::SameOs,
-            acl,
-        );
-        record.meta.insert(
-            "TZAP.aux.meta.acl-format".into(),
-            b"darwin-acl-external-v1".to_vec(),
-        );
+        let mut record = NativeAuxiliaryMetadata::new("macos.acl-native", "macos-backup-v1", RestoreClass::SameOs, acl);
+        record.meta.insert("TZAP.aux.meta.acl-format".into(), b"darwin-acl-external-v1".to_vec());
         native.auxiliary_records.push(record);
-        native
-            .primary_pax_records
-            .insert("TZAP.acl.projection".into(), b"none".to_vec());
+        native.primary_pax_records.insert("TZAP.acl.projection".into(), b"none".to_vec());
     }
 
     native.required_profiles = vec!["macos-backup-v1".into(), "posix-backup-v1".into()];
-    native.auxiliary_records.sort_by(|left, right| {
-        left.kind
-            .cmp(&right.kind)
-            .then_with(|| left.name.cmp(&right.name))
-    });
+    native
+        .auxiliary_records
+        .sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
     Ok(native)
 }
 
@@ -262,8 +201,7 @@ fn open_metadata_file(input: &Path) -> io::Result<File> {
 }
 
 fn open_symlink(input: &Path) -> io::Result<File> {
-    let path = CString::new(input.as_os_str().as_bytes())
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "path contains a NUL byte"))?;
+    let path = CString::new(input.as_os_str().as_bytes()).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "path contains a NUL byte"))?;
     // SAFETY: `path` is NUL-terminated and the returned descriptor is uniquely owned.
     let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC | O_SYMLINK) };
     if fd < 0 {
@@ -294,21 +232,13 @@ struct ResourceForkReader {
 }
 
 impl ResourceForkReader {
-    fn new(
-        source: ResourceForkSource,
-        expected_identity: MacosMetadataIdentity,
-        expected_size: Option<u64>,
-    ) -> io::Result<Self> {
+    fn new(source: ResourceForkSource, expected_identity: MacosMetadataIdentity, expected_size: Option<u64>) -> io::Result<Self> {
         if resource_fork_identity(&source)? != expected_identity {
-            return Err(io::Error::other(
-                "macOS resource-fork owner changed before read",
-            ));
+            return Err(io::Error::other("macOS resource-fork owner changed before read"));
         }
         let logical_size = resource_fork_size(&source)?;
         if expected_size.is_some_and(|size| size != logical_size) {
-            return Err(io::Error::other(
-                "macOS resource fork changed after metadata scan",
-            ));
+            return Err(io::Error::other("macOS resource fork changed after metadata scan"));
         }
         Ok(Self {
             source,
@@ -321,9 +251,7 @@ impl ResourceForkReader {
 
     fn validate_finished(&mut self) -> io::Result<()> {
         if !self.validated {
-            if resource_fork_identity(&self.source)? != self.expected_identity
-                || resource_fork_size(&self.source)? != self.logical_size
-            {
+            if resource_fork_identity(&self.source)? != self.expected_identity || resource_fork_size(&self.source)? != self.logical_size {
                 return Err(io::Error::other("macOS resource fork changed during read"));
             }
             self.validated = true;
@@ -341,8 +269,8 @@ impl Read for ResourceForkReader {
             self.validate_finished()?;
             return Ok(0);
         }
-        let count = usize::try_from((self.logical_size - self.offset).min(output.len() as u64))
-            .map_err(|_| io::Error::other("resource fork read size overflow"))?;
+        let count =
+            usize::try_from((self.logical_size - self.offset).min(output.len() as u64)).map_err(|_| io::Error::other("resource fork read size overflow"))?;
         let read = read_resource_fork(&self.source, self.offset, &mut output[..count])?;
         if read == 0 {
             return Err(io::Error::new(
@@ -358,10 +286,7 @@ impl Read for ResourceForkReader {
     }
 }
 
-fn capture_resource_fork(
-    source: ResourceForkSource,
-    identity: MacosMetadataIdentity,
-) -> io::Result<NativeAuxiliaryMetadata> {
+fn capture_resource_fork(source: ResourceForkSource, identity: MacosMetadataIdentity) -> io::Result<NativeAuxiliaryMetadata> {
     let mut reader = ResourceForkReader::new(source, identity, None)?;
     let logical_size = reader.logical_size;
     let mut hasher = Sha256::new();
@@ -422,57 +347,28 @@ fn resource_fork_size(source: &ResourceForkSource) -> io::Result<u64> {
     }
 }
 
-fn read_resource_fork(
-    source: &ResourceForkSource,
-    position: u64,
-    output: &mut [u8],
-) -> io::Result<usize> {
+fn read_resource_fork(source: &ResourceForkSource, position: u64, output: &mut [u8]) -> io::Result<usize> {
     match source {
         ResourceForkSource::File(file) => {
             use std::os::unix::fs::FileExt as _;
             file.read_at(output, position)
         }
-        ResourceForkSource::Symlink(file) => {
-            symlink_resource_fork_read(file, position, Some(output))
-        }
+        ResourceForkSource::Symlink(file) => symlink_resource_fork_read(file, position, Some(output)),
     }
 }
 
-fn symlink_resource_fork_read(
-    file: &File,
-    position: u64,
-    output: Option<&mut [u8]>,
-) -> io::Result<usize> {
+fn symlink_resource_fork_read(file: &File, position: u64, output: Option<&mut [u8]>) -> io::Result<usize> {
     use std::ffi::{c_char, c_int, c_void};
 
     unsafe extern "C" {
-        fn fgetxattr(
-            fd: c_int,
-            name: *const c_char,
-            value: *mut c_void,
-            size: usize,
-            position: u32,
-            options: c_int,
-        ) -> libc::ssize_t;
+        fn fgetxattr(fd: c_int, name: *const c_char, value: *mut c_void, size: usize, position: u32, options: c_int) -> libc::ssize_t;
     }
     const RESOURCE_FORK: &[u8] = b"com.apple.ResourceFork\0";
-    let position = u32::try_from(position)
-        .map_err(|_| io::Error::other("resource fork position exceeds Darwin limits"))?;
-    let (pointer, length) = output.map_or((std::ptr::null_mut(), 0), |buffer| {
-        (buffer.as_mut_ptr().cast(), buffer.len())
-    });
+    let position = u32::try_from(position).map_err(|_| io::Error::other("resource fork position exceeds Darwin limits"))?;
+    let (pointer, length) = output.map_or((std::ptr::null_mut(), 0), |buffer| (buffer.as_mut_ptr().cast(), buffer.len()));
     // SAFETY: fd is live, name is NUL-terminated, and the optional output
     // buffer remains writable for `length` bytes for the duration of the call.
-    let result = unsafe {
-        fgetxattr(
-            file.as_raw_fd(),
-            RESOURCE_FORK.as_ptr().cast(),
-            pointer,
-            length,
-            position,
-            0,
-        )
-    };
+    let result = unsafe { fgetxattr(file.as_raw_fd(), RESOURCE_FORK.as_ptr().cast(), pointer, length, position, 0) };
     if result < 0 {
         Err(io::Error::last_os_error())
     } else {
@@ -500,11 +396,7 @@ fn capture_acl(file: &File) -> io::Result<Option<Vec<u8>>> {
     let acl = unsafe { acl_get_fd_np(file.as_raw_fd(), ACL_TYPE_EXTENDED) };
     if acl.is_null() {
         let error = io::Error::last_os_error();
-        return if error.raw_os_error() == Some(libc::ENOENT) {
-            Ok(None)
-        } else {
-            Err(error)
-        };
+        return if error.raw_os_error() == Some(libc::ENOENT) { Ok(None) } else { Err(error) };
     }
     let result = (|| {
         let mut first: AclEntry = ptr::null_mut();
@@ -519,21 +411,13 @@ fn capture_acl(file: &File) -> io::Result<Option<Vec<u8>>> {
         if size < 0 {
             return Err(io::Error::last_os_error());
         }
-        let mut external = vec![
-            0u8;
-            usize::try_from(size).map_err(|_| io::Error::other(
-                "macOS ACL exceeds platform limits"
-            ))?
-        ];
+        let mut external = vec![0u8; usize::try_from(size).map_err(|_| io::Error::other("macOS ACL exceeds platform limits"))?];
         // SAFETY: the destination contains exactly `size` writable bytes.
         let copied = unsafe { acl_copy_ext(external.as_mut_ptr().cast(), acl, size) };
         if copied < 0 {
             return Err(io::Error::last_os_error());
         }
-        external.truncate(
-            usize::try_from(copied)
-                .map_err(|_| io::Error::other("macOS ACL exceeds platform limits"))?,
-        );
+        external.truncate(usize::try_from(copied).map_err(|_| io::Error::other("macOS ACL exceeds platform limits"))?);
         Ok(Some(external))
     })();
     // SAFETY: `acl` was returned by acl_get_fd_np and is not used afterward.

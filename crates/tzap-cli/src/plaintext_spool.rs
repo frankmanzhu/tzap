@@ -48,8 +48,7 @@ impl PlaintextSpool {
     }
 
     pub(crate) fn reopen(&self) -> Result<File> {
-        File::open(&self.path)
-            .with_context(|| format!("failed to reopen plaintext spool {}", self.path.display()))
+        File::open(&self.path).with_context(|| format!("failed to reopen plaintext spool {}", self.path.display()))
     }
 }
 
@@ -63,11 +62,7 @@ impl Drop for PlaintextSpool {
     }
 }
 
-pub(crate) fn spool_unknown_size_raw_stdin<R: Read>(
-    reader: R,
-    max_plaintext_bytes: u64,
-    explicit: ExplicitPlaintextSpool,
-) -> Result<PlaintextSpool> {
+pub(crate) fn spool_unknown_size_raw_stdin<R: Read>(reader: R, max_plaintext_bytes: u64, explicit: ExplicitPlaintextSpool) -> Result<PlaintextSpool> {
     spool_unknown_size_raw_stdin_in(reader, env::temp_dir(), max_plaintext_bytes, explicit)
 }
 
@@ -86,18 +81,13 @@ pub(crate) fn spool_unknown_size_raw_stdin_in<R: Read>(
     let mut buffer = [0u8; COPY_BUFFER_LEN];
 
     loop {
-        let read = reader
-            .read(&mut buffer)
-            .context("failed to read raw stdin for plaintext spool")?;
+        let read = reader.read(&mut buffer).context("failed to read raw stdin for plaintext spool")?;
         if read == 0 {
             break;
         }
         let read = read as u64;
         if read > max_plaintext_bytes.saturating_sub(spool.size) {
-            bail!(
-                "plaintext spool cap exceeded: raw stdin is larger than {} bytes",
-                max_plaintext_bytes
-            );
+            bail!("plaintext spool cap exceeded: raw stdin is larger than {} bytes", max_plaintext_bytes);
         }
         spool
             .file
@@ -131,16 +121,11 @@ fn create_restrictive_temp_file(temp_dir: &Path) -> Result<(PathBuf, File)> {
             Ok(file) => return Ok((candidate, file)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(err) => {
-                return Err(err).with_context(|| {
-                    format!("failed to create plaintext spool {}", candidate.display())
-                });
+                return Err(err).with_context(|| format!("failed to create plaintext spool {}", candidate.display()));
             }
         }
     }
-    bail!(
-        "failed to reserve a unique plaintext spool path in {}",
-        temp_dir.display()
-    )
+    bail!("failed to reserve a unique plaintext spool path in {}", temp_dir.display())
 }
 
 fn open_restrictive_new_file(path: &Path) -> io::Result<File> {
@@ -171,13 +156,7 @@ mod tests {
     #[test]
     fn spools_plaintext_to_known_size_source_and_removes_on_drop() {
         let tempdir = tempdir().unwrap();
-        let spool = spool_unknown_size_raw_stdin_in(
-            Cursor::new(b"raw stdin bytes".to_vec()),
-            tempdir.path(),
-            1024,
-            explicit(),
-        )
-        .unwrap();
+        let spool = spool_unknown_size_raw_stdin_in(Cursor::new(b"raw stdin bytes".to_vec()), tempdir.path(), 1024, explicit()).unwrap();
         let source = spool.known_size_source();
         let spool_path = spool.path().to_path_buf();
 
@@ -196,13 +175,7 @@ mod tests {
     #[test]
     fn cap_excess_returns_error_and_removes_partial_spool() {
         let tempdir = tempdir().unwrap();
-        let err = spool_unknown_size_raw_stdin_in(
-            Cursor::new(vec![0x5a; 10]),
-            tempdir.path(),
-            9,
-            explicit(),
-        )
-        .unwrap_err();
+        let err = spool_unknown_size_raw_stdin_in(Cursor::new(vec![0x5a; 10]), tempdir.path(), 9, explicit()).unwrap_err();
 
         assert!(err.to_string().contains("plaintext spool cap exceeded"));
         assert_eq!(fs::read_dir(tempdir.path()).unwrap().count(), 0);
@@ -211,15 +184,11 @@ mod tests {
     #[test]
     fn zero_byte_cap_allows_empty_raw_stdin_only() {
         let tempdir = tempdir().unwrap();
-        let empty =
-            spool_unknown_size_raw_stdin_in(Cursor::new(Vec::new()), tempdir.path(), 0, explicit())
-                .unwrap();
+        let empty = spool_unknown_size_raw_stdin_in(Cursor::new(Vec::new()), tempdir.path(), 0, explicit()).unwrap();
         assert_eq!(empty.known_size_source().size(), 0);
         drop(empty);
 
-        let err =
-            spool_unknown_size_raw_stdin_in(Cursor::new(vec![1]), tempdir.path(), 0, explicit())
-                .unwrap_err();
+        let err = spool_unknown_size_raw_stdin_in(Cursor::new(vec![1]), tempdir.path(), 0, explicit()).unwrap_err();
         assert!(err.to_string().contains("plaintext spool cap exceeded"));
         assert_eq!(fs::read_dir(tempdir.path()).unwrap().count(), 0);
     }
@@ -230,13 +199,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let tempdir = tempdir().unwrap();
-        let spool = spool_unknown_size_raw_stdin_in(
-            Cursor::new(vec![1, 2, 3]),
-            tempdir.path(),
-            3,
-            explicit(),
-        )
-        .unwrap();
+        let spool = spool_unknown_size_raw_stdin_in(Cursor::new(vec![1, 2, 3]), tempdir.path(), 3, explicit()).unwrap();
         let mode = fs::metadata(spool.path()).unwrap().permissions().mode() & 0o777;
 
         assert_eq!(mode, 0o600);

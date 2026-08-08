@@ -16,10 +16,7 @@ struct Gf16Tables {
 
 static GF16_TABLES: OnceLock<Gf16Tables> = OnceLock::new();
 
-pub fn encode_parity_gf16(
-    data_shards: &[Vec<u8>],
-    parity_shard_count: usize,
-) -> Result<Vec<Vec<u8>>, FormatError> {
+pub fn encode_parity_gf16(data_shards: &[Vec<u8>], parity_shard_count: usize) -> Result<Vec<Vec<u8>>, FormatError> {
     let data_shard_count = data_shards.len();
     validate_fec_shape(data_shard_count, parity_shard_count, data_shards)?;
     if parity_shard_count == 0 {
@@ -46,11 +43,7 @@ pub fn encode_parity_gf16(
     Ok(parity)
 }
 
-pub fn repair_data_gf16(
-    data_shards: &[Option<Vec<u8>>],
-    parity_shards: &[Option<Vec<u8>>],
-    shard_size: usize,
-) -> Result<Vec<Vec<u8>>, FormatError> {
+pub fn repair_data_gf16(data_shards: &[Option<Vec<u8>>], parity_shards: &[Option<Vec<u8>>], shard_size: usize) -> Result<Vec<Vec<u8>>, FormatError> {
     let data_shard_count = data_shards.len();
     let parity_shard_count = parity_shards.len();
     validate_fec_counts(data_shard_count, parity_shard_count)?;
@@ -114,10 +107,7 @@ pub fn repair_data_gf16(
         for k in 0..symbol_count {
             let mut value = 0u16;
             for source_row in 0..data_shard_count {
-                value ^= gf16_mul(
-                    inverse[output_row][source_row],
-                    read_symbol(&available[source_row], k),
-                );
+                value ^= gf16_mul(inverse[output_row][source_row], read_symbol(&available[source_row], k));
             }
             repaired[output_row][2 * k..2 * k + 2].copy_from_slice(&value.to_le_bytes());
         }
@@ -192,11 +182,7 @@ pub fn gf16_inverse(value: u16) -> Result<u16, FormatError> {
     Ok(gf16_pow(value, 65_534))
 }
 
-fn validate_fec_shape(
-    data_shard_count: usize,
-    parity_shard_count: usize,
-    data_shards: &[Vec<u8>],
-) -> Result<(), FormatError> {
+fn validate_fec_shape(data_shard_count: usize, parity_shard_count: usize, data_shards: &[Vec<u8>]) -> Result<(), FormatError> {
     validate_fec_counts(data_shard_count, parity_shard_count)?;
     let shard_size = data_shards[0].len();
     if shard_size % 2 != 0 {
@@ -208,10 +194,7 @@ fn validate_fec_shape(
     Ok(())
 }
 
-fn validate_fec_counts(
-    data_shard_count: usize,
-    parity_shard_count: usize,
-) -> Result<(), FormatError> {
+fn validate_fec_counts(data_shard_count: usize, parity_shard_count: usize) -> Result<(), FormatError> {
     if data_shard_count == 0 {
         return Err(FormatError::FecZeroDataShards);
     }
@@ -238,9 +221,7 @@ fn cauchy_coefficient(data_shard_count: usize, parity_row: usize, data_col: usiz
 }
 
 fn cauchy_row(data_shard_count: usize, parity_row: usize) -> Vec<u16> {
-    (0..data_shard_count)
-        .map(|i| cauchy_coefficient(data_shard_count, parity_row, i))
-        .collect()
+    (0..data_shard_count).map(|i| cauchy_coefficient(data_shard_count, parity_row, i)).collect()
 }
 
 fn identity_row(width: usize, one_at: usize) -> Vec<u16> {
@@ -259,9 +240,7 @@ fn invert_matrix(mut matrix: Vec<Vec<u16>>) -> Result<Vec<Vec<u16>>, FormatError
     }
 
     for col in 0..n {
-        let pivot = (col..n)
-            .find(|row| matrix[*row][col] != 0)
-            .ok_or(FormatError::FecSingularMatrix)?;
+        let pivot = (col..n).find(|row| matrix[*row][col] != 0).ok_or(FormatError::FecSingularMatrix)?;
         if pivot != col {
             matrix.swap(pivot, col);
         }
@@ -286,10 +265,7 @@ fn invert_matrix(mut matrix: Vec<Vec<u16>>) -> Result<Vec<Vec<u16>>, FormatError
         }
     }
 
-    Ok(matrix
-        .into_iter()
-        .map(|row| row[n..2 * n].to_vec())
-        .collect())
+    Ok(matrix.into_iter().map(|row| row[n..2 * n].to_vec()).collect())
 }
 
 fn read_symbol(shard: &[u8], symbol_index: usize) -> u16 {
@@ -323,30 +299,19 @@ mod tests {
     fn encodes_hardcoded_cauchy_parity_vector() {
         let data = vec![vec![0x01, 0x00, 0x02, 0x00], vec![0x03, 0x00, 0x04, 0x00]];
         let parity = encode_parity_gf16(&data, 2).unwrap();
-        assert_eq!(
-            parity,
-            vec![vec![0x04, 0x88, 0x04, 0xf0], vec![0x02, 0x78, 0x05, 0xf0]]
-        );
+        assert_eq!(parity, vec![vec![0x04, 0x88, 0x04, 0xf0], vec![0x02, 0x78, 0x05, 0xf0]]);
     }
 
     #[test]
     fn encodes_little_endian_symbols() {
-        let data = vec![
-            vec![0x34, 0x12, 0xcd, 0xab],
-            vec![0x78, 0x56, 0x01, 0x00],
-            vec![0xff, 0x00, 0x20, 0x00],
-        ];
+        let data = vec![vec![0x34, 0x12, 0xcd, 0xab], vec![0x78, 0x56, 0x01, 0x00], vec![0xff, 0x00, 0x20, 0x00]];
         let parity = encode_parity_gf16(&data, 1).unwrap();
         assert_eq!(parity, vec![vec![0xd6, 0xd5, 0x9e, 0xee]]);
     }
 
     #[test]
     fn repairs_missing_data_from_data_and_parity_rows() {
-        let data = vec![
-            vec![0x01, 0x00, 0x02, 0x00],
-            vec![0x03, 0x00, 0x04, 0x00],
-            vec![0x05, 0x00, 0x06, 0x00],
-        ];
+        let data = vec![vec![0x01, 0x00, 0x02, 0x00], vec![0x03, 0x00, 0x04, 0x00], vec![0x05, 0x00, 0x06, 0x00]];
         let parity = encode_parity_gf16(&data, 2).unwrap();
         let repaired = repair_data_gf16(
             &[Some(data[0].clone()), None, Some(data[2].clone())],
@@ -375,19 +340,13 @@ mod tests {
         );
 
         // At the cap the same shape with no erasures still validates (no inversion).
-        let full = (0..READER_MAX_REPAIR_TOTAL_SHARDS as usize)
-            .map(|_| Some(vec![0u8; 2]))
-            .collect::<Vec<_>>();
+        let full = (0..READER_MAX_REPAIR_TOTAL_SHARDS as usize).map(|_| Some(vec![0u8; 2])).collect::<Vec<_>>();
         assert!(repair_data_gf16(&full, &[], 2).is_ok());
     }
 
     #[test]
     fn repairs_when_only_parity_and_one_data_row_remain() {
-        let data = vec![
-            vec![0x10, 0x00, 0x20, 0x00],
-            vec![0x30, 0x00, 0x40, 0x00],
-            vec![0x50, 0x00, 0x60, 0x00],
-        ];
+        let data = vec![vec![0x10, 0x00, 0x20, 0x00], vec![0x30, 0x00, 0x40, 0x00], vec![0x50, 0x00, 0x60, 0x00]];
         let parity = encode_parity_gf16(&data, 3).unwrap();
         let repaired = repair_data_gf16(
             &[None, Some(data[1].clone()), None],
@@ -400,18 +359,9 @@ mod tests {
 
     #[test]
     fn rejects_invalid_shapes_before_repair() {
-        assert_eq!(
-            encode_parity_gf16(&[], 1).unwrap_err(),
-            FormatError::FecZeroDataShards
-        );
-        assert_eq!(
-            encode_parity_gf16(&[vec![0; 3]], 1).unwrap_err(),
-            FormatError::FecOddShardSize
-        );
-        assert_eq!(
-            encode_parity_gf16(&[vec![0; 4]], 65_535).unwrap_err(),
-            FormatError::FecTooManyShards(65_536)
-        );
+        assert_eq!(encode_parity_gf16(&[], 1).unwrap_err(), FormatError::FecZeroDataShards);
+        assert_eq!(encode_parity_gf16(&[vec![0; 3]], 1).unwrap_err(), FormatError::FecOddShardSize);
+        assert_eq!(encode_parity_gf16(&[vec![0; 4]], 65_535).unwrap_err(), FormatError::FecTooManyShards(65_536));
         assert_eq!(
             repair_data_gf16(&[None, None], &[Some(vec![0; 4])], 4).unwrap_err(),
             FormatError::FecTooFewAvailableShards

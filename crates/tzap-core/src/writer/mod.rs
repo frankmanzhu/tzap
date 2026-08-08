@@ -12,13 +12,10 @@ use crate::compression::compress_zstd_frame_with_jobs;
 use crate::crypto::{KdfParams, MasterKey, Subkeys};
 use crate::entry_metadata::{ArchiveTimestamp, RestoreClass, SparseExtent};
 use crate::format::{
-    AeadAlgo, ArchiveWriteError, BlockKind, FormatError, FORMAT_VERSION,
-    READER_MAX_INDEX_ROOT_FEC_CLASS_SHARDS, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
+    AeadAlgo, ArchiveWriteError, BlockKind, FormatError, FORMAT_VERSION, READER_MAX_INDEX_ROOT_FEC_CLASS_SHARDS, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN,
 };
 use crate::metadata::{normalize_lookup_file_path, DirectoryHintShardEntry, ShardEntry};
-use crate::wire::{
-    compute_key_wrap_table_digest, BlockRecord, KeyWrapTableV1, RecipientRecordV1, VolumeHeader,
-};
+use crate::wire::{compute_key_wrap_table_digest, BlockRecord, KeyWrapTableV1, RecipientRecordV1, VolumeHeader};
 
 pub mod envelope;
 pub mod parallel;
@@ -81,15 +78,10 @@ impl KeyWrapRecordSource {
 }
 
 pub(crate) fn default_jobs() -> usize {
-    std::thread::available_parallelism()
-        .map(|jobs| jobs.get())
-        .unwrap_or(1)
+    std::thread::available_parallelism().map(|jobs| jobs.get()).unwrap_or(1)
 }
 
-pub(crate) fn volume_format_revision_for_options(
-    _options: &WriterOptions,
-    _kdf_params: &KdfParams,
-) -> u16 {
+pub(crate) fn volume_format_revision_for_options(_options: &WriterOptions, _kdf_params: &KdfParams) -> u16 {
     // Writer is intentionally canonicalized to v45-only output.
     VOLUME_FORMAT_REV_45
 }
@@ -108,24 +100,16 @@ pub(crate) fn resolve_key_wrap_artifacts(
             ..
         } => {
             if *key_wrap_table_version != 1 {
-                return Err(FormatError::InvalidKdfParams(
-                    "recipient-wrap table version must be 1",
-                ));
+                return Err(FormatError::InvalidKdfParams("recipient-wrap table version must be 1"));
             }
             let Some(records) = key_wrap_records
-                .ok_or(FormatError::WriterUnsupported(
-                    "RecipientWrap requires key-wrap records",
-                ))?
+                .ok_or(FormatError::WriterUnsupported("RecipientWrap requires key-wrap records"))?
                 .resolve()?
             else {
-                return Err(FormatError::WriterUnsupported(
-                    "RecipientWrap requires key-wrap records",
-                ));
+                return Err(FormatError::WriterUnsupported("RecipientWrap requires key-wrap records"));
             };
             if records.is_empty() {
-                return Err(FormatError::WriterUnsupported(
-                    "RecipientWrap requires at least one recipient record",
-                ));
+                return Err(FormatError::WriterUnsupported("RecipientWrap requires at least one recipient record"));
             }
             let mut recipient_records = Vec::with_capacity(records.len());
             for record in records {
@@ -134,16 +118,9 @@ pub(crate) fn resolve_key_wrap_artifacts(
                 prepared = prepared.with_record_length(record_length);
                 recipient_records.push(prepared);
             }
-            let declared_record_count = u32_len(
-                recipient_records.len(),
-                "KeyWrapTableV1 recipient_record_count",
-            )?;
-            if *key_wrap_table_record_count != 0
-                && *key_wrap_table_record_count != declared_record_count
-            {
-                return Err(FormatError::InvalidKdfParams(
-                    "recipient-wrap key_wrap_table_record_count mismatch",
-                ));
+            let declared_record_count = u32_len(recipient_records.len(), "KeyWrapTableV1 recipient_record_count")?;
+            if *key_wrap_table_record_count != 0 && *key_wrap_table_record_count != declared_record_count {
+                return Err(FormatError::InvalidKdfParams("recipient-wrap key_wrap_table_record_count mismatch"));
             }
 
             let key_wrap_table = KeyWrapTableV1 {
@@ -159,17 +136,11 @@ pub(crate) fn resolve_key_wrap_artifacts(
                 recipient_records,
             }
             .to_bytes()?;
-            let computed_key_wrap_table_length =
-                u32_len(key_wrap_table.len(), "KeyWrapTableV1 table_length")?;
-            if *key_wrap_table_length != 0
-                && computed_key_wrap_table_length != *key_wrap_table_length
-            {
-                return Err(FormatError::InvalidKdfParams(
-                    "recipient-wrap key_wrap_table_length mismatch",
-                ));
+            let computed_key_wrap_table_length = u32_len(key_wrap_table.len(), "KeyWrapTableV1 table_length")?;
+            if *key_wrap_table_length != 0 && computed_key_wrap_table_length != *key_wrap_table_length {
+                return Err(FormatError::InvalidKdfParams("recipient-wrap key_wrap_table_length mismatch"));
             }
-            let key_wrap_table_digest =
-                compute_key_wrap_table_digest(computed_key_wrap_table_length, &key_wrap_table);
+            let key_wrap_table_digest = compute_key_wrap_table_digest(computed_key_wrap_table_length, &key_wrap_table);
             Ok((
                 KdfParams::RecipientWrap {
                     key_wrap_table_length: computed_key_wrap_table_length,
@@ -184,15 +155,10 @@ pub(crate) fn resolve_key_wrap_artifacts(
     }
 }
 
-pub(crate) fn recipient_wrap_kdf_params_for_record_count(
-    record_count: usize,
-) -> Result<KdfParams, FormatError> {
+pub(crate) fn recipient_wrap_kdf_params_for_record_count(record_count: usize) -> Result<KdfParams, FormatError> {
     Ok(KdfParams::RecipientWrap {
         key_wrap_table_length: 0,
-        key_wrap_table_record_count: u32_len(
-            record_count,
-            "KeyWrapTableV1 recipient_record_count",
-        )?,
+        key_wrap_table_record_count: u32_len(record_count, "KeyWrapTableV1 recipient_record_count")?,
         key_wrap_table_version: 1,
         key_wrap_table_digest: [0u8; 32],
     })
@@ -206,14 +172,10 @@ pub(crate) fn stabilized_key_wrap_record_source(
         return Ok(None);
     }
     let Some(records) = key_wrap_records
-        .ok_or(FormatError::WriterUnsupported(
-            "RecipientWrap requires key-wrap records",
-        ))?
+        .ok_or(FormatError::WriterUnsupported("RecipientWrap requires key-wrap records"))?
         .resolve()?
     else {
-        return Err(FormatError::WriterUnsupported(
-            "RecipientWrap requires key-wrap records",
-        ));
+        return Err(FormatError::WriterUnsupported("RecipientWrap requires key-wrap records"));
     };
     Ok(Some(KeyWrapRecordSource::fixed(records)))
 }
@@ -289,8 +251,7 @@ pub struct RootAuthSigningRequest {
     pub archive_root: [u8; 32],
 }
 
-pub type RootAuthAuthenticator<'a> =
-    dyn FnMut(&RootAuthSigningRequest) -> Result<Vec<u8>, FormatError> + 'a;
+pub type RootAuthAuthenticator<'a> = dyn FnMut(&RootAuthSigningRequest) -> Result<Vec<u8>, FormatError> + 'a;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PortableModeOrigin {
@@ -344,12 +305,7 @@ pub(crate) struct StreamedAuxiliaryPayload {
 }
 
 impl NativeAuxiliaryMetadata {
-    pub fn new(
-        kind: impl Into<String>,
-        profile: impl Into<String>,
-        restore_class: RestoreClass,
-        payload: Vec<u8>,
-    ) -> Self {
+    pub fn new(kind: impl Into<String>, profile: impl Into<String>, restore_class: RestoreClass, payload: Vec<u8>) -> Self {
         let logical_size = payload.len() as u64;
         Self {
             kind: kind.into(),
@@ -368,13 +324,7 @@ impl NativeAuxiliaryMetadata {
 
     /// Declares a re-openable auxiliary payload supplied by
     /// [`RegularFileSource::open_auxiliary`].
-    pub fn new_streamed(
-        kind: impl Into<String>,
-        profile: impl Into<String>,
-        restore_class: RestoreClass,
-        stored_size: u64,
-        sha256: [u8; 32],
-    ) -> Self {
+    pub fn new_streamed(kind: impl Into<String>, profile: impl Into<String>, restore_class: RestoreClass, stored_size: u64, sha256: [u8; 32]) -> Self {
         Self {
             kind: kind.into(),
             profile: profile.into(),
@@ -429,22 +379,17 @@ impl NativeAuxiliaryMetadata {
     }
 
     pub fn streamed_sparse_extents(&self) -> Option<&[SparseExtent]> {
-        self.streamed_payload
-            .as_ref()
-            .and_then(|payload| payload.sparse_extents.as_deref())
+        self.streamed_payload.as_ref().and_then(|payload| payload.sparse_extents.as_deref())
     }
 
     pub fn stored_payload_size(&self) -> u64 {
-        self.streamed_payload
-            .as_ref()
-            .map_or(self.payload.len() as u64, |payload| payload.stored_size)
+        self.streamed_payload.as_ref().map_or(self.payload.len() as u64, |payload| payload.stored_size)
     }
 
     pub fn sha256(&self) -> [u8; 32] {
-        self.streamed_payload.as_ref().map_or_else(
-            || Sha256::digest(&self.payload).into(),
-            |payload| payload.sha256,
-        )
+        self.streamed_payload
+            .as_ref()
+            .map_or_else(|| Sha256::digest(&self.payload).into(), |payload| payload.sha256)
     }
 }
 
@@ -565,19 +510,13 @@ pub trait RegularFileSource {
     /// return a fresh reader on every call.
     fn open_auxiliary(&self, ordinal: usize) -> Result<Box<dyn Read + '_>, ArchiveWriteError> {
         let metadata = self.portable_metadata();
-        let record =
-            metadata
-                .native
-                .auxiliary_records
-                .get(ordinal)
-                .ok_or(FormatError::WriterInvariant(
-                    "auxiliary source ordinal is missing",
-                ))?;
+        let record = metadata
+            .native
+            .auxiliary_records
+            .get(ordinal)
+            .ok_or(FormatError::WriterInvariant("auxiliary source ordinal is missing"))?;
         if record.is_streamed() {
-            return Err(FormatError::WriterUnsupported(
-                "streamed auxiliary source did not implement open_auxiliary",
-            )
-            .into());
+            return Err(FormatError::WriterUnsupported("streamed auxiliary source did not implement open_auxiliary").into());
         }
         Ok(Box::new(Cursor::new(record.payload.clone())))
     }
@@ -664,10 +603,7 @@ impl<'a> SourceProgressState<'a> {
             return;
         }
         if let Some(phase) = self.active_phase {
-            let phase_reported = self
-                .phase_reported_by_path
-                .entry(archive_path.to_owned())
-                .or_default();
+            let phase_reported = self.phase_reported_by_path.entry(archive_path.to_owned()).or_default();
             let capped_next = phase_reported.saturating_add(bytes).min(file_data_size);
             let delta = capped_next.saturating_sub(*phase_reported);
             if delta > 0 {
@@ -746,9 +682,7 @@ pub(crate) struct SourceProgressReader<'a> {
 impl Read for SourceProgressReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes = self.inner.read(buf)?;
-        self.state
-            .borrow_mut()
-            .record(&self.archive_path, bytes as u64, self.source_bytes);
+        self.state.borrow_mut().record(&self.archive_path, bytes as u64, self.source_bytes);
         Ok(bytes)
     }
 }
@@ -758,10 +692,7 @@ pub(crate) type SourceProgressHandle<'a> = Rc<RefCell<SourceProgressState<'a>>>;
 pub(crate) fn progress_sources<'a, S: RegularFileSource>(
     files: &'a [S],
     sink: &'a mut dyn ArchiveWriteProgressSink,
-) -> (
-    Vec<ProgressRegularFileSource<'a, S>>,
-    SourceProgressHandle<'a>,
-) {
+) -> (Vec<ProgressRegularFileSource<'a, S>>, SourceProgressHandle<'a>) {
     let state = Rc::new(RefCell::new(SourceProgressState::new(sink)));
     let sources = files
         .iter()
@@ -772,9 +703,7 @@ pub(crate) fn progress_sources<'a, S: RegularFileSource>(
                 .auxiliary_records
                 .iter()
                 .filter(|record| record.is_streamed())
-                .fold(inner.file_data_size(), |total, record| {
-                    total.saturating_add(record.stored_payload_size())
-                });
+                .fold(inner.file_data_size(), |total, record| total.saturating_add(record.stored_payload_size()));
             ProgressRegularFileSource {
                 inner,
                 source_bytes,
@@ -842,9 +771,7 @@ impl ArchiveWriteSink for MemoryArchiveSink {
         let volume = self
             .volumes
             .get_mut(volume_index)
-            .ok_or(FormatError::WriterInvariant(
-                "volume sink index is out of bounds",
-            ))?;
+            .ok_or(FormatError::WriterInvariant("volume sink index is out of bounds"))?;
         volume.extend_from_slice(bytes);
         Ok(())
     }
@@ -1068,30 +995,17 @@ pub(crate) struct PayloadFrameMetadataInput {
     pub member_group_size: u64,
 }
 
-pub(crate) fn payload_envelope_needs_flush(
-    envelope: &PayloadEnvelopeBuilder,
-    frame_len: usize,
-    options: WriterOptions,
-) -> Result<bool, FormatError> {
+pub(crate) fn payload_envelope_needs_flush(envelope: &PayloadEnvelopeBuilder, frame_len: usize, options: WriterOptions) -> Result<bool, FormatError> {
     let next_len = checked_usize_add(envelope.plaintext.len(), frame_len, "payload")?;
-    Ok(!envelope.plaintext.is_empty()
-        && (next_len > options.envelope_target_size as usize
-            || !payload_object_can_fit(next_len, options)?))
+    Ok(!envelope.plaintext.is_empty() && (next_len > options.envelope_target_size as usize || !payload_object_can_fit(next_len, options)?))
 }
 
-pub(crate) fn payload_frame_metadata(
-    input: PayloadFrameMetadataInput,
-) -> Result<PayloadFrame, FormatError> {
+pub(crate) fn payload_frame_metadata(input: PayloadFrameMetadataInput) -> Result<PayloadFrame, FormatError> {
     let mut flags = 0u32;
     if input.member_offset == 0 {
         flags |= 0x0000_0001;
     }
-    if checked_u64_add(
-        input.member_offset,
-        input.decompressed_size as u64,
-        "payload chunk",
-    )? == input.member_group_size
-    {
+    if checked_u64_add(input.member_offset, input.decompressed_size as u64, "payload chunk")? == input.member_group_size {
         flags |= 0x0000_0002;
     }
     Ok(PayloadFrame {
@@ -1102,11 +1016,7 @@ pub(crate) fn payload_frame_metadata(
         compressed_size: u32_len(input.compressed_size, "FrameEntry.compressed_size")?,
         decompressed_size: u32_len(input.decompressed_size, "FrameEntry.decompressed_size")?,
         flags,
-        tar_stream_offset: checked_u64_add(
-            input.member_start,
-            input.member_offset,
-            "PayloadFrame.tar_stream_offset",
-        )?,
+        tar_stream_offset: checked_u64_add(input.member_start, input.member_offset, "PayloadFrame.tar_stream_offset")?,
     })
 }
 
@@ -1149,39 +1059,14 @@ pub(crate) struct StreamingArchiveWriter<'a, O: ArchiveWriteSink> {
     emission_state: WriterEmissionState,
 }
 
-pub fn write_archive(
-    files: &[RegularFile<'_>],
-    master_key: &MasterKey,
-    options: WriterOptions,
-) -> Result<WrittenArchive, FormatError> {
-    write_archive_inner(
-        files,
-        master_key,
-        options,
-        None,
-        &KdfParams::Raw,
-        None,
-        None,
-        None,
-    )
+pub fn write_archive(files: &[RegularFile<'_>], master_key: &MasterKey, options: WriterOptions) -> Result<WrittenArchive, FormatError> {
+    write_archive_inner(files, master_key, options, None, &KdfParams::Raw, None, None, None)
 }
 
-pub fn write_archive_unencrypted(
-    files: &[RegularFile<'_>],
-    mut options: WriterOptions,
-) -> Result<WrittenArchive, FormatError> {
+pub fn write_archive_unencrypted(files: &[RegularFile<'_>], mut options: WriterOptions) -> Result<WrittenArchive, FormatError> {
     options.aead_algo = AeadAlgo::None;
     let placeholder = MasterKey::from_raw_key(&[0; 32])?;
-    write_archive_inner(
-        files,
-        &placeholder,
-        options,
-        None,
-        &KdfParams::None,
-        None,
-        None,
-        None,
-    )
+    write_archive_inner(files, &placeholder, options, None, &KdfParams::None, None, None, None)
 }
 
 pub fn write_archive_with_kdf(
@@ -1190,9 +1075,7 @@ pub fn write_archive_with_kdf(
     options: WriterOptions,
     kdf_params: &KdfParams,
 ) -> Result<WrittenArchive, FormatError> {
-    write_archive_inner(
-        files, master_key, options, None, kdf_params, None, None, None,
-    )
+    write_archive_inner(files, master_key, options, None, kdf_params, None, None, None)
 }
 
 pub fn write_archive_with_recipient_wrap_records(
@@ -1203,16 +1086,7 @@ pub fn write_archive_with_recipient_wrap_records(
 ) -> Result<WrittenArchive, FormatError> {
     let kdf_params = recipient_wrap_kdf_params_for_record_count(records.len())?;
     let key_wrap_records = KeyWrapRecordSource::fixed(records);
-    write_archive_inner(
-        files,
-        master_key,
-        options,
-        None,
-        &kdf_params,
-        None,
-        None,
-        Some(&key_wrap_records),
-    )
+    write_archive_inner(files, master_key, options, None, &kdf_params, None, None, Some(&key_wrap_records))
 }
 
 pub fn write_archive_with_root_auth_and_recipient_wrap_records<F>(
@@ -1250,21 +1124,8 @@ pub fn write_archive_with_root_auth<F>(
 where
     F: FnMut(&RootAuthSigningRequest) -> Result<Vec<u8>, FormatError>,
 {
-    let kdf_params = if options.aead_algo.is_encrypted() {
-        KdfParams::Raw
-    } else {
-        KdfParams::None
-    };
-    write_archive_inner(
-        files,
-        master_key,
-        options,
-        None,
-        &kdf_params,
-        Some(root_auth),
-        Some(&mut authenticator),
-        None,
-    )
+    let kdf_params = if options.aead_algo.is_encrypted() { KdfParams::Raw } else { KdfParams::None };
+    write_archive_inner(files, master_key, options, None, &kdf_params, Some(root_auth), Some(&mut authenticator), None)
 }
 
 pub fn write_archive_with_root_auth_and_kdf<F>(
@@ -1278,16 +1139,7 @@ pub fn write_archive_with_root_auth_and_kdf<F>(
 where
     F: FnMut(&RootAuthSigningRequest) -> Result<Vec<u8>, FormatError>,
 {
-    write_archive_inner(
-        files,
-        master_key,
-        options,
-        None,
-        kdf_params,
-        Some(root_auth),
-        Some(&mut authenticator),
-        None,
-    )
+    write_archive_inner(files, master_key, options, None, kdf_params, Some(root_auth), Some(&mut authenticator), None)
 }
 
 pub fn write_archive_with_dictionary_and_root_auth<F>(
@@ -1344,30 +1196,15 @@ pub fn write_archive_with_dictionary(
     dictionary: &[u8],
 ) -> Result<WrittenArchive, FormatError> {
     if dictionary.is_empty() {
-        return Err(FormatError::WriterUnsupported(
-            "dictionary archives require a non-empty dictionary",
-        ));
+        return Err(FormatError::WriterUnsupported("dictionary archives require a non-empty dictionary"));
     }
     if files.is_empty() {
-        return Err(FormatError::WriterUnsupported(
-            "dictionary archives require at least one file",
-        ));
+        return Err(FormatError::WriterUnsupported("dictionary archives require at least one file"));
     }
     if dictionary.len() > u32::MAX as usize {
-        return Err(FormatError::WriterUnsupported(
-            "dictionary decompressed size exceeds u32",
-        ));
+        return Err(FormatError::WriterUnsupported("dictionary decompressed size exceeds u32"));
     }
-    write_archive_inner(
-        files,
-        master_key,
-        options,
-        Some(dictionary),
-        &KdfParams::Raw,
-        None,
-        None,
-        None,
-    )
+    write_archive_inner(files, master_key, options, Some(dictionary), &KdfParams::Raw, None, None, None)
 }
 
 pub fn write_archive_with_dictionary_and_kdf(
@@ -1378,30 +1215,15 @@ pub fn write_archive_with_dictionary_and_kdf(
     kdf_params: &KdfParams,
 ) -> Result<WrittenArchive, FormatError> {
     if dictionary.is_empty() {
-        return Err(FormatError::WriterUnsupported(
-            "dictionary archives require a non-empty dictionary",
-        ));
+        return Err(FormatError::WriterUnsupported("dictionary archives require a non-empty dictionary"));
     }
     if files.is_empty() {
-        return Err(FormatError::WriterUnsupported(
-            "dictionary archives require at least one file",
-        ));
+        return Err(FormatError::WriterUnsupported("dictionary archives require at least one file"));
     }
     if dictionary.len() > u32::MAX as usize {
-        return Err(FormatError::WriterUnsupported(
-            "dictionary decompressed size exceeds u32",
-        ));
+        return Err(FormatError::WriterUnsupported("dictionary decompressed size exceeds u32"));
     }
-    write_archive_inner(
-        files,
-        master_key,
-        options,
-        Some(dictionary),
-        kdf_params,
-        None,
-        None,
-        None,
-    )
+    write_archive_inner(files, master_key, options, Some(dictionary), kdf_params, None, None, None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1419,18 +1241,7 @@ where
     S: RegularFileSource,
     O: ArchiveWriteSink,
 {
-    write_archive_stream_inner(
-        files,
-        master_key,
-        options,
-        dictionary,
-        kdf_params,
-        root_auth,
-        authenticator,
-        None,
-        sink,
-        None,
-    )
+    write_archive_stream_inner(files, master_key, options, dictionary, kdf_params, root_auth, authenticator, None, sink, None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1478,22 +1289,12 @@ where
     S: RegularFileSource,
     O: ArchiveWriteSink,
 {
-    write_single_pass_archive_to_sink(
-        master_key,
-        options,
-        kdf_params,
-        root_auth,
-        authenticator,
-        None,
-        sink,
-        None,
-        |writer| {
-            for file in files {
-                writer.write_regular_member_from_source(file)?;
-            }
-            Ok(())
-        },
-    )
+    write_single_pass_archive_to_sink(master_key, options, kdf_params, root_auth, authenticator, None, sink, None, |writer| {
+        for file in files {
+            writer.write_regular_member_from_source(file)?;
+        }
+        Ok(())
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1578,17 +1379,7 @@ where
     S: RegularFileSource,
     O: ArchiveWriteSink,
 {
-    write_ordered_parallel_archive_to_sink(
-        files,
-        master_key,
-        options,
-        kdf_params,
-        root_auth,
-        authenticator,
-        None,
-        sink,
-        None,
-    )
+    write_ordered_parallel_archive_to_sink(files, master_key, options, kdf_params, root_auth, authenticator, None, sink, None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1621,10 +1412,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn write_archive_sources_to_sink_ordered_parallel_with_recipient_wrap_records_and_progress<
-    S,
-    O,
->(
+pub fn write_archive_sources_to_sink_ordered_parallel_with_recipient_wrap_records_and_progress<S, O>(
     files: &[S],
     master_key: &MasterKey,
     options: WriterOptions,
@@ -1709,11 +1497,7 @@ pub(crate) fn write_archive_inner(
     )
     .map_err(format_error_from_archive_write_error)?;
     Ok(WrittenArchive {
-        bytes: sink
-            .volumes
-            .first()
-            .cloned()
-            .ok_or(FormatError::WriterInvariant("no volumes emitted"))?,
+        bytes: sink.volumes.first().cloned().ok_or(FormatError::WriterInvariant("no volumes emitted"))?,
         volumes: sink.volumes,
         bootstrap_sidecar: sink.bootstrap_sidecar,
         archive_uuid: summary.archive_uuid,
@@ -1725,18 +1509,11 @@ pub(crate) fn write_archive_inner(
 pub(crate) fn format_error_from_archive_write_error(error: ArchiveWriteError) -> FormatError {
     match error {
         ArchiveWriteError::Format(error) => error,
-        ArchiveWriteError::Io(_) => {
-            FormatError::WriterInvariant("in-memory archive writer returned I/O")
-        }
+        ArchiveWriteError::Io(_) => FormatError::WriterInvariant("in-memory archive writer returned I/O"),
     }
 }
 
-pub(crate) fn writer_subkeys(
-    master_key: &MasterKey,
-    aead_algo: AeadAlgo,
-    archive_uuid: &[u8; 16],
-    session_id: &[u8; 16],
-) -> Result<Subkeys, FormatError> {
+pub(crate) fn writer_subkeys(master_key: &MasterKey, aead_algo: AeadAlgo, archive_uuid: &[u8; 16], session_id: &[u8; 16]) -> Result<Subkeys, FormatError> {
     if aead_algo.is_encrypted() {
         Subkeys::derive(master_key, archive_uuid, session_id)
     } else {
@@ -1768,16 +1545,10 @@ where
     }
     let mut requested_options = options;
     if requested_options.target_volume_size.is_some() {
-        requested_options.stripe_width = requested_options
-            .stripe_width
-            .max(requested_options.volume_loss_tolerance as u32 + 1);
+        requested_options.stripe_width = requested_options.stripe_width.max(requested_options.volume_loss_tolerance as u32 + 1);
     }
-    let archive_uuid = requested_options
-        .archive_uuid
-        .unwrap_or_else(|| *Uuid::new_v4().as_bytes());
-    let session_id = requested_options
-        .session_id
-        .unwrap_or_else(|| *Uuid::new_v4().as_bytes());
+    let archive_uuid = requested_options.archive_uuid.unwrap_or_else(|| *Uuid::new_v4().as_bytes());
+    let session_id = requested_options.session_id.unwrap_or_else(|| *Uuid::new_v4().as_bytes());
     let mut accumulated_timings = WriterTimings::default();
 
     loop {
@@ -1805,59 +1576,35 @@ where
             }
         }
         start_write_phase(progress, ArchiveWritePhase::EmittingPayload);
-        let mut summary = emit_writer_plan(
-            files,
-            master_key,
-            dictionary,
-            root_auth,
-            authenticator.take(),
-            plan,
-            sink,
-            progress,
-        )?;
+        let mut summary = emit_writer_plan(files, master_key, dictionary, root_auth, authenticator.take(), plan, sink, progress)?;
         summary.timings.add_assign(accumulated_timings);
         summary.timings.total = total_started.elapsed();
         return Ok(summary);
     }
 }
 
-pub(crate) fn validate_dictionary_inputs(
-    files_are_empty: bool,
-    dictionary: Option<&[u8]>,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_dictionary_inputs(files_are_empty: bool, dictionary: Option<&[u8]>) -> Result<(), FormatError> {
     if let Some(dictionary) = dictionary {
         if dictionary.is_empty() {
-            return Err(FormatError::WriterUnsupported(
-                "dictionary archives require a non-empty dictionary",
-            ));
+            return Err(FormatError::WriterUnsupported("dictionary archives require a non-empty dictionary"));
         }
         if files_are_empty {
-            return Err(FormatError::WriterUnsupported(
-                "dictionary archives require at least one file",
-            ));
+            return Err(FormatError::WriterUnsupported("dictionary archives require at least one file"));
         }
         if dictionary.len() > u32::MAX as usize {
-            return Err(FormatError::WriterUnsupported(
-                "dictionary decompressed size exceeds u32",
-            ));
+            return Err(FormatError::WriterUnsupported("dictionary decompressed size exceeds u32"));
         }
     }
     Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn validate_single_pass_writer_options(
-    options: WriterOptions,
-) -> Result<(), FormatError> {
+pub(crate) fn validate_single_pass_writer_options(options: WriterOptions) -> Result<(), FormatError> {
     if options.volume_loss_tolerance != 0 {
-        return Err(FormatError::WriterUnsupported(
-            "streaming create cannot tolerate volume loss",
-        ));
+        return Err(FormatError::WriterUnsupported("streaming create cannot tolerate volume loss"));
     }
     if options.target_volume_size.is_some() {
-        return Err(FormatError::WriterUnsupported(
-            "streaming create does not support target volume sizing",
-        ));
+        return Err(FormatError::WriterUnsupported("streaming create does not support target volume sizing"));
     }
     Ok(())
 }
@@ -1873,8 +1620,7 @@ pub(crate) fn begin_writer_emission_state<O: ArchiveWriteSink>(
     volume_format_rev: u16,
     collect_data_leaf_hashes: bool,
 ) -> Result<WriterEmissionState, ArchiveWriteError> {
-    let volume_count = usize::try_from(options.stripe_width)
-        .map_err(|_| FormatError::WriterUnsupported("stripe_width"))?;
+    let volume_count = usize::try_from(options.stripe_width).map_err(|_| FormatError::WriterUnsupported("stripe_width"))?;
     sink.begin_archive(volume_count)?;
 
     let mut state = WriterEmissionState {
@@ -1887,8 +1633,7 @@ pub(crate) fn begin_writer_emission_state<O: ArchiveWriteSink>(
     };
 
     for volume_index in 0..volume_count {
-        let volume_index_u32 = u32::try_from(volume_index)
-            .map_err(|_| FormatError::WriterUnsupported("volume_index"))?;
+        let volume_index_u32 = u32::try_from(volume_index).map_err(|_| FormatError::WriterUnsupported("volume_index"))?;
         let volume_header = VolumeHeader {
             format_version: FORMAT_VERSION,
             volume_format_rev,
@@ -1903,15 +1648,10 @@ pub(crate) fn begin_writer_emission_state<O: ArchiveWriteSink>(
         let volume_header_bytes = volume_header.to_bytes();
         sink.write_volume(volume_index, &volume_header_bytes)?;
         sink.write_volume(volume_index, crypto_header)?;
-        let mut bytes_written = checked_u64_add(
-            VOLUME_HEADER_LEN as u64,
-            crypto_header.len() as u64,
-            "volume header",
-        )?;
+        let mut bytes_written = checked_u64_add(VOLUME_HEADER_LEN as u64, crypto_header.len() as u64, "volume header")?;
         if let Some(key_wrap_table) = key_wrap_table {
             sink.write_volume(volume_index, key_wrap_table)?;
-            bytes_written =
-                checked_u64_add(bytes_written, key_wrap_table.len() as u64, "KeyWrapTableV1")?;
+            bytes_written = checked_u64_add(bytes_written, key_wrap_table.len() as u64, "KeyWrapTableV1")?;
         }
         state.bytes_written[volume_index] = bytes_written;
         state.volume_headers.push(volume_header_bytes);
@@ -1920,17 +1660,13 @@ pub(crate) fn begin_writer_emission_state<O: ArchiveWriteSink>(
     Ok(state)
 }
 
-pub(crate) fn plan_single_pass_writer_options(
-    options: WriterOptions,
-) -> Result<WriterOptions, FormatError> {
+pub(crate) fn plan_single_pass_writer_options(options: WriterOptions) -> Result<WriterOptions, FormatError> {
     let mut options = plan_writer_options(options)?;
     options.index_root_fec_data_shards = max_single_pass_index_root_data_shards(options)?;
     plan_writer_options(options)
 }
 
-pub(crate) fn max_single_pass_index_root_data_shards(
-    options: WriterOptions,
-) -> Result<u16, FormatError> {
+pub(crate) fn max_single_pass_index_root_data_shards(options: WriterOptions) -> Result<u16, FormatError> {
     let block_size_limit = (u32::MAX as u64 / options.block_size as u64).min(u16::MAX as u64);
     let mut low = MIN_INDEX_ROOT_FEC_DATA_SHARDS as u64;
     let mut high = block_size_limit;
@@ -1938,9 +1674,7 @@ pub(crate) fn max_single_pass_index_root_data_shards(
     while low <= high {
         let mid = low + (high - low) / 2;
         match compute_parity(mid, options) {
-            Ok(parity)
-                if mid + u64::from(parity) <= READER_MAX_INDEX_ROOT_FEC_CLASS_SHARDS as u64 =>
-            {
+            Ok(parity) if mid + u64::from(parity) <= READER_MAX_INDEX_ROOT_FEC_CLASS_SHARDS as u64 => {
                 best = mid;
                 low = mid + 1;
             }
@@ -1956,15 +1690,9 @@ pub(crate) fn max_single_pass_index_root_data_shards(
 }
 
 impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
-    pub fn write_regular_member_from_source<S: RegularFileSource + ?Sized>(
-        &mut self,
-        source: &S,
-    ) -> Result<(), ArchiveWriteError> {
+    pub fn write_regular_member_from_source<S: RegularFileSource + ?Sized>(&mut self, source: &S) -> Result<(), ArchiveWriteError> {
         let member = StreamingRegularMember {
-            archive_path: normalize_lookup_file_path(
-                source.archive_path(),
-                self.options.max_path_length,
-            )?,
+            archive_path: normalize_lookup_file_path(source.archive_path(), self.options.max_path_length)?,
             entry_kind: source.entry_kind(),
             link_target: source.link_target().map(<[u8]>::to_vec),
             file_data_size: source.file_data_size(),
@@ -1974,10 +1702,7 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
             portable_metadata: source.portable_metadata(),
         };
         if member.entry_kind != SourceEntryKind::Regular && member.file_data_size != 0 {
-            return Err(FormatError::WriterInvariant(
-                "non-regular source has non-zero file data size",
-            )
-            .into());
+            return Err(FormatError::WriterInvariant("non-regular source has non-zero file data size").into());
         }
         let source_payload_size = member
             .sparse_extents
@@ -1996,12 +1721,7 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
             &member.portable_metadata,
         )?;
         let member_group_size = primary_member_layout_size(&layout, source_payload_size)?;
-        let mut reader = StreamingMemberReader::from_source(
-            source,
-            &member.portable_metadata,
-            layout,
-            source_payload_size,
-        )?;
+        let mut reader = StreamingMemberReader::from_source(source, &member.portable_metadata, layout, source_payload_size)?;
         self.write_prebuilt_member(member, &mut reader, member_group_size)
     }
 
@@ -2030,25 +1750,16 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
             let remaining = member_group_size - member_offset;
             let max_chunk = remaining.min(self.options.chunk_size as u64);
             let mut chunk = vec![0u8; to_usize_writer(max_chunk, "payload chunk")?];
-            reader
-                .read_exact(&mut chunk)
-                .map_err(ArchiveWriteError::Io)?;
+            reader.read_exact(&mut chunk).map_err(ArchiveWriteError::Io)?;
             let mut chunk_len = chunk.len();
             let frame = loop {
                 let candidate = &chunk[..chunk_len];
-                let frame = compress_zstd_frame_with_jobs(
-                    candidate,
-                    self.options.zstd_level,
-                    self.options.jobs,
-                )?;
+                let frame = compress_zstd_frame_with_jobs(candidate, self.options.zstd_level, self.options.jobs)?;
                 if payload_object_can_fit(frame.len(), self.options)? {
                     break frame;
                 }
                 if chunk_len == 1 {
-                    return Err(FormatError::WriterUnsupported(
-                        "single-byte payload frame exceeds envelope object limits",
-                    )
-                    .into());
+                    return Err(FormatError::WriterUnsupported("single-byte payload frame exceeds envelope object limits").into());
                 }
                 chunk_len = (chunk_len / 2).max(1);
             };
@@ -2057,17 +1768,9 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
             }
             let chunk = &chunk[..chunk_len];
             self.hasher.update(chunk);
-            self.append_payload_frame(
-                &frame,
-                chunk_len,
-                member_index,
-                member_start,
-                member_offset,
-                member_group_size,
-            )?;
+            self.append_payload_frame(&frame, chunk_len, member_index, member_start, member_offset, member_group_size)?;
             member_offset = checked_u64_add(member_offset, chunk_len as u64, "payload chunk")?;
-            self.tar_total_size =
-                checked_u64_add(self.tar_total_size, chunk_len as u64, "tar stream")?;
+            self.tar_total_size = checked_u64_add(self.tar_total_size, chunk_len as u64, "tar stream")?;
         }
         Ok(())
     }
@@ -2084,32 +1787,23 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
         if payload_envelope_needs_flush(&self.envelope, frame.len(), self.options)? {
             self.flush_payload_envelope()?;
         }
-        if self.envelope.plaintext.is_empty() && !payload_object_can_fit(frame.len(), self.options)?
-        {
-            return Err(FormatError::WriterUnsupported(
-                "payload frame exceeds envelope object limits",
-            )
-            .into());
+        if self.envelope.plaintext.is_empty() && !payload_object_can_fit(frame.len(), self.options)? {
+            return Err(FormatError::WriterUnsupported("payload frame exceeds envelope object limits").into());
         }
-        let offset = u32_len(
-            self.envelope.plaintext.len(),
-            "FrameEntry.offset_in_envelope",
-        )?;
+        let offset = u32_len(self.envelope.plaintext.len(), "FrameEntry.offset_in_envelope")?;
         self.envelope.plaintext.extend_from_slice(frame);
-        self.frames
-            .push(payload_frame_metadata(PayloadFrameMetadataInput {
-                frame_index: self.next_frame_index,
-                envelope_index: self.envelope.envelope_index,
-                member_index,
-                offset_in_envelope: offset,
-                compressed_size: frame.len(),
-                decompressed_size,
-                member_start,
-                member_offset,
-                member_group_size,
-            })?);
-        self.next_frame_index =
-            checked_u64_add(self.next_frame_index, 1, "PayloadFrame.frame_index")?;
+        self.frames.push(payload_frame_metadata(PayloadFrameMetadataInput {
+            frame_index: self.next_frame_index,
+            envelope_index: self.envelope.envelope_index,
+            member_index,
+            offset_in_envelope: offset,
+            compressed_size: frame.len(),
+            decompressed_size,
+            member_start,
+            member_offset,
+            member_group_size,
+        })?);
+        self.next_frame_index = checked_u64_add(self.next_frame_index, 1, "PayloadFrame.frame_index")?;
         Ok(())
     }
 
@@ -2117,10 +1811,7 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
         if self.envelope.plaintext.is_empty() {
             return Ok(());
         }
-        let plaintext_size = u32_len(
-            self.envelope.plaintext.len(),
-            "EnvelopeEntry.plaintext_size",
-        )?;
+        let plaintext_size = u32_len(self.envelope.plaintext.len(), "EnvelopeEntry.plaintext_size")?;
         let object_plan = plan_encrypted_object(
             self.envelope.plaintext.len(),
             self.options.fec_data_shards,
@@ -2157,18 +1848,13 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
                 record,
             )?;
         }
-        self.payload_block_count = checked_u64_add(
-            self.payload_block_count,
-            extent.data_block_count as u64,
-            "payload",
-        )?;
+        self.payload_block_count = checked_u64_add(self.payload_block_count, extent.data_block_count as u64, "payload")?;
         self.payload_objects.push(PayloadObject {
             envelope_index: self.envelope.envelope_index,
             plaintext_size,
             object: extent,
         });
-        self.envelope.envelope_index =
-            checked_u64_add(self.envelope.envelope_index, 1, "EnvelopeEntry")?;
+        self.envelope.envelope_index = checked_u64_add(self.envelope.envelope_index, 1, "EnvelopeEntry")?;
         self.envelope.plaintext.clear();
         Ok(())
     }
@@ -2208,18 +1894,8 @@ impl<O: ArchiveWriteSink> StreamingArchiveWriter<'_, O> {
             root_auth,
         )?;
         if plan.options != self.options || plan.crypto_header != self.crypto_header {
-            return Err(FormatError::WriterUnsupported(
-                "streaming tar stdin metadata exceeded the predeclared header class",
-            )
-            .into());
+            return Err(FormatError::WriterUnsupported("streaming tar stdin metadata exceeded the predeclared header class").into());
         }
-        emit_writer_plan_suffix(
-            &self.subkeys,
-            root_auth,
-            authenticator,
-            plan,
-            self.sink,
-            self.emission_state,
-        )
+        emit_writer_plan_suffix(&self.subkeys, root_auth, authenticator, plan, self.sink, self.emission_state)
     }
 }

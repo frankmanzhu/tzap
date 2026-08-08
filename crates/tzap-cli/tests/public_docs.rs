@@ -12,9 +12,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn read_workspace_file(path: &str) -> String {
-    fs::read_to_string(workspace_root().join(path))
-        .unwrap()
-        .replace("\r\n", "\n")
+    fs::read_to_string(workspace_root().join(path)).unwrap().replace("\r\n", "\n")
 }
 
 fn write_file(path: &Path, data: &[u8]) {
@@ -57,8 +55,7 @@ fn readme_has_exit_code_and_platform_sections() {
 
     assert!(reference.contains("| 2 | usage | Invalid args / command-line usage |"));
     assert!(reference.contains("| 10 | wrong-key | Wrong passphrase or key for archive |"));
-    assert!(reference
-        .contains("| 16 | unsupported-feature | Unsupported archive feature or writer shape |"));
+    assert!(reference.contains("| 16 | unsupported-feature | Unsupported archive feature or writer shape |"));
 }
 
 #[test]
@@ -75,15 +72,7 @@ fn public_reference_file_exists_and_covers_commands() {
     let cli_readme = read_workspace_file("crates/tzap-cli/README.md");
     let gitignore = read_workspace_file(".gitignore");
 
-    for command in [
-        "create",
-        "extract",
-        "list",
-        "verify",
-        "keygen",
-        "signing-keygen",
-        "trust-info",
-    ] {
+    for command in ["create", "extract", "list", "verify", "keygen", "signing-keygen", "trust-info"] {
         assert!(reference.contains(&format!("## Command: {command}")));
     }
 
@@ -244,13 +233,7 @@ fn readme_passphrase_quickstart_commands_execute() {
 
     let payload = Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--password-stdin",
-            "--stdout",
-            archive.to_str().unwrap(),
-            "project",
-        ])
+        .args(["extract", "--password-stdin", "--stdout", archive.to_str().unwrap(), "project"])
         .write_stdin(PASS_PHRASE)
         .assert()
         .success()
@@ -274,10 +257,7 @@ fn readme_passphrase_quickstart_commands_execute() {
         .assert()
         .success()
         .stderr(predicate::str::contains("extracted 1 file(s)"));
-    assert_eq!(
-        fs::read(restored.join("project")).unwrap(),
-        b"docs passphrase payload\n"
-    );
+    assert_eq!(fs::read(restored.join("project")).unwrap(), b"docs passphrase payload\n");
 }
 
 #[test]
@@ -311,24 +291,14 @@ fn readme_raw_key_workflow_commands_execute() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("payload.txt\n"));
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("OK"));
@@ -345,10 +315,7 @@ fn readme_raw_key_workflow_commands_execute() {
         ])
         .assert()
         .success();
-    assert_eq!(
-        fs::read(restored.join("payload.txt")).unwrap(),
-        b"raw key payload\n"
-    );
+    assert_eq!(fs::read(restored.join("payload.txt")).unwrap(), b"raw key payload\n");
 }
 
 #[test]
@@ -388,12 +355,7 @@ fn readme_multivolume_recovery_example_executes() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            volume_0.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), volume_0.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(2 volume(s), 1 file(s))"));
@@ -402,12 +364,7 @@ fn readme_multivolume_recovery_example_executes() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            volume_0.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), volume_0.to_str().unwrap()])
         .assert()
         .success();
 
@@ -425,10 +382,7 @@ fn readme_multivolume_recovery_example_executes() {
         .assert()
         .success()
         .stderr(predicate::str::contains("extracted 1 file(s)"));
-    assert_eq!(
-        fs::read(extract_dir.join("project.bin")).unwrap(),
-        b"recovery payload\n"
-    );
+    assert_eq!(fs::read(extract_dir.join("project.bin")).unwrap(), b"recovery payload\n");
 }
 
 #[test]
@@ -454,8 +408,7 @@ fn public_docs_keep_boundaries_out_of_readme_marketing() {
     assert!(create.contains("--output - is not archive stdout"));
     assert!(create.contains("--bootstrap-out - is not sidecar stdout"));
 
-    assert!(reference
-        .contains("`--bootstrap-out`: sidecar output path for single-volume archives only"));
+    assert!(reference.contains("`--bootstrap-out`: sidecar output path for single-volume archives only"));
     assert!(reference.contains("`-` is archive stdin"));
     assert!(reference.contains("`-o -` is not archive stdout"));
     assert!(reference.contains("append-only sink or multipart-upload create mode is exposed"));
@@ -537,18 +490,8 @@ fn traceability_materials_live_under_requested_folder_and_cover_claim_gates() {
     assert!(index.contains("cargo run --manifest-path fuzz/Cargo.toml --bin fuzz_smoke --locked"));
     assert!(index.contains("cargo audit"));
 
-    for required in [
-        "SIGN-001",
-        "SIGN-004",
-        "SIGN-011",
-        "X.509",
-        "Ed25519",
-        "Signing profile boundaries",
-    ] {
-        assert!(
-            signing.contains(required),
-            "missing signing traceability marker {required}"
-        );
+    for required in ["SIGN-001", "SIGN-004", "SIGN-011", "X.509", "Ed25519", "Signing profile boundaries"] {
+        assert!(signing.contains(required), "missing signing traceability marker {required}");
     }
 
     for required in [
@@ -558,9 +501,6 @@ fn traceability_materials_live_under_requested_folder_and_cover_claim_gates() {
         "Traceability audit",
         "Current record",
     ] {
-        assert!(
-            runbook.contains(required),
-            "missing runbook traceability marker {required}"
-        );
+        assert!(runbook.contains(required), "missing runbook traceability marker {required}");
     }
 }

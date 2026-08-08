@@ -3,14 +3,10 @@ use std::io::{self, ErrorKind, Read};
 use crate::crypto::{KdfParams, MasterKey};
 use crate::entry_metadata::{ArchiveTimestamp, SparseExtent, MAX_SPARSE_EXTENTS};
 use crate::format::{ArchiveWriteError, FormatError};
-use crate::metadata::{
-    normalize_lookup_file_path, validate_directory_path_bytes, validate_file_path_bytes,
-};
+use crate::metadata::{normalize_lookup_file_path, validate_directory_path_bytes, validate_file_path_bytes};
 use crate::writer::{
-    write_ordered_parallel_stream_archive_to_sink, ArchiveWriteSink, MemoryArchiveSink,
-    PortableFileMetadata, PortableModeOrigin, PortablePosixOwner, RootAuthAuthenticator,
-    RootAuthWriterConfig, SourceEntryKind, StreamingRegularMember, WriterOptions, WrittenArchive,
-    WrittenArchiveSummary,
+    write_ordered_parallel_stream_archive_to_sink, ArchiveWriteSink, MemoryArchiveSink, PortableFileMetadata, PortableModeOrigin, PortablePosixOwner,
+    RootAuthAuthenticator, RootAuthWriterConfig, SourceEntryKind, StreamingRegularMember, WriterOptions, WrittenArchive, WrittenArchiveSummary,
 };
 
 const TAR_BLOCK_LEN: usize = 512;
@@ -90,11 +86,7 @@ impl LocalTarMetadata {
     }
 }
 
-pub fn write_tar_stream_archive<R: Read>(
-    reader: R,
-    master_key: &MasterKey,
-    options: WriterOptions,
-) -> Result<WrittenArchive, FormatError> {
+pub fn write_tar_stream_archive<R: Read>(reader: R, master_key: &MasterKey, options: WriterOptions) -> Result<WrittenArchive, FormatError> {
     if options.stripe_width > 1 {
         // §19.3: single-sink streaming is supported only with stripe_width = 1.
         // This convenience returns a single archive whose `.bytes` is volume 0;
@@ -105,14 +97,9 @@ pub fn write_tar_stream_archive<R: Read>(
         ));
     }
     let mut sink = MemoryArchiveSink::default();
-    let summary = write_tar_stream_archive_to_sink(reader, master_key, options, &mut sink)
-        .map_err(format_error_from_archive_write_error)?;
+    let summary = write_tar_stream_archive_to_sink(reader, master_key, options, &mut sink).map_err(format_error_from_archive_write_error)?;
     Ok(WrittenArchive {
-        bytes: sink
-            .volumes
-            .first()
-            .cloned()
-            .ok_or(FormatError::WriterInvariant("no volumes emitted"))?,
+        bytes: sink.volumes.first().cloned().ok_or(FormatError::WriterInvariant("no volumes emitted"))?,
         volumes: sink.volumes,
         bootstrap_sidecar: sink.bootstrap_sidecar,
         archive_uuid: summary.archive.archive_uuid,
@@ -131,15 +118,7 @@ where
     R: Read,
     O: ArchiveWriteSink,
 {
-    write_tar_stream_archive_to_sink_with_kdf_and_root_auth(
-        reader,
-        master_key,
-        options,
-        &KdfParams::Raw,
-        None,
-        None,
-        sink,
-    )
+    write_tar_stream_archive_to_sink_with_kdf_and_root_auth(reader, master_key, options, &KdfParams::Raw, None, None, sink)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -160,43 +139,30 @@ where
 {
     validate_streaming_create_writer_options(options)?;
     let archive_path = normalize_lookup_file_path(archive_path, options.max_path_length)?;
-    let archive = write_ordered_parallel_stream_archive_to_sink(
-        master_key,
-        options,
-        kdf_params,
-        root_auth,
-        authenticator,
-        None,
-        sink,
-        None,
-        |writer| {
-            let mut payload = SizedRawPayloadReader {
-                reader: &mut reader,
-                remaining: input_size,
-            };
-            writer.write_regular_member_from_reader(
-                StreamingRegularMember {
-                    archive_path,
-                    entry_kind: SourceEntryKind::Regular,
-                    link_target: None,
-                    file_data_size: input_size,
-                    sparse_extents: None,
-                    mode: 0o644,
-                    mtime: ArchiveTimestamp::UNIX_EPOCH,
-                    portable_metadata: PortableFileMetadata::default(),
-                },
-                &mut payload,
-            )?;
-            if payload.remaining != 0 {
-                return Err(FormatError::WriterInvariant(
-                    "raw stdin payload was not fully consumed",
-                )
-                .into());
-            }
-            reject_trailing_raw_stdin_bytes(&mut reader)?;
-            Ok(())
-        },
-    )?;
+    let archive = write_ordered_parallel_stream_archive_to_sink(master_key, options, kdf_params, root_auth, authenticator, None, sink, None, |writer| {
+        let mut payload = SizedRawPayloadReader {
+            reader: &mut reader,
+            remaining: input_size,
+        };
+        writer.write_regular_member_from_reader(
+            StreamingRegularMember {
+                archive_path,
+                entry_kind: SourceEntryKind::Regular,
+                link_target: None,
+                file_data_size: input_size,
+                sparse_extents: None,
+                mode: 0o644,
+                mtime: ArchiveTimestamp::UNIX_EPOCH,
+                portable_metadata: PortableFileMetadata::default(),
+            },
+            &mut payload,
+        )?;
+        if payload.remaining != 0 {
+            return Err(FormatError::WriterInvariant("raw stdin payload was not fully consumed").into());
+        }
+        reject_trailing_raw_stdin_bytes(&mut reader)?;
+        Ok(())
+    })?;
     Ok(StreamingRawWriterSummary {
         archive,
         input_bytes: input_size,
@@ -219,56 +185,38 @@ where
 {
     validate_streaming_create_writer_options(options)?;
     let mut input_summary = None;
-    let archive = write_ordered_parallel_stream_archive_to_sink(
-        master_key,
-        options,
-        kdf_params,
-        root_auth,
-        authenticator,
-        None,
-        sink,
-        None,
-        |writer| {
-            let summary = stream_tar_stdin_regulars(
-                &mut reader,
-                options.max_path_length,
-                |member, payload| {
-                    let mut empty = io::empty();
-                    let payload: &mut dyn Read = match payload {
-                        Some(payload) => payload,
-                        None => &mut empty,
-                    };
-                    writer.write_regular_member_from_reader(
-                        StreamingRegularMember {
-                            archive_path: member.path,
-                            entry_kind: member.entry_kind,
-                            link_target: member.link_target,
-                            file_data_size: member.logical_size,
-                            sparse_extents: member.sparse_extents,
-                            mode: member.mode,
-                            mtime: member.mtime,
-                            portable_metadata: member.portable_metadata,
-                        },
-                        payload,
-                    )
+    let archive = write_ordered_parallel_stream_archive_to_sink(master_key, options, kdf_params, root_auth, authenticator, None, sink, None, |writer| {
+        let summary = stream_tar_stdin_regulars(&mut reader, options.max_path_length, |member, payload| {
+            let mut empty = io::empty();
+            let payload: &mut dyn Read = match payload {
+                Some(payload) => payload,
+                None => &mut empty,
+            };
+            writer.write_regular_member_from_reader(
+                StreamingRegularMember {
+                    archive_path: member.path,
+                    entry_kind: member.entry_kind,
+                    link_target: member.link_target,
+                    file_data_size: member.logical_size,
+                    sparse_extents: member.sparse_extents,
+                    mode: member.mode,
+                    mtime: member.mtime,
+                    portable_metadata: member.portable_metadata,
                 },
-            )?;
-            input_summary = Some(summary);
-            Ok(())
-        },
-    )?;
-    let input_summary = input_summary.ok_or(FormatError::WriterInvariant(
-        "streaming tar parser did not return a summary",
-    ))?;
+                payload,
+            )
+        })?;
+        input_summary = Some(summary);
+        Ok(())
+    })?;
+    let input_summary = input_summary.ok_or(FormatError::WriterInvariant("streaming tar parser did not return a summary"))?;
     Ok(StreamingTarWriterSummary {
         archive,
         input_member_count: input_summary
             .regular_file_count
             .checked_add(input_summary.directory_count)
             .and_then(|count| count.checked_add(input_summary.symlink_count))
-            .ok_or(FormatError::WriterUnsupported(
-                "tar input member count overflow",
-            ))?,
+            .ok_or(FormatError::WriterUnsupported("tar input member count overflow"))?,
         input_tar_bytes: input_summary.input_tar_bytes,
     })
 }
@@ -282,14 +230,10 @@ fn format_error_from_archive_write_error(error: ArchiveWriteError) -> FormatErro
 
 fn validate_streaming_create_writer_options(options: WriterOptions) -> Result<(), FormatError> {
     if options.volume_loss_tolerance != 0 {
-        return Err(FormatError::WriterUnsupported(
-            "streaming create cannot tolerate volume loss",
-        ));
+        return Err(FormatError::WriterUnsupported("streaming create cannot tolerate volume loss"));
     }
     if options.target_volume_size.is_some() {
-        return Err(FormatError::WriterUnsupported(
-            "streaming create does not support target volume sizing",
-        ));
+        return Err(FormatError::WriterUnsupported("streaming create does not support target volume sizing"));
     }
     Ok(())
 }
@@ -304,9 +248,7 @@ impl<R: Read> Read for SizedRawPayloadReader<'_, R> {
         if out.is_empty() || self.remaining == 0 {
             return Ok(0);
         }
-        let max_read = out
-            .len()
-            .min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
+        let max_read = out.len().min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
         match self.reader.read(&mut out[..max_read]) {
             Ok(read) => {
                 self.remaining -= read as u64;
@@ -323,28 +265,17 @@ fn reject_trailing_raw_stdin_bytes<R: Read>(reader: &mut R) -> Result<(), Archiv
     loop {
         match reader.read(&mut extra) {
             Ok(0) => return Ok(()),
-            Ok(_) => {
-                return Err(
-                    FormatError::InvalidArchive("raw stdin exceeds declared --stdin-size").into(),
-                )
-            }
+            Ok(_) => return Err(FormatError::InvalidArchive("raw stdin exceeds declared --stdin-size").into()),
             Err(error) if error.kind() == ErrorKind::Interrupted => {}
             Err(error) => return Err(ArchiveWriteError::Io(error)),
         }
     }
 }
 
-fn stream_tar_stdin_regulars<R, F>(
-    reader: &mut R,
-    max_path_length: u32,
-    mut on_regular: F,
-) -> Result<TarStdinInputSummary, ArchiveWriteError>
+fn stream_tar_stdin_regulars<R, F>(reader: &mut R, max_path_length: u32, mut on_regular: F) -> Result<TarStdinInputSummary, ArchiveWriteError>
 where
     R: Read,
-    F: for<'a> FnMut(
-        TarStdinRegularMember,
-        Option<&mut LimitedTarPayloadReader<'a, R>>,
-    ) -> Result<(), ArchiveWriteError>,
+    F: for<'a> FnMut(TarStdinRegularMember, Option<&mut LimitedTarPayloadReader<'a, R>>) -> Result<(), ArchiveWriteError>,
 {
     let mut summary = TarStdinInputSummary::default();
     let mut metadata = LocalTarMetadata::default();
@@ -352,26 +283,18 @@ where
     loop {
         let Some(header) = read_tar_block(reader, &mut summary.input_tar_bytes)? else {
             if metadata.has_pending() {
-                return Err(
-                    FormatError::InvalidArchive("tar stream ended after metadata header").into(),
-                );
+                return Err(FormatError::InvalidArchive("tar stream ended after metadata header").into());
             }
             return Ok(summary);
         };
         if header.iter().all(|byte| *byte == 0) {
             if metadata.has_pending() {
-                return Err(
-                    FormatError::InvalidArchive("tar stream ended after metadata header").into(),
-                );
+                return Err(FormatError::InvalidArchive("tar stream ended after metadata header").into());
             }
-            let second = read_tar_block(reader, &mut summary.input_tar_bytes)?.ok_or(
-                FormatError::InvalidArchive("tar stream ended inside end-of-archive marker"),
-            )?;
+            let second =
+                read_tar_block(reader, &mut summary.input_tar_bytes)?.ok_or(FormatError::InvalidArchive("tar stream ended inside end-of-archive marker"))?;
             if second.iter().any(|byte| *byte != 0) {
-                return Err(FormatError::InvalidArchive(
-                    "tar stream has non-zero bytes after end-of-archive marker",
-                )
-                .into());
+                return Err(FormatError::InvalidArchive("tar stream has non-zero bytes after end-of-archive marker").into());
             }
             drain_zero_blocks_to_eof(reader, &mut summary.input_tar_bytes)?;
             return Ok(summary);
@@ -382,52 +305,32 @@ where
         let header_size = parse_tar_number(&header[124..136])?;
         match typeflag {
             b'x' => {
-                let payload =
-                    read_metadata_payload(reader, header_size, &mut summary.input_tar_bytes)?;
+                let payload = read_metadata_payload(reader, header_size, &mut summary.input_tar_bytes)?;
                 metadata.pending_header = true;
                 parse_pax_records(&payload, &mut metadata)?;
             }
             b'L' => {
-                let payload =
-                    read_metadata_payload(reader, header_size, &mut summary.input_tar_bytes)?;
+                let payload = read_metadata_payload(reader, header_size, &mut summary.input_tar_bytes)?;
                 metadata.pending_header = true;
                 metadata.gnu_long_name = Some(trimmed_metadata_payload(&payload));
             }
             b'K' => {
-                let payload =
-                    read_metadata_payload(reader, header_size, &mut summary.input_tar_bytes)?;
+                let payload = read_metadata_payload(reader, header_size, &mut summary.input_tar_bytes)?;
                 metadata.pending_header = true;
                 metadata.gnu_long_link = Some(trimmed_metadata_payload(&payload));
             }
-            b'g' => {
-                return Err(
-                    FormatError::InvalidArchive("global PAX headers are not allowed").into(),
-                )
-            }
-            b'V' | b'M' | b'N' => {
-                return Err(
-                    FormatError::InvalidArchive("global GNU headers are not allowed").into(),
-                )
-            }
-            b'S' => {
-                return Err(
-                    FormatError::ReaderUnsupported("unsupported GNU sparse tar entry").into(),
-                )
-            }
+            b'g' => return Err(FormatError::InvalidArchive("global PAX headers are not allowed").into()),
+            b'V' | b'M' | b'N' => return Err(FormatError::InvalidArchive("global GNU headers are not allowed").into()),
+            b'S' => return Err(FormatError::ReaderUnsupported("unsupported GNU sparse tar entry").into()),
             0 | b'0' | b'5' | b'1' | b'2' | b'3' | b'4' | b'6' => {
                 let effective_size = metadata.pax_size.unwrap_or(header_size);
-                let mode = metadata
-                    .pax_mode
-                    .unwrap_or(parse_tar_number(&header[100..108])? as u32);
+                let mode = metadata.pax_mode.unwrap_or(parse_tar_number(&header[100..108])? as u32);
                 let mtime = if let Some(mtime) = metadata.pax_mtime {
                     mtime
                 } else {
                     ArchiveTimestamp::from_seconds(
-                        i64::try_from(parse_tar_number(&header[136..148])?).map_err(|_| {
-                            FormatError::WriterUnsupported(
-                                "input tar mtime exceeds revision-45 i64 range",
-                            )
-                        })?,
+                        i64::try_from(parse_tar_number(&header[136..148])?)
+                            .map_err(|_| FormatError::WriterUnsupported("input tar mtime exceeds revision-45 i64 range"))?,
                     )
                 };
                 let path = canonical_main_path(&header, typeflag, &metadata, max_path_length)?;
@@ -442,24 +345,15 @@ where
                 } else {
                     None
                 };
-                let uid = metadata
-                    .pax_uid
-                    .unwrap_or(parse_tar_number(&header[108..116])?);
-                let gid = metadata
-                    .pax_gid
-                    .unwrap_or(parse_tar_number(&header[116..124])?);
+                let uid = metadata.pax_uid.unwrap_or(parse_tar_number(&header[108..116])?);
+                let gid = metadata.pax_gid.unwrap_or(parse_tar_number(&header[116..124])?);
                 let uname = tar_owner_name(metadata.pax_uname.as_deref(), &header[265..297])?;
                 let gname = tar_owner_name(metadata.pax_gname.as_deref(), &header[297..329])?;
                 let portable_metadata = PortableFileMetadata {
                     source_os: "other-unix".into(),
                     source_filesystem: "unknown".into(),
                     mode_origin: PortableModeOrigin::Native,
-                    posix_owner: Some(PortablePosixOwner {
-                        uid,
-                        gid,
-                        uname,
-                        gname,
-                    }),
+                    posix_owner: Some(PortablePosixOwner { uid, gid, uname, gname }),
                     attributes: None,
                     created: None,
                     accessed: None,
@@ -471,20 +365,14 @@ where
                     || metadata.gnu_sparse_realsize.is_some();
                 let sparse_logical_size = if has_sparse_declaration {
                     if typeflag != 0 && typeflag != b'0' {
-                        return Err(FormatError::InvalidArchive(
-                            "GNU sparse metadata is attached to a non-regular entry",
-                        )
-                        .into());
+                        return Err(FormatError::InvalidArchive("GNU sparse metadata is attached to a non-regular entry").into());
                     }
                     if metadata.gnu_sparse_major != Some(1)
                         || metadata.gnu_sparse_minor != Some(0)
                         || metadata.gnu_sparse_name.is_none()
                         || metadata.gnu_sparse_realsize.is_none()
                     {
-                        return Err(FormatError::ReaderUnsupported(
-                            "tar stdin supports only complete GNU sparse PAX 1.0 declarations",
-                        )
-                        .into());
+                        return Err(FormatError::ReaderUnsupported("tar stdin supports only complete GNU sparse PAX 1.0 declarations").into());
                     }
                     metadata.gnu_sparse_realsize
                 } else {
@@ -501,9 +389,7 @@ where
                                 input_tar_bytes: &mut summary.input_tar_bytes,
                             };
                             let sparse_extents = sparse_logical_size
-                                .map(|logical_size| {
-                                    read_gnu_sparse_1_0_map(&mut payload, logical_size)
-                                })
+                                .map(|logical_size| read_gnu_sparse_1_0_map(&mut payload, logical_size))
                                 .transpose()?;
                             let member = TarStdinRegularMember {
                                 path,
@@ -517,29 +403,15 @@ where
                             };
                             on_regular(member, Some(&mut payload))?;
                             if payload.remaining != 0 {
-                                return Err(FormatError::WriterInvariant(
-                                    "streaming tar payload was not fully consumed",
-                                )
-                                .into());
+                                return Err(FormatError::WriterInvariant("streaming tar payload was not fully consumed").into());
                             }
                         }
-                        drain_tar_padding(
-                            reader,
-                            padding_to_512_u64(effective_size),
-                            &mut summary.input_tar_bytes,
-                        )?;
-                        summary.regular_file_count = checked_input_add(
-                            summary.regular_file_count,
-                            1,
-                            "tar regular file count",
-                        )?;
+                        drain_tar_padding(reader, padding_to_512_u64(effective_size), &mut summary.input_tar_bytes)?;
+                        summary.regular_file_count = checked_input_add(summary.regular_file_count, 1, "tar regular file count")?;
                     }
                     b'5' => {
                         if effective_size != 0 {
-                            return Err(FormatError::InvalidArchive(
-                                "non-regular tar entry has non-zero payload size",
-                            )
-                            .into());
+                            return Err(FormatError::InvalidArchive("non-regular tar entry has non-zero payload size").into());
                         }
                         let member = TarStdinRegularMember {
                             path,
@@ -552,15 +424,11 @@ where
                             portable_metadata,
                         };
                         on_regular(member, None)?;
-                        summary.directory_count =
-                            checked_input_add(summary.directory_count, 1, "tar directory count")?;
+                        summary.directory_count = checked_input_add(summary.directory_count, 1, "tar directory count")?;
                     }
                     b'2' => {
                         if effective_size != 0 {
-                            return Err(FormatError::InvalidArchive(
-                                "non-regular tar entry has non-zero payload size",
-                            )
-                            .into());
+                            return Err(FormatError::InvalidArchive("non-regular tar entry has non-zero payload size").into());
                         }
                         let member = TarStdinRegularMember {
                             path,
@@ -573,15 +441,9 @@ where
                             portable_metadata,
                         };
                         on_regular(member, None)?;
-                        summary.symlink_count =
-                            checked_input_add(summary.symlink_count, 1, "tar symlink count")?;
+                        summary.symlink_count = checked_input_add(summary.symlink_count, 1, "tar symlink count")?;
                     }
-                    _ => {
-                        return Err(FormatError::WriterUnsupported(
-                            "streaming tar stdin supports regular files, directories, and symlinks only",
-                        )
-                        .into())
-                    }
+                    _ => return Err(FormatError::WriterUnsupported("streaming tar stdin supports regular files, directories, and symlinks only").into()),
                 }
             }
             _ => return Err(FormatError::ReaderUnsupported("unsupported tar entry type").into()),
@@ -600,19 +462,12 @@ impl<R: Read> Read for LimitedTarPayloadReader<'_, R> {
         if out.is_empty() || self.remaining == 0 {
             return Ok(0);
         }
-        let max_read = out
-            .len()
-            .min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
+        let max_read = out.len().min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
         match self.reader.read(&mut out[..max_read]) {
-            Ok(0) => Err(io::Error::new(
-                ErrorKind::UnexpectedEof,
-                "tar stream ended inside member payload",
-            )),
+            Ok(0) => Err(io::Error::new(ErrorKind::UnexpectedEof, "tar stream ended inside member payload")),
             Ok(read) => {
                 self.remaining -= read as u64;
-                *self.input_tar_bytes =
-                    checked_input_add(*self.input_tar_bytes, read as u64, "tar input size")
-                        .map_err(io_error_from_format)?;
+                *self.input_tar_bytes = checked_input_add(*self.input_tar_bytes, read as u64, "tar input size").map_err(io_error_from_format)?;
                 Ok(read)
             }
             Err(error) if error.kind() == ErrorKind::Interrupted => self.read(out),
@@ -621,50 +476,34 @@ impl<R: Read> Read for LimitedTarPayloadReader<'_, R> {
     }
 }
 
-fn read_gnu_sparse_1_0_map<R: Read>(
-    payload: &mut LimitedTarPayloadReader<'_, R>,
-    logical_size: u64,
-) -> Result<Vec<SparseExtent>, ArchiveWriteError> {
-    fn read_line<R: Read>(
-        payload: &mut LimitedTarPayloadReader<'_, R>,
-        consumed: &mut u64,
-    ) -> Result<u64, ArchiveWriteError> {
+fn read_gnu_sparse_1_0_map<R: Read>(payload: &mut LimitedTarPayloadReader<'_, R>, logical_size: u64) -> Result<Vec<SparseExtent>, ArchiveWriteError> {
+    fn read_line<R: Read>(payload: &mut LimitedTarPayloadReader<'_, R>, consumed: &mut u64) -> Result<u64, ArchiveWriteError> {
         let mut digits = Vec::with_capacity(20);
         loop {
             let mut byte = [0u8; 1];
-            payload
-                .read_exact(&mut byte)
-                .map_err(ArchiveWriteError::Io)?;
-            *consumed = consumed
-                .checked_add(1)
-                .ok_or(FormatError::InvalidArchive("GNU sparse map size overflow"))?;
+            payload.read_exact(&mut byte).map_err(ArchiveWriteError::Io)?;
+            *consumed = consumed.checked_add(1).ok_or(FormatError::InvalidArchive("GNU sparse map size overflow"))?;
             if byte[0] == b'\n' {
                 break;
             }
             if !byte[0].is_ascii_digit() || digits.len() == 20 {
-                return Err(FormatError::InvalidArchive(
-                    "GNU sparse map value is not canonical decimal",
-                )
-                .into());
+                return Err(FormatError::InvalidArchive("GNU sparse map value is not canonical decimal").into());
             }
             digits.push(byte[0]);
         }
         if digits.is_empty() || (digits.len() > 1 && digits[0] == b'0') {
-            return Err(
-                FormatError::InvalidArchive("GNU sparse map value is not minimal decimal").into(),
-            );
+            return Err(FormatError::InvalidArchive("GNU sparse map value is not minimal decimal").into());
         }
         Ok(parse_decimal_u64(&digits)?)
     }
 
     let mut map_bytes = 0u64;
     let count_u64 = read_line(payload, &mut map_bytes)?;
-    let count =
-        usize::try_from(count_u64).map_err(|_| FormatError::ReaderResourceLimitExceeded {
-            field: "sparse extent count",
-            cap: MAX_SPARSE_EXTENTS as u64,
-            actual: count_u64,
-        })?;
+    let count = usize::try_from(count_u64).map_err(|_| FormatError::ReaderResourceLimitExceeded {
+        field: "sparse extent count",
+        cap: MAX_SPARSE_EXTENTS as u64,
+        actual: count_u64,
+    })?;
     if count > MAX_SPARSE_EXTENTS {
         return Err(FormatError::ReaderResourceLimitExceeded {
             field: "sparse extent count",
@@ -679,72 +518,46 @@ fn read_gnu_sparse_1_0_map<R: Read>(
     for index in 0..count {
         let offset = read_line(payload, &mut map_bytes)?;
         let length = read_line(payload, &mut map_bytes)?;
-        let end = offset
-            .checked_add(length)
-            .ok_or(FormatError::InvalidArchive("GNU sparse extent overflow"))?;
+        let end = offset.checked_add(length).ok_or(FormatError::InvalidArchive("GNU sparse extent overflow"))?;
         if length == 0 || offset < previous_end || (index != 0 && offset == previous_end) {
-            return Err(FormatError::InvalidArchive(
-                "GNU sparse extents overlap, are empty, or are not merged",
-            )
-            .into());
+            return Err(FormatError::InvalidArchive("GNU sparse extents overlap, are empty, or are not merged").into());
         }
         if end > logical_size {
-            return Err(
-                FormatError::InvalidArchive("GNU sparse extent exceeds logical size").into(),
-            );
+            return Err(FormatError::InvalidArchive("GNU sparse extent exceeds logical size").into());
         }
         extent_bytes = extent_bytes
             .checked_add(length)
-            .ok_or(FormatError::InvalidArchive(
-                "GNU sparse extent byte count overflow",
-            ))?;
+            .ok_or(FormatError::InvalidArchive("GNU sparse extent byte count overflow"))?;
         extents.push(SparseExtent { offset, length });
         previous_end = end;
     }
-    let padded_map_size = map_bytes
-        .checked_add(511)
-        .ok_or(FormatError::InvalidArchive("GNU sparse map size overflow"))?
-        / 512
-        * 512;
+    let padded_map_size = map_bytes.checked_add(511).ok_or(FormatError::InvalidArchive("GNU sparse map size overflow"))? / 512 * 512;
     let mut padding = padded_map_size - map_bytes;
     let mut zeros = [0u8; 512];
     while padding != 0 {
         let take = usize::try_from(padding.min(zeros.len() as u64)).unwrap();
-        payload
-            .read_exact(&mut zeros[..take])
-            .map_err(ArchiveWriteError::Io)?;
+        payload.read_exact(&mut zeros[..take]).map_err(ArchiveWriteError::Io)?;
         if zeros[..take].iter().any(|byte| *byte != 0) {
             return Err(FormatError::InvalidArchive("GNU sparse map padding is non-zero").into());
         }
         padding -= take as u64;
     }
     if payload.remaining != extent_bytes {
-        return Err(FormatError::InvalidArchive(
-            "GNU sparse stored size does not match the canonical map",
-        )
-        .into());
+        return Err(FormatError::InvalidArchive("GNU sparse stored size does not match the canonical map").into());
     }
     Ok(extents)
 }
 
-fn read_tar_block<R: Read>(
-    reader: &mut R,
-    input_tar_bytes: &mut u64,
-) -> Result<Option<[u8; TAR_BLOCK_LEN]>, ArchiveWriteError> {
+fn read_tar_block<R: Read>(reader: &mut R, input_tar_bytes: &mut u64) -> Result<Option<[u8; TAR_BLOCK_LEN]>, ArchiveWriteError> {
     let mut block = [0u8; TAR_BLOCK_LEN];
     let mut filled = 0usize;
     while filled < TAR_BLOCK_LEN {
         match reader.read(&mut block[filled..]) {
             Ok(0) if filled == 0 => return Ok(None),
-            Ok(0) => {
-                return Err(
-                    FormatError::InvalidArchive("tar stream ended inside member group").into(),
-                )
-            }
+            Ok(0) => return Err(FormatError::InvalidArchive("tar stream ended inside member group").into()),
             Ok(read) => {
                 filled += read;
-                *input_tar_bytes =
-                    checked_input_add(*input_tar_bytes, read as u64, "tar input size")?;
+                *input_tar_bytes = checked_input_add(*input_tar_bytes, read as u64, "tar input size")?;
             }
             Err(error) if error.kind() == ErrorKind::Interrupted => {}
             Err(error) => return Err(ArchiveWriteError::Io(error)),
@@ -753,17 +566,10 @@ fn read_tar_block<R: Read>(
     Ok(Some(block))
 }
 
-fn read_metadata_payload<R: Read>(
-    reader: &mut R,
-    size: u64,
-    input_tar_bytes: &mut u64,
-) -> Result<Vec<u8>, ArchiveWriteError> {
-    let len = usize::try_from(size)
-        .map_err(|_| FormatError::ReaderUnsupported("tar metadata payload is too large"))?;
+fn read_metadata_payload<R: Read>(reader: &mut R, size: u64, input_tar_bytes: &mut u64) -> Result<Vec<u8>, ArchiveWriteError> {
+    let len = usize::try_from(size).map_err(|_| FormatError::ReaderUnsupported("tar metadata payload is too large"))?;
     if len > MAX_TAR_STDIN_METADATA_PAYLOAD_BYTES {
-        return Err(
-            FormatError::ReaderUnsupported("tar metadata payload exceeds streaming cap").into(),
-        );
+        return Err(FormatError::ReaderUnsupported("tar metadata payload exceeds streaming cap").into());
     }
     let mut payload = vec![0u8; len];
     read_exact_counted(reader, &mut payload, input_tar_bytes)?;
@@ -771,21 +577,12 @@ fn read_metadata_payload<R: Read>(
     Ok(payload)
 }
 
-fn read_exact_counted<R: Read>(
-    reader: &mut R,
-    mut out: &mut [u8],
-    input_tar_bytes: &mut u64,
-) -> Result<(), ArchiveWriteError> {
+fn read_exact_counted<R: Read>(reader: &mut R, mut out: &mut [u8], input_tar_bytes: &mut u64) -> Result<(), ArchiveWriteError> {
     while !out.is_empty() {
         match reader.read(out) {
-            Ok(0) => {
-                return Err(
-                    FormatError::InvalidArchive("tar stream ended inside member group").into(),
-                )
-            }
+            Ok(0) => return Err(FormatError::InvalidArchive("tar stream ended inside member group").into()),
             Ok(read) => {
-                *input_tar_bytes =
-                    checked_input_add(*input_tar_bytes, read as u64, "tar input size")?;
+                *input_tar_bytes = checked_input_add(*input_tar_bytes, read as u64, "tar input size")?;
                 let remaining = out;
                 out = &mut remaining[read..];
             }
@@ -796,17 +593,11 @@ fn read_exact_counted<R: Read>(
     Ok(())
 }
 
-fn drain_tar_padding<R: Read>(
-    reader: &mut R,
-    padding: u64,
-    input_tar_bytes: &mut u64,
-) -> Result<(), ArchiveWriteError> {
+fn drain_tar_padding<R: Read>(reader: &mut R, padding: u64, input_tar_bytes: &mut u64) -> Result<(), ArchiveWriteError> {
     let mut remaining = padding;
     let mut buf = [0u8; TAR_BLOCK_LEN];
     while remaining > 0 {
-        let take = buf
-            .len()
-            .min(usize::try_from(remaining).unwrap_or(usize::MAX));
+        let take = buf.len().min(usize::try_from(remaining).unwrap_or(usize::MAX));
         read_exact_counted(reader, &mut buf[..take], input_tar_bytes)?;
         if buf[..take].iter().any(|byte| *byte != 0) {
             return Err(FormatError::InvalidArchive("tar member padding is non-zero").into());
@@ -816,27 +607,16 @@ fn drain_tar_padding<R: Read>(
     Ok(())
 }
 
-fn drain_zero_blocks_to_eof<R: Read>(
-    reader: &mut R,
-    input_tar_bytes: &mut u64,
-) -> Result<(), ArchiveWriteError> {
+fn drain_zero_blocks_to_eof<R: Read>(reader: &mut R, input_tar_bytes: &mut u64) -> Result<(), ArchiveWriteError> {
     while let Some(block) = read_tar_block(reader, input_tar_bytes)? {
         if block.iter().any(|byte| *byte != 0) {
-            return Err(FormatError::InvalidArchive(
-                "tar stream has non-zero bytes after end-of-archive marker",
-            )
-            .into());
+            return Err(FormatError::InvalidArchive("tar stream has non-zero bytes after end-of-archive marker").into());
         }
     }
     Ok(())
 }
 
-fn canonical_main_path(
-    header: &[u8],
-    typeflag: u8,
-    metadata: &LocalTarMetadata,
-    max_path_length: u32,
-) -> Result<Vec<u8>, FormatError> {
+fn canonical_main_path(header: &[u8], typeflag: u8, metadata: &LocalTarMetadata, max_path_length: u32) -> Result<Vec<u8>, FormatError> {
     let mut path = metadata
         .gnu_sparse_name
         .clone()
@@ -882,9 +662,7 @@ fn parse_pax_records(payload: &[u8], metadata: &mut LocalTarMetadata) -> Result<
         }
         let len = parse_decimal_usize(&payload[len_digits_start..cursor])?;
         let record_start = len_digits_start;
-        let record_end = record_start
-            .checked_add(len)
-            .ok_or(FormatError::InvalidArchive("malformed PAX record"))?;
+        let record_end = record_start.checked_add(len).ok_or(FormatError::InvalidArchive("malformed PAX record"))?;
         if record_end > payload.len() || len < 4 {
             return Err(FormatError::InvalidArchive("malformed PAX record"));
         }
@@ -898,19 +676,13 @@ fn parse_pax_records(payload: &[u8], metadata: &mut LocalTarMetadata) -> Result<
             .iter()
             .position(|byte| *byte == b'=')
             .ok_or(FormatError::InvalidArchive("malformed PAX record"))?;
-        let key = std::str::from_utf8(&body[..eq])
-            .map_err(|_| FormatError::InvalidArchive("malformed PAX key"))?;
+        let key = std::str::from_utf8(&body[..eq]).map_err(|_| FormatError::InvalidArchive("malformed PAX key"))?;
         let value = &body[eq + 1..];
         match key {
             "path" => metadata.pax_path = Some(value.to_vec()),
             "linkpath" => metadata.pax_linkpath = Some(value.to_vec()),
             "size" => metadata.pax_size = Some(parse_decimal_u64(value)?),
-            "mode" => {
-                metadata.pax_mode = Some(
-                    u32::try_from(parse_decimal_u64(value)?)
-                        .map_err(|_| FormatError::WriterUnsupported("tar mode overflow"))?,
-                )
-            }
+            "mode" => metadata.pax_mode = Some(u32::try_from(parse_decimal_u64(value)?).map_err(|_| FormatError::WriterUnsupported("tar mode overflow"))?),
             "mtime" => metadata.pax_mtime = Some(parse_pax_mtime(value)?),
             "uid" => metadata.pax_uid = Some(parse_decimal_u64(value)?),
             "gid" => metadata.pax_gid = Some(parse_decimal_u64(value)?),
@@ -921,9 +693,7 @@ fn parse_pax_records(payload: &[u8], metadata: &mut LocalTarMetadata) -> Result<
             "GNU.sparse.name" => metadata.gnu_sparse_name = Some(value.to_vec()),
             "GNU.sparse.realsize" => metadata.gnu_sparse_realsize = Some(parse_decimal_u64(value)?),
             key if key.starts_with("GNU.sparse.") => {
-                return Err(FormatError::ReaderUnsupported(
-                    "unsupported GNU sparse PAX key",
-                ));
+                return Err(FormatError::ReaderUnsupported("unsupported GNU sparse PAX key"));
             }
             _ => {}
         }
@@ -956,9 +726,7 @@ fn parse_tar_base256(field: &[u8]) -> Result<u64, FormatError> {
         return Err(FormatError::InvalidArchive("empty tar numeric field"));
     };
     if first & 0x40 != 0 {
-        return Err(FormatError::ReaderUnsupported(
-            "negative tar base-256 numeric fields are not supported",
-        ));
+        return Err(FormatError::ReaderUnsupported("negative tar base-256 numeric fields are not supported"));
     }
     let mut value = u128::from(first & 0x7f);
     for byte in &field[1..] {
@@ -997,8 +765,7 @@ fn parse_tar_octal(field: &[u8]) -> Result<u64, FormatError> {
 }
 
 fn parse_decimal_usize(bytes: &[u8]) -> Result<usize, FormatError> {
-    usize::try_from(parse_decimal_u64(bytes)?)
-        .map_err(|_| FormatError::InvalidArchive("decimal field overflow"))
+    usize::try_from(parse_decimal_u64(bytes)?).map_err(|_| FormatError::InvalidArchive("decimal field overflow"))
 }
 
 fn parse_decimal_u64(bytes: &[u8]) -> Result<u64, FormatError> {
@@ -1019,38 +786,18 @@ fn parse_decimal_u64(bytes: &[u8]) -> Result<u64, FormatError> {
 }
 
 fn parse_pax_mtime(bytes: &[u8]) -> Result<ArchiveTimestamp, FormatError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| FormatError::InvalidArchive("PAX mtime is not ASCII"))?;
-    let (integer, fraction) = text
-        .split_once('.')
-        .map_or((text, None), |(integer, fraction)| {
-            (integer, Some(fraction))
-        });
-    if integer.is_empty()
-        || integer == "+"
-        || integer == "-"
-        || !integer
-            .trim_start_matches(['+', '-'])
-            .bytes()
-            .all(|byte| byte.is_ascii_digit())
-    {
+    let text = std::str::from_utf8(bytes).map_err(|_| FormatError::InvalidArchive("PAX mtime is not ASCII"))?;
+    let (integer, fraction) = text.split_once('.').map_or((text, None), |(integer, fraction)| (integer, Some(fraction)));
+    if integer.is_empty() || integer == "+" || integer == "-" || !integer.trim_start_matches(['+', '-']).bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(FormatError::InvalidArchive("malformed PAX mtime"));
     }
-    let seconds = integer
-        .parse::<i64>()
-        .map_err(|_| FormatError::InvalidArchive("PAX mtime exceeds i64"))?;
+    let seconds = integer.parse::<i64>().map_err(|_| FormatError::InvalidArchive("PAX mtime exceeds i64"))?;
     let nanoseconds = match fraction {
         None => 0,
-        Some(fraction)
-            if !fraction.is_empty()
-                && fraction.len() <= 9
-                && fraction.bytes().all(|byte| byte.is_ascii_digit()) =>
-        {
+        Some(fraction) if !fraction.is_empty() && fraction.len() <= 9 && fraction.bytes().all(|byte| byte.is_ascii_digit()) => {
             let mut padded = fraction.to_owned();
             padded.extend(std::iter::repeat_n('0', 9 - fraction.len()));
-            padded
-                .parse::<u32>()
-                .map_err(|_| FormatError::InvalidArchive("malformed PAX mtime fraction"))?
+            padded.parse::<u32>().map_err(|_| FormatError::InvalidArchive("malformed PAX mtime fraction"))?
         }
         Some(_) => return Err(FormatError::InvalidArchive("malformed PAX mtime fraction")),
     };
@@ -1062,20 +809,14 @@ fn parse_pax_mtime(bytes: &[u8]) -> Result<ArchiveTimestamp, FormatError> {
     Ok(ArchiveTimestamp::new(seconds, nanoseconds))
 }
 
-fn tar_owner_name(
-    pax_value: Option<&[u8]>,
-    header_field: &[u8],
-) -> Result<Option<String>, FormatError> {
+fn tar_owner_name(pax_value: Option<&[u8]>, header_field: &[u8]) -> Result<Option<String>, FormatError> {
     let value = pax_value.unwrap_or_else(|| nul_trimmed(header_field));
     if value.is_empty() {
         return Ok(None);
     }
-    let value = std::str::from_utf8(value)
-        .map_err(|_| FormatError::WriterUnsupported("input tar owner name is not UTF-8"))?;
+    let value = std::str::from_utf8(value).map_err(|_| FormatError::WriterUnsupported("input tar owner name is not UTF-8"))?;
     if value.contains('\0') {
-        return Err(FormatError::InvalidArchive(
-            "input tar owner name contains NUL",
-        ));
+        return Err(FormatError::InvalidArchive("input tar owner name contains NUL"));
     }
     Ok(Some(value.to_owned()))
 }
@@ -1089,10 +830,7 @@ fn trimmed_metadata_payload(payload: &[u8]) -> Vec<u8> {
 }
 
 fn nul_trimmed(bytes: &[u8]) -> &[u8] {
-    let end = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .unwrap_or(bytes.len());
+    let end = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
     &bytes[..end]
 }
 
@@ -1106,8 +844,7 @@ fn padding_to_512_u64(len: u64) -> u64 {
 }
 
 fn checked_input_add(lhs: u64, rhs: u64, field: &'static str) -> Result<u64, FormatError> {
-    lhs.checked_add(rhs)
-        .ok_or(FormatError::WriterUnsupported(field))
+    lhs.checked_add(rhs).ok_or(FormatError::WriterUnsupported(field))
 }
 
 fn io_error_from_format(error: FormatError) -> io::Error {
@@ -1292,27 +1029,17 @@ mod tests {
         let volume_header = VolumeHeader::parse(&bytes[..VOLUME_HEADER_LEN]).unwrap();
         let crypto_start = volume_header.crypto_header_offset as usize;
         let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-        let crypto_header = CryptoHeader::parse(
-            &bytes[crypto_start..crypto_end],
-            volume_header.crypto_header_length,
-        )
-        .unwrap();
+        let crypto_header = CryptoHeader::parse(&bytes[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
         let block_size = crypto_header.fixed.block_size as usize;
         let record_len = block_size + BLOCK_RECORD_FRAMING_LEN;
         let mut offset = crypto_end;
         let mut hashes = Vec::new();
         while bytes.get(offset..offset + 4) == Some(b"TZBK") {
-            let record =
-                BlockRecord::parse(&bytes[offset..offset + record_len], block_size).unwrap();
+            let record = BlockRecord::parse(&bytes[offset..offset + record_len], block_size).unwrap();
             if record.kind.is_data() {
                 hashes.push((
                     record.block_index,
-                    data_block_merkle_leaf_hash(
-                        record.block_index,
-                        record.kind,
-                        record.flags,
-                        &record.payload,
-                    ),
+                    data_block_merkle_leaf_hash(record.block_index, record.kind, record.flags, &record.payload),
                 ));
             }
             offset += record_len;
@@ -1344,10 +1071,7 @@ mod tests {
             if self.cursor >= self.data.len() {
                 return Ok(0);
             }
-            let len = self
-                .max_chunk
-                .min(buf.len())
-                .min(self.data.len() - self.cursor);
+            let len = self.max_chunk.min(buf.len()).min(self.data.len() - self.cursor);
             buf[..len].copy_from_slice(&self.data[self.cursor..self.cursor + len]);
             self.cursor += len;
             Ok(len)
@@ -1356,10 +1080,7 @@ mod tests {
 
     #[test]
     fn tar_stdin_single_volume_round_trips_list_verify_and_extract() {
-        let input = tar_stream(&[
-            ("alpha.txt", b"alpha payload".as_slice()),
-            ("dir/beta.txt", b"beta payload".as_slice()),
-        ]);
+        let input = tar_stream(&[("alpha.txt", b"alpha payload".as_slice()), ("dir/beta.txt", b"beta payload".as_slice())]);
         let mut reader = TinyReadCursor::new(input, 17);
 
         let archive = write_tar_stream_archive(&mut reader, &master_key(), options()).unwrap();
@@ -1367,27 +1088,14 @@ mod tests {
         assert!(reader.reads > 10);
         let opened = open_archive(&archive.bytes, &master_key()).unwrap();
         opened.verify().unwrap();
-        let listed = opened
-            .list_files()
-            .unwrap()
-            .into_iter()
-            .map(|entry| entry.path)
-            .collect::<Vec<_>>();
+        let listed = opened.list_files().unwrap().into_iter().map(|entry| entry.path).collect::<Vec<_>>();
         assert_eq!(listed, vec!["alpha.txt", "dir/beta.txt"]);
-        assert_eq!(
-            opened.extract_file("dir/beta.txt").unwrap(),
-            Some(b"beta payload".to_vec())
-        );
+        assert_eq!(opened.extract_file("dir/beta.txt").unwrap(), Some(b"beta payload".to_vec()));
     }
 
     #[test]
     fn tar_stdin_canonicalizes_gnu_sparse_1_0_without_materializing_holes() {
-        let input = gnu_sparse_1_0_tar(
-            "sparse.bin",
-            16 * 1024,
-            b"2\n1024\n3\n8192\n4\n",
-            b"abcWXYZ",
-        );
+        let input = gnu_sparse_1_0_tar("sparse.bin", 16 * 1024, b"2\n1024\n3\n8192\n4\n", b"abcWXYZ");
         let archive = write_tar_stream_archive(input.as_slice(), &master_key(), options()).unwrap();
         let opened = open_archive(&archive.bytes, &master_key()).unwrap();
         opened.verify().unwrap();
@@ -1420,14 +1128,8 @@ mod tests {
             parse_pax_mtime(b"1700000000.123456789").unwrap(),
             ArchiveTimestamp::new(1_700_000_000, 123_456_789)
         );
-        assert_eq!(
-            parse_pax_mtime(b"-1.5").unwrap(),
-            ArchiveTimestamp::new(-1, 500_000_000)
-        );
-        assert!(matches!(
-            parse_pax_mtime(b"-0.5"),
-            Err(FormatError::WriterUnsupported(_))
-        ));
+        assert_eq!(parse_pax_mtime(b"-1.5").unwrap(), ArchiveTimestamp::new(-1, 500_000_000));
+        assert!(matches!(parse_pax_mtime(b"-0.5"), Err(FormatError::WriterUnsupported(_))));
     }
 
     #[test]
@@ -1451,17 +1153,12 @@ mod tests {
         assert_eq!(summary.input_bytes, input.len() as u64);
         let opened = open_archive(&sink.volumes[0], &master_key()).unwrap();
         opened.verify().unwrap();
-        assert_eq!(
-            opened.extract_file("raw/data.bin").unwrap(),
-            Some(input.to_vec())
-        );
+        assert_eq!(opened.extract_file("raw/data.bin").unwrap(), Some(input.to_vec()));
     }
 
     #[test]
     fn sized_raw_stdin_known_size_multi_volume_round_trips() {
-        let input = (0..150_000)
-            .map(|index| (index % 251) as u8)
-            .collect::<Vec<_>>();
+        let input = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
         let mut sink = MemoryArchiveSink::default();
 
         let summary = write_sized_raw_member_archive_to_sink_with_kdf_and_root_auth(
@@ -1482,10 +1179,7 @@ mod tests {
         let refs = sink.volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
         let opened = open_archive_volumes(&refs, &master_key()).unwrap();
         opened.verify().unwrap();
-        assert_eq!(
-            opened.extract_file("raw/data.bin").unwrap(),
-            Some(input.to_vec())
-        );
+        assert_eq!(opened.extract_file("raw/data.bin").unwrap(), Some(input.to_vec()));
     }
 
     #[test]
@@ -1527,9 +1221,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            ArchiveWriteError::Format(FormatError::InvalidArchive(
-                "raw stdin exceeds declared --stdin-size"
-            ))
+            ArchiveWriteError::Format(FormatError::InvalidArchive("raw stdin exceeds declared --stdin-size"))
         ));
     }
 
@@ -1538,29 +1230,19 @@ mod tests {
         let input = tar_stream(&[("one.txt", b"one".as_slice())]);
         let mut sink = MemoryArchiveSink::default();
 
-        let summary =
-            write_tar_stream_archive_to_sink(&input[..], &master_key(), options(), &mut sink)
-                .unwrap();
+        let summary = write_tar_stream_archive_to_sink(&input[..], &master_key(), options(), &mut sink).unwrap();
 
         assert_eq!(summary.input_member_count, 1);
         assert_eq!(summary.input_tar_bytes, input.len() as u64);
         assert_eq!(summary.archive.volume_count, 1);
         assert_eq!(sink.volumes.len(), 1);
-        open_archive(&sink.volumes[0], &master_key())
-            .unwrap()
-            .verify()
-            .unwrap();
+        open_archive(&sink.volumes[0], &master_key()).unwrap().verify().unwrap();
     }
 
     #[test]
     fn tar_stdin_large_single_volume_round_trips() {
-        let beta = (0..150_000)
-            .map(|index| (index % 251) as u8)
-            .collect::<Vec<_>>();
-        let input = tar_stream(&[
-            ("alpha.txt", b"alpha payload".as_slice()),
-            ("dir/beta.bin", beta.as_slice()),
-        ]);
+        let beta = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
+        let input = tar_stream(&[("alpha.txt", b"alpha payload".as_slice()), ("dir/beta.bin", beta.as_slice())]);
 
         let archive = write_tar_stream_archive(&input[..], &master_key(), options()).unwrap();
         let opened = open_archive(&archive.bytes, &master_key()).unwrap();
@@ -1571,23 +1253,12 @@ mod tests {
 
     #[test]
     fn tar_stdin_multi_volume_round_trips_list_verify_and_extract() {
-        let beta = (0..150_000)
-            .map(|index| (index % 251) as u8)
-            .collect::<Vec<_>>();
-        let input = tar_stream(&[
-            ("alpha.txt", b"alpha payload".as_slice()),
-            ("dir/beta.bin", beta.as_slice()),
-        ]);
+        let beta = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
+        let input = tar_stream(&[("alpha.txt", b"alpha payload".as_slice()), ("dir/beta.bin", beta.as_slice())]);
         let mut reader = TinyReadCursor::new(input, 31);
         let mut sink = MemoryArchiveSink::default();
 
-        let summary = write_tar_stream_archive_to_sink(
-            &mut reader,
-            &master_key(),
-            multi_volume_options(4),
-            &mut sink,
-        )
-        .unwrap();
+        let summary = write_tar_stream_archive_to_sink(&mut reader, &master_key(), multi_volume_options(4), &mut sink).unwrap();
 
         assert!(reader.reads > 10);
         assert_eq!(summary.input_member_count, 2);
@@ -1595,30 +1266,16 @@ mod tests {
         assert_eq!(sink.volumes.len(), 4);
         let refs = sink.volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
         let opened = open_archive_volumes(&refs, &master_key()).unwrap();
-        assert_eq!(
-            opened.extract_file("alpha.txt").unwrap(),
-            Some(b"alpha payload".to_vec())
-        );
-        assert_eq!(
-            opened.extract_file("dir/beta.bin").unwrap(),
-            Some(beta.clone())
-        );
+        assert_eq!(opened.extract_file("alpha.txt").unwrap(), Some(b"alpha payload".to_vec()));
+        assert_eq!(opened.extract_file("dir/beta.bin").unwrap(), Some(beta.clone()));
         opened.verify().unwrap();
-        let listed = opened
-            .list_files()
-            .unwrap()
-            .into_iter()
-            .map(|entry| entry.path)
-            .collect::<Vec<_>>();
+        let listed = opened.list_files().unwrap().into_iter().map(|entry| entry.path).collect::<Vec<_>>();
         assert_eq!(listed, vec!["alpha.txt", "dir/beta.bin"]);
     }
 
     #[test]
     fn tar_stdin_emits_identical_bytes_to_file_list_create_with_streaming_metadata_class() {
-        let input = tar_stream(&[
-            ("alpha.txt", b"alpha payload".as_slice()),
-            ("dir/beta.txt", b"beta payload".as_slice()),
-        ]);
+        let input = tar_stream(&[("alpha.txt", b"alpha payload".as_slice()), ("dir/beta.txt", b"beta payload".as_slice())]);
         let options = single_pass_equivalence_options();
 
         let streaming = write_tar_stream_archive(&input[..], &master_key(), options).unwrap();
@@ -1638,10 +1295,7 @@ mod tests {
 
     #[test]
     fn tar_stdin_data_leaf_hashes_match_file_list_writer_sequence() {
-        let input = tar_stream(&[
-            ("alpha.txt", b"alpha payload".as_slice()),
-            ("dir/beta.txt", b"beta payload".as_slice()),
-        ]);
+        let input = tar_stream(&[("alpha.txt", b"alpha payload".as_slice()), ("dir/beta.txt", b"beta payload".as_slice())]);
         let options = single_pass_equivalence_options();
 
         let streaming = write_tar_stream_archive(&input[..], &master_key(), options).unwrap();
@@ -1655,10 +1309,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            data_leaf_hash_sequence(&streaming.bytes),
-            data_leaf_hash_sequence(&legacy.bytes)
-        );
+        assert_eq!(data_leaf_hash_sequence(&streaming.bytes), data_leaf_hash_sequence(&legacy.bytes));
     }
 
     #[test]
@@ -1666,9 +1317,7 @@ mod tests {
         let input = vec![0u8; TAR_BLOCK_LEN * 2];
         let mut sink = MemoryArchiveSink::default();
 
-        let summary =
-            write_tar_stream_archive_to_sink(&input[..], &master_key(), options(), &mut sink)
-                .unwrap();
+        let summary = write_tar_stream_archive_to_sink(&input[..], &master_key(), options(), &mut sink).unwrap();
 
         assert_eq!(summary.input_member_count, 0);
         assert_eq!(summary.input_tar_bytes, input.len() as u64);
@@ -1693,31 +1342,21 @@ mod tests {
         let archive = write_tar_stream_archive(&input[..], &master_key(), options()).unwrap();
         let opened = open_archive(&archive.bytes, &master_key()).unwrap();
 
-        assert_eq!(
-            opened.extract_file("large-format.txt").unwrap(),
-            Some(b"data".to_vec())
-        );
+        assert_eq!(opened.extract_file("large-format.txt").unwrap(), Some(b"data".to_vec()));
     }
 
     #[test]
     fn tar_stdin_rejects_metadata_header_without_following_member() {
         let payload = b"13 comment=x\n";
         let mut input = Vec::new();
-        input.extend_from_slice(&tar_header(
-            b"PaxHeaders/unused",
-            b'x',
-            payload.len() as u64,
-        ));
+        input.extend_from_slice(&tar_header(b"PaxHeaders/unused", b'x', payload.len() as u64));
         input.extend_from_slice(payload);
         input.resize(input.len() + padding_to_512(payload.len()), 0);
         input.extend_from_slice(&[0u8; TAR_BLOCK_LEN * 2]);
 
         let error = write_tar_stream_archive(&input[..], &master_key(), options()).unwrap_err();
 
-        assert_eq!(
-            error,
-            FormatError::InvalidArchive("tar stream ended after metadata header")
-        );
+        assert_eq!(error, FormatError::InvalidArchive("tar stream ended after metadata header"));
     }
 
     #[test]
@@ -1730,19 +1369,12 @@ mod tests {
         input.extend_from_slice(&[0u8; TAR_BLOCK_LEN * 2]);
         let mut sink = MemoryArchiveSink::default();
 
-        let summary =
-            write_tar_stream_archive_to_sink(&input[..], &master_key(), options(), &mut sink)
-                .unwrap();
+        let summary = write_tar_stream_archive_to_sink(&input[..], &master_key(), options(), &mut sink).unwrap();
 
         assert_eq!(summary.input_member_count, 2);
         let opened = open_archive(&sink.volumes[0], &master_key()).unwrap();
         assert_eq!(
-            opened
-                .list_files()
-                .unwrap()
-                .into_iter()
-                .map(|entry| entry.path)
-                .collect::<Vec<_>>(),
+            opened.list_files().unwrap().into_iter().map(|entry| entry.path).collect::<Vec<_>>(),
             vec!["dir", "dir/file.txt"]
         );
     }
@@ -1761,9 +1393,7 @@ mod tests {
         input.extend_from_slice(&[0u8; TAR_BLOCK_LEN * 2]);
         let mut sink = MemoryArchiveSink::default();
 
-        let summary =
-            write_tar_stream_archive_to_sink(&input[..], &master_key(), options(), &mut sink)
-                .unwrap();
+        let summary = write_tar_stream_archive_to_sink(&input[..], &master_key(), options(), &mut sink).unwrap();
 
         assert_eq!(summary.input_member_count, 1);
         let opened = open_archive(&sink.volumes[0], &master_key()).unwrap();
@@ -1777,16 +1407,8 @@ mod tests {
         let mut bad = options();
         bad.volume_loss_tolerance = 1;
 
-        let error = write_tar_stream_archive(
-            &tar_stream(&[("x", b"x".as_slice())])[..],
-            &master_key(),
-            bad,
-        )
-        .unwrap_err();
+        let error = write_tar_stream_archive(&tar_stream(&[("x", b"x".as_slice())])[..], &master_key(), bad).unwrap_err();
 
-        assert_eq!(
-            error,
-            FormatError::WriterUnsupported("streaming create cannot tolerate volume loss")
-        );
+        assert_eq!(error, FormatError::WriterUnsupported("streaming create cannot tolerate volume loss"));
     }
 }

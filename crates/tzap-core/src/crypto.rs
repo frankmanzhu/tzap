@@ -11,9 +11,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use aes_gcm_siv::aead::{Aead, KeyInit as AeadKeyInit, Payload};
 
 use crate::format::{
-    AeadAlgo, FormatError, KdfAlgo, MASTER_KEY_LEN, READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT,
-    READER_MAX_ARGON2ID_M_COST_KIB, READER_MAX_ARGON2ID_PARALLELISM, READER_MAX_ARGON2ID_T_COST,
-    READER_MAX_KEY_WRAP_TABLE_LEN, READER_MAX_KEY_WRAP_TABLE_RECIPIENT_RECORDS, SUBKEY_LEN,
+    AeadAlgo, FormatError, KdfAlgo, MASTER_KEY_LEN, READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT, READER_MAX_ARGON2ID_M_COST_KIB, READER_MAX_ARGON2ID_PARALLELISM,
+    READER_MAX_ARGON2ID_T_COST, READER_MAX_KEY_WRAP_TABLE_LEN, READER_MAX_KEY_WRAP_TABLE_RECIPIENT_RECORDS, SUBKEY_LEN,
 };
 use crate::padding::{depad_suffix_padding, suffix_pad_for_aead};
 
@@ -79,10 +78,7 @@ impl MasterKey {
         Ok(Self(key))
     }
 
-    pub fn derive_from_passphrase(
-        params: &KdfParams,
-        passphrase: &str,
-    ) -> Result<Self, FormatError> {
+    pub fn derive_from_passphrase(params: &KdfParams, passphrase: &str) -> Result<Self, FormatError> {
         let KdfParams::Argon2id {
             t_cost,
             m_cost_kib,
@@ -93,12 +89,10 @@ impl MasterKey {
             return Err(FormatError::KeyMaterialMismatch);
         };
 
-        let salt_length = u16::try_from(salt.len()).map_err(|_| {
-            FormatError::InvalidKdfParams("argon2id salt length must be 8..64 bytes")
-        })?;
+        let salt_length = u16::try_from(salt.len()).map_err(|_| FormatError::InvalidKdfParams("argon2id salt length must be 8..64 bytes"))?;
         validate_argon2id_bounds(*t_cost, *m_cost_kib, *parallelism, salt_length)?;
-        let params = Params::new(*m_cost_kib, *t_cost, *parallelism, Some(MASTER_KEY_LEN))
-            .map_err(|_| FormatError::InvalidKdfParams("argon2 params rejected"))?;
+        let params =
+            Params::new(*m_cost_kib, *t_cost, *parallelism, Some(MASTER_KEY_LEN)).map_err(|_| FormatError::InvalidKdfParams("argon2 params rejected"))?;
         let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
         let mut output = [0u8; MASTER_KEY_LEN];
         let mut passphrase_bytes = normalize_passphrase_nfc(passphrase);
@@ -135,11 +129,7 @@ impl Subkeys {
         }
     }
 
-    pub fn derive(
-        master_key: &MasterKey,
-        archive_uuid: &[u8; 16],
-        session_id: &[u8; 16],
-    ) -> Result<Self, FormatError> {
+    pub fn derive(master_key: &MasterKey, archive_uuid: &[u8; 16], session_id: &[u8; 16]) -> Result<Self, FormatError> {
         let mut salt = Vec::with_capacity(HKDF_SALT_DOMAIN.len() + 32);
         salt.extend_from_slice(HKDF_SALT_DOMAIN);
         salt.extend_from_slice(archive_uuid);
@@ -197,15 +187,8 @@ impl HmacDomain {
     }
 }
 
-pub fn compute_hmac(
-    domain: HmacDomain,
-    mac_key: &[u8; SUBKEY_LEN],
-    archive_uuid: &[u8; 16],
-    session_id: &[u8; 16],
-    covered_bytes: &[u8],
-) -> [u8; SUBKEY_LEN] {
-    let mut mac =
-        <HmacSha256 as Mac>::new_from_slice(mac_key).expect("HMAC accepts any key length");
+pub fn compute_hmac(domain: HmacDomain, mac_key: &[u8; SUBKEY_LEN], archive_uuid: &[u8; 16], session_id: &[u8; 16], covered_bytes: &[u8]) -> [u8; SUBKEY_LEN] {
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(mac_key).expect("HMAC accepts any key length");
     mac.update(domain.domain_bytes());
     mac.update(archive_uuid);
     mac.update(session_id);
@@ -224,16 +207,14 @@ pub fn verify_hmac(
     covered_bytes: &[u8],
     expected_hmac: &[u8],
 ) -> Result<(), FormatError> {
-    let mut mac =
-        <HmacSha256 as Mac>::new_from_slice(mac_key).expect("HMAC accepts any key length");
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(mac_key).expect("HMAC accepts any key length");
     mac.update(domain.domain_bytes());
     mac.update(archive_uuid);
     mac.update(session_id);
     mac.update(covered_bytes);
-    mac.verify_slice(expected_hmac)
-        .map_err(|_| FormatError::HmacMismatch {
-            structure: domain.structure_name(),
-        })
+    mac.verify_slice(expected_hmac).map_err(|_| FormatError::HmacMismatch {
+        structure: domain.structure_name(),
+    })
 }
 
 pub fn compute_integrity_tag(
@@ -288,15 +269,7 @@ pub fn verify_integrity_tag(
         );
     }
 
-    let actual = compute_integrity_tag(
-        domain,
-        aead_algo,
-        volume_format_rev,
-        None,
-        archive_uuid,
-        session_id,
-        covered_bytes,
-    )?;
+    let actual = compute_integrity_tag(domain, aead_algo, volume_format_rev, None, archive_uuid, session_id, covered_bytes)?;
     if expected_tag == actual {
         Ok(())
     } else {
@@ -319,122 +292,61 @@ pub fn derive_nonce(
     len: usize,
 ) -> Result<Vec<u8>, FormatError> {
     let info = nonce_or_aad_info(b"tzap-v1-nonce", domain, archive_uuid, session_id, counter)?;
-    let hk = Hkdf::<Sha256>::from_prk(seed)
-        .map_err(|_| FormatError::InvalidKdfParams("bad nonce seed"))?;
+    let hk = Hkdf::<Sha256>::from_prk(seed).map_err(|_| FormatError::InvalidKdfParams("bad nonce seed"))?;
     let mut nonce = vec![0u8; len];
-    hk.expand(&info, &mut nonce)
-        .map_err(|_| FormatError::HkdfExpandFailure)?;
+    hk.expand(&info, &mut nonce).map_err(|_| FormatError::HkdfExpandFailure)?;
     Ok(nonce)
 }
 
-pub fn build_aad(
-    domain: &[u8],
-    archive_uuid: &[u8; 16],
-    session_id: &[u8; 16],
-    counter: u64,
-) -> Result<Vec<u8>, FormatError> {
+pub fn build_aad(domain: &[u8], archive_uuid: &[u8; 16], session_id: &[u8; 16], counter: u64) -> Result<Vec<u8>, FormatError> {
     nonce_or_aad_info(b"tzap-v1-aad", domain, archive_uuid, session_id, counter)
 }
 
-pub fn aead_encrypt(
-    algo: AeadAlgo,
-    key: &[u8; SUBKEY_LEN],
-    nonce: &[u8],
-    aad: &[u8],
-    plaintext: &[u8],
-) -> Result<Vec<u8>, FormatError> {
+pub fn aead_encrypt(algo: AeadAlgo, key: &[u8; SUBKEY_LEN], nonce: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, FormatError> {
     validate_nonce_len(algo, nonce)?;
     match algo {
         AeadAlgo::None => Ok(plaintext.to_vec()),
         AeadAlgo::AesGcmSiv256 => {
-            let cipher =
-                Aes256GcmSiv::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
+            let cipher = Aes256GcmSiv::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
             cipher
-                .encrypt(
-                    aes_gcm_siv::Nonce::from_slice(nonce),
-                    Payload {
-                        msg: plaintext,
-                        aad,
-                    },
-                )
+                .encrypt(aes_gcm_siv::Nonce::from_slice(nonce), Payload { msg: plaintext, aad })
                 .map_err(|_| FormatError::AeadFailure)
         }
         AeadAlgo::XChaCha20Poly1305 => {
-            let cipher = XChaCha20Poly1305::new_from_slice(key)
-                .map_err(|_| FormatError::InvalidAeadKeyLength)?;
+            let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
             cipher
-                .encrypt(
-                    chacha20poly1305::XNonce::from_slice(nonce),
-                    Payload {
-                        msg: plaintext,
-                        aad,
-                    },
-                )
+                .encrypt(chacha20poly1305::XNonce::from_slice(nonce), Payload { msg: plaintext, aad })
                 .map_err(|_| FormatError::AeadFailure)
         }
         AeadAlgo::AesGcm256 => {
-            let cipher =
-                Aes256Gcm::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
+            let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
             cipher
-                .encrypt(
-                    aes_gcm::Nonce::from_slice(nonce),
-                    Payload {
-                        msg: plaintext,
-                        aad,
-                    },
-                )
+                .encrypt(aes_gcm::Nonce::from_slice(nonce), Payload { msg: plaintext, aad })
                 .map_err(|_| FormatError::AeadFailure)
         }
     }
 }
 
-pub fn aead_decrypt(
-    algo: AeadAlgo,
-    key: &[u8; SUBKEY_LEN],
-    nonce: &[u8],
-    aad: &[u8],
-    ciphertext_and_tag: &[u8],
-) -> Result<Vec<u8>, FormatError> {
+pub fn aead_decrypt(algo: AeadAlgo, key: &[u8; SUBKEY_LEN], nonce: &[u8], aad: &[u8], ciphertext_and_tag: &[u8]) -> Result<Vec<u8>, FormatError> {
     validate_nonce_len(algo, nonce)?;
     match algo {
         AeadAlgo::None => Ok(ciphertext_and_tag.to_vec()),
         AeadAlgo::AesGcmSiv256 => {
-            let cipher =
-                Aes256GcmSiv::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
+            let cipher = Aes256GcmSiv::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
             cipher
-                .decrypt(
-                    aes_gcm_siv::Nonce::from_slice(nonce),
-                    Payload {
-                        msg: ciphertext_and_tag,
-                        aad,
-                    },
-                )
+                .decrypt(aes_gcm_siv::Nonce::from_slice(nonce), Payload { msg: ciphertext_and_tag, aad })
                 .map_err(|_| FormatError::AeadFailure)
         }
         AeadAlgo::XChaCha20Poly1305 => {
-            let cipher = XChaCha20Poly1305::new_from_slice(key)
-                .map_err(|_| FormatError::InvalidAeadKeyLength)?;
+            let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
             cipher
-                .decrypt(
-                    chacha20poly1305::XNonce::from_slice(nonce),
-                    Payload {
-                        msg: ciphertext_and_tag,
-                        aad,
-                    },
-                )
+                .decrypt(chacha20poly1305::XNonce::from_slice(nonce), Payload { msg: ciphertext_and_tag, aad })
                 .map_err(|_| FormatError::AeadFailure)
         }
         AeadAlgo::AesGcm256 => {
-            let cipher =
-                Aes256Gcm::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
+            let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
             cipher
-                .decrypt(
-                    aes_gcm::Nonce::from_slice(nonce),
-                    Payload {
-                        msg: ciphertext_and_tag,
-                        aad,
-                    },
-                )
+                .decrypt(aes_gcm::Nonce::from_slice(nonce), Payload { msg: ciphertext_and_tag, aad })
                 .map_err(|_| FormatError::AeadFailure)
         }
     }
@@ -451,11 +363,7 @@ pub struct AeadObjectContext<'a> {
     pub counter: u64,
 }
 
-pub fn encrypt_padded_aead_object(
-    context: AeadObjectContext<'_>,
-    block_size: usize,
-    payload: &[u8],
-) -> Result<Vec<u8>, FormatError> {
+pub fn encrypt_padded_aead_object(context: AeadObjectContext<'_>, block_size: usize, payload: &[u8]) -> Result<Vec<u8>, FormatError> {
     let nonce = derive_nonce(
         context.nonce_seed,
         context.domain,
@@ -464,20 +372,12 @@ pub fn encrypt_padded_aead_object(
         context.counter,
         context.algo.nonce_len(),
     )?;
-    let aad = build_aad(
-        context.domain,
-        context.archive_uuid,
-        context.session_id,
-        context.counter,
-    )?;
+    let aad = build_aad(context.domain, context.archive_uuid, context.session_id, context.counter)?;
     let padded = suffix_pad_for_aead(payload, context.algo.tag_len(), block_size)?;
     aead_encrypt(context.algo, context.key, &nonce, &aad, &padded)
 }
 
-pub fn decrypt_padded_aead_object(
-    context: AeadObjectContext<'_>,
-    ciphertext_and_tag: &[u8],
-) -> Result<Vec<u8>, FormatError> {
+pub fn decrypt_padded_aead_object(context: AeadObjectContext<'_>, ciphertext_and_tag: &[u8]) -> Result<Vec<u8>, FormatError> {
     let nonce = derive_nonce(
         context.nonce_seed,
         context.domain,
@@ -486,12 +386,7 @@ pub fn decrypt_padded_aead_object(
         context.counter,
         context.algo.nonce_len(),
     )?;
-    let aad = build_aad(
-        context.domain,
-        context.archive_uuid,
-        context.session_id,
-        context.counter,
-    )?;
+    let aad = build_aad(context.domain, context.archive_uuid, context.session_id, context.counter)?;
     let padded = aead_decrypt(context.algo, context.key, &nonce, &aad, ciphertext_and_tag)?;
     Ok(depad_suffix_padding(&padded)?.to_vec())
 }
@@ -540,19 +435,13 @@ fn parse_argon2id_kdf_params(bytes: &[u8]) -> Result<(KdfParams, usize), FormatE
     let parallelism = read_u32(bytes, 10)?;
     let salt_length = read_u16(bytes, 14)?;
     if !(ARGON2ID_MIN_SALT_LEN..=ARGON2ID_MAX_SALT_LEN).contains(&salt_length) {
-        return Err(FormatError::InvalidKdfParams(
-            "argon2id salt length must be 8..64 bytes",
-        ));
+        return Err(FormatError::InvalidKdfParams("argon2id salt length must be 8..64 bytes"));
     }
     if t_cost == 0 {
-        return Err(FormatError::InvalidKdfParams(
-            "argon2id t_cost must be non-zero",
-        ));
+        return Err(FormatError::InvalidKdfParams("argon2id t_cost must be non-zero"));
     }
     if parallelism == 0 {
-        return Err(FormatError::InvalidKdfParams(
-            "argon2id parallelism must be non-zero",
-        ));
+        return Err(FormatError::InvalidKdfParams("argon2id parallelism must be non-zero"));
     }
     validate_argon2id_bounds(t_cost, m_cost_kib, parallelism, salt_length)?;
 
@@ -586,9 +475,7 @@ fn parse_recipient_wrap_kdf_params(bytes: &[u8]) -> Result<(KdfParams, usize), F
     let key_wrap_table_record_count = read_u32(bytes, 6)?;
     let table_version = read_u16(bytes, 10)?;
     if key_wrap_table_length == 0 {
-        return Err(FormatError::InvalidKdfParams(
-            "recipient-wrap key_wrap_table_length must be non-zero",
-        ));
+        return Err(FormatError::InvalidKdfParams("recipient-wrap key_wrap_table_length must be non-zero"));
     }
     if key_wrap_table_length > READER_MAX_KEY_WRAP_TABLE_LEN {
         return Err(FormatError::ReaderResourceLimitExceeded {
@@ -605,15 +492,11 @@ fn parse_recipient_wrap_kdf_params(bytes: &[u8]) -> Result<(KdfParams, usize), F
         });
     }
     if table_version != RECIPIENT_WRAP_TABLE_VERSION {
-        return Err(FormatError::InvalidKdfParams(
-            "recipient-wrap table version must be 1",
-        ));
+        return Err(FormatError::InvalidKdfParams("recipient-wrap table version must be 1"));
     }
     let reserved = read_u16(bytes, 12)?;
     if reserved != 0 {
-        return Err(FormatError::InvalidKdfParams(
-            "recipient-wrap reserved bytes must be zero",
-        ));
+        return Err(FormatError::InvalidKdfParams("recipient-wrap reserved bytes must be zero"));
     }
     let mut key_wrap_table_digest = [0u8; 32];
     key_wrap_table_digest.copy_from_slice(&bytes[14..RECIPIENT_WRAP_KDF_PARAMS_LEN]);
@@ -628,21 +511,12 @@ fn parse_recipient_wrap_kdf_params(bytes: &[u8]) -> Result<(KdfParams, usize), F
     ))
 }
 
-fn validate_argon2id_bounds(
-    t_cost: u32,
-    m_cost_kib: u32,
-    parallelism: u32,
-    salt_length: u16,
-) -> Result<(), FormatError> {
+fn validate_argon2id_bounds(t_cost: u32, m_cost_kib: u32, parallelism: u32, salt_length: u16) -> Result<(), FormatError> {
     if !(ARGON2ID_MIN_SALT_LEN..=ARGON2ID_MAX_SALT_LEN).contains(&salt_length) {
-        return Err(FormatError::InvalidKdfParams(
-            "argon2id salt length must be 8..64 bytes",
-        ));
+        return Err(FormatError::InvalidKdfParams("argon2id salt length must be 8..64 bytes"));
     }
     if t_cost == 0 {
-        return Err(FormatError::InvalidKdfParams(
-            "argon2id t_cost must be non-zero",
-        ));
+        return Err(FormatError::InvalidKdfParams("argon2id t_cost must be non-zero"));
     }
     if t_cost > READER_MAX_ARGON2ID_T_COST {
         return Err(FormatError::ReaderResourceLimitExceeded {
@@ -652,9 +526,7 @@ fn validate_argon2id_bounds(
         });
     }
     if parallelism == 0 {
-        return Err(FormatError::InvalidKdfParams(
-            "argon2id parallelism must be non-zero",
-        ));
+        return Err(FormatError::InvalidKdfParams("argon2id parallelism must be non-zero"));
     }
     if parallelism > READER_MAX_ARGON2ID_PARALLELISM {
         return Err(FormatError::ReaderResourceLimitExceeded {
@@ -673,9 +545,9 @@ fn validate_argon2id_bounds(
     // Individual caps allow e.g. 4 GiB × 100 passes (~400 GiB of memory traffic) —
     // a pre-authentication DoS since KDF params are inherently unauthenticated.
     // Bound the m × t work product as well.
-    let memory_time_product = u64::from(t_cost).checked_mul(u64::from(m_cost_kib)).ok_or(
-        FormatError::InvalidKdfParams("argon2id work product overflow"),
-    )?;
+    let memory_time_product = u64::from(t_cost)
+        .checked_mul(u64::from(m_cost_kib))
+        .ok_or(FormatError::InvalidKdfParams("argon2id work product overflow"))?;
     if memory_time_product > READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT as u64 {
         return Err(FormatError::ReaderResourceLimitExceeded {
             field: "argon2id m_cost_kib × t_cost",
@@ -685,31 +557,20 @@ fn validate_argon2id_bounds(
     }
     let min_memory = parallelism
         .checked_mul(8)
-        .ok_or(FormatError::InvalidKdfParams(
-            "argon2id memory requirement overflow",
-        ))?;
+        .ok_or(FormatError::InvalidKdfParams("argon2id memory requirement overflow"))?;
     if m_cost_kib < min_memory {
-        return Err(FormatError::InvalidKdfParams(
-            "argon2id memory must be at least 8 KiB per lane",
-        ));
+        return Err(FormatError::InvalidKdfParams("argon2id memory must be at least 8 KiB per lane"));
     }
     Ok(())
 }
 
 fn expand_subkey(hk: &Hkdf<Sha256>, info: &[u8]) -> Result<[u8; SUBKEY_LEN], FormatError> {
     let mut output = [0u8; SUBKEY_LEN];
-    hk.expand(info, &mut output)
-        .map_err(|_| FormatError::HkdfExpandFailure)?;
+    hk.expand(info, &mut output).map_err(|_| FormatError::HkdfExpandFailure)?;
     Ok(output)
 }
 
-fn nonce_or_aad_info(
-    prefix: &[u8],
-    domain: &[u8],
-    archive_uuid: &[u8; 16],
-    session_id: &[u8; 16],
-    counter: u64,
-) -> Result<Vec<u8>, FormatError> {
+fn nonce_or_aad_info(prefix: &[u8], domain: &[u8], archive_uuid: &[u8; 16], session_id: &[u8; 16], counter: u64) -> Result<Vec<u8>, FormatError> {
     let domain_len = u16::try_from(domain.len()).map_err(|_| FormatError::DomainTooLong)?;
     let mut info = Vec::with_capacity(prefix.len() + 2 + domain.len() + 16 + 16 + 8);
     info.extend_from_slice(prefix);
@@ -772,12 +633,7 @@ mod tests {
         [0x22; 16]
     }
 
-    fn legacy_nonce_info(
-        domain: &[u8],
-        archive_uuid: &[u8; 16],
-        session_id: &[u8; 16],
-        counter: u64,
-    ) -> Vec<u8> {
+    fn legacy_nonce_info(domain: &[u8], archive_uuid: &[u8; 16], session_id: &[u8; 16], counter: u64) -> Vec<u8> {
         let mut info = Vec::with_capacity(b"tzap-v1-nonce".len() + domain.len() + 16 + 16 + 8);
         info.extend_from_slice(b"tzap-v1-nonce");
         info.extend_from_slice(domain);
@@ -796,8 +652,7 @@ mod tests {
 
     #[test]
     fn parses_none_kdf_params() {
-        let (params, consumed) =
-            KdfParams::parse(KdfAlgo::None, &(KdfAlgo::None as u16).to_le_bytes()).unwrap();
+        let (params, consumed) = KdfParams::parse(KdfAlgo::None, &(KdfAlgo::None as u16).to_le_bytes()).unwrap();
         assert_eq!(params, KdfParams::None);
         assert_eq!(consumed, 2);
 
@@ -972,8 +827,7 @@ mod tests {
             FormatError::ReaderResourceLimitExceeded {
                 field: "argon2id m_cost_kib × t_cost",
                 cap: READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT as u64,
-                actual: u64::from(READER_MAX_ARGON2ID_T_COST)
-                    * u64::from(READER_MAX_ARGON2ID_M_COST_KIB),
+                actual: u64::from(READER_MAX_ARGON2ID_T_COST) * u64::from(READER_MAX_ARGON2ID_M_COST_KIB),
             }
         );
 
@@ -1001,10 +855,7 @@ mod tests {
             bytes
         }
 
-        assert_eq!(
-            KdfParams::parse(KdfAlgo::Raw, &[]).unwrap_err(),
-            FormatError::TruncatedKdfParams
-        );
+        assert_eq!(KdfParams::parse(KdfAlgo::Raw, &[]).unwrap_err(), FormatError::TruncatedKdfParams);
         assert_eq!(
             KdfParams::parse(KdfAlgo::Argon2id, &argon_bytes(7, b"1234567")).unwrap_err(),
             FormatError::InvalidKdfParams("argon2id salt length must be 8..64 bytes")
@@ -1031,10 +882,7 @@ mod tests {
     fn rejects_kdf_algo_tag_mismatch() {
         assert_eq!(
             KdfParams::parse(KdfAlgo::Raw, &(KdfAlgo::Argon2id as u16).to_le_bytes()).unwrap_err(),
-            FormatError::KdfAlgoTagMismatch {
-                expected: 0,
-                actual: 1
-            }
+            FormatError::KdfAlgoTagMismatch { expected: 0, actual: 1 }
         );
     }
 
@@ -1052,16 +900,8 @@ mod tests {
             salt: b"12345678".to_vec(),
         };
         let cases = [
-            (
-                "trailing newline",
-                "pass\n",
-                "f63027356e6da90a4f6c81af70b9e6f1b1967ab684ecda8257cb7d21de760623",
-            ),
-            (
-                "embedded nul",
-                "pass\0word",
-                "23db596ddbaa8f3f36d653f456dd9819e342aad4e30224008a22f1fb7648780e",
-            ),
+            ("trailing newline", "pass\n", "f63027356e6da90a4f6c81af70b9e6f1b1967ab684ecda8257cb7d21de760623"),
+            ("embedded nul", "pass\0word", "23db596ddbaa8f3f36d653f456dd9819e342aad4e30224008a22f1fb7648780e"),
             (
                 "leading bom",
                 "\u{feff}pass",
@@ -1093,14 +933,9 @@ mod tests {
         let old_argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x10, argon_params);
         let mut old_output = [0u8; MASTER_KEY_LEN];
         let passphrase = normalize_passphrase_nfc("e\u{301}");
-        old_argon2
-            .hash_password_into(&passphrase, b"12345678", &mut old_output)
-            .unwrap();
+        old_argon2.hash_password_into(&passphrase, b"12345678", &mut old_output).unwrap();
 
-        assert_eq!(
-            hex::encode(current.0),
-            "24709642204c04bf88fb36550c478769eb10a0400c0493c9695d30fbf7082241"
-        );
+        assert_eq!(hex::encode(current.0), "24709642204c04bf88fb36550c478769eb10a0400c0493c9695d30fbf7082241");
         assert_ne!(old_output, current.0);
     }
 
@@ -1142,18 +977,9 @@ mod tests {
         let master = MasterKey::derive_from_passphrase(&params, "correct horse\n").unwrap();
         let subkeys = Subkeys::derive(&master, &archive_uuid, &session_id).unwrap();
 
-        assert_eq!(
-            hex::encode(master.0),
-            "c58d65c836c8a590c0d34fcc0907d876e969d72c51a267cad2518cfee8eb2a21"
-        );
-        assert_eq!(
-            hex::encode(subkeys.enc_key),
-            "786001f513f99062c7c7ef72c978847a7c2daa452f363177839ce2ed3ecfd5df"
-        );
-        assert_eq!(
-            hex::encode(subkeys.mac_key),
-            "024f2737f6db8aa03d3ce241d25c26fcc18bbcf4af242614c3d703224cd82b74"
-        );
+        assert_eq!(hex::encode(master.0), "c58d65c836c8a590c0d34fcc0907d876e969d72c51a267cad2518cfee8eb2a21");
+        assert_eq!(hex::encode(subkeys.enc_key), "786001f513f99062c7c7ef72c978847a7c2daa452f363177839ce2ed3ecfd5df");
+        assert_eq!(hex::encode(subkeys.mac_key), "024f2737f6db8aa03d3ce241d25c26fcc18bbcf4af242614c3d703224cd82b74");
         assert_eq!(
             hex::encode(subkeys.index_nonce_seed),
             "5d51a19bf7f6d77ce7945517ce95837a089f8d1cd20aea43cbcb8d745c0668ee"
@@ -1170,29 +996,11 @@ mod tests {
         let key = [0x44; SUBKEY_LEN];
         let covered = b"covered bytes";
         let tag = compute_hmac(HmacDomain::CryptoHeader, &key, &uuid(), &session(), covered);
-        verify_hmac(
-            HmacDomain::CryptoHeader,
-            &key,
-            &uuid(),
-            &session(),
-            covered,
-            &tag,
-        )
-        .unwrap();
+        verify_hmac(HmacDomain::CryptoHeader, &key, &uuid(), &session(), covered, &tag).unwrap();
 
         assert_eq!(
-            verify_hmac(
-                HmacDomain::ManifestFooter,
-                &key,
-                &uuid(),
-                &session(),
-                covered,
-                &tag,
-            )
-            .unwrap_err(),
-            FormatError::HmacMismatch {
-                structure: "ManifestFooter"
-            }
+            verify_hmac(HmacDomain::ManifestFooter, &key, &uuid(), &session(), covered, &tag,).unwrap_err(),
+            FormatError::HmacMismatch { structure: "ManifestFooter" }
         );
     }
 
@@ -1234,9 +1042,7 @@ mod tests {
                 &tag_v45,
             )
             .unwrap_err(),
-            FormatError::IntegrityDigestMismatch {
-                structure: "ManifestFooter"
-            }
+            FormatError::IntegrityDigestMismatch { structure: "ManifestFooter" }
         );
 
         let manifest_tag_v45 = compute_integrity_tag(
@@ -1282,40 +1088,15 @@ mod tests {
     fn hmac_sidecar_domain_vector_and_boundary_bytes_are_literal() {
         let key = [0x44; SUBKEY_LEN];
         let covered = b"covered bytes";
-        let tag = compute_hmac(
-            HmacDomain::BootstrapSidecar,
-            &key,
-            &uuid(),
-            &session(),
-            covered,
-        );
-        assert_eq!(
-            hex::encode(tag),
-            "1ecc9e0c5c9079b6824e16c4468ac9df22ca50fa2a924d21a91aab33c3721d51"
-        );
-        verify_hmac(
-            HmacDomain::BootstrapSidecar,
-            &key,
-            &uuid(),
-            &session(),
-            covered,
-            &tag,
-        )
-        .unwrap();
+        let tag = compute_hmac(HmacDomain::BootstrapSidecar, &key, &uuid(), &session(), covered);
+        assert_eq!(hex::encode(tag), "1ecc9e0c5c9079b6824e16c4468ac9df22ca50fa2a924d21a91aab33c3721d51");
+        verify_hmac(HmacDomain::BootstrapSidecar, &key, &uuid(), &session(), covered, &tag).unwrap();
 
         for mutate_index in [0, covered.len() - 1] {
             let mut mutated = covered.to_vec();
             mutated[mutate_index] ^= 0x01;
             assert_eq!(
-                verify_hmac(
-                    HmacDomain::BootstrapSidecar,
-                    &key,
-                    &uuid(),
-                    &session(),
-                    &mutated,
-                    &tag,
-                )
-                .unwrap_err(),
+                verify_hmac(HmacDomain::BootstrapSidecar, &key, &uuid(), &session(), &mutated, &tag,).unwrap_err(),
                 FormatError::HmacMismatch {
                     structure: "BootstrapSidecarHeader"
                 }
@@ -1326,15 +1107,7 @@ mod tests {
             let mut mutated_tag = tag;
             mutated_tag[mutate_index] ^= 0x01;
             assert_eq!(
-                verify_hmac(
-                    HmacDomain::BootstrapSidecar,
-                    &key,
-                    &uuid(),
-                    &session(),
-                    covered,
-                    &mutated_tag,
-                )
-                .unwrap_err(),
+                verify_hmac(HmacDomain::BootstrapSidecar, &key, &uuid(), &session(), covered, &mutated_tag,).unwrap_err(),
                 FormatError::HmacMismatch {
                     structure: "BootstrapSidecarHeader"
                 }
@@ -1381,57 +1154,27 @@ mod tests {
         let mut legacy_nonce = vec![0u8; AeadAlgo::AesGcmSiv256.nonce_len()];
         Hkdf::<Sha256>::from_prk(&nonce_seed)
             .unwrap()
-            .expand(
-                &legacy_nonce_info(domain, &uuid, &session, counter),
-                &mut legacy_nonce,
-            )
+            .expand(&legacy_nonce_info(domain, &uuid, &session, counter), &mut legacy_nonce)
             .unwrap();
         let aad = build_aad(domain, &uuid, &session, counter).unwrap();
 
         assert_ne!(
             legacy_nonce,
-            derive_nonce(
-                &nonce_seed,
-                domain,
-                &uuid,
-                &session,
-                counter,
-                AeadAlgo::AesGcmSiv256.nonce_len()
-            )
-            .unwrap(),
+            derive_nonce(&nonce_seed, domain, &uuid, &session, counter, AeadAlgo::AesGcmSiv256.nonce_len()).unwrap(),
             "legacy nonce info encoding must differ from current encoding"
         );
 
         assert_eq!(
-            aead_decrypt(
-                AeadAlgo::AesGcmSiv256,
-                &key,
-                &legacy_nonce,
-                &aad,
-                &ciphertext,
-            )
-            .unwrap_err(),
+            aead_decrypt(AeadAlgo::AesGcmSiv256, &key, &legacy_nonce, &aad, &ciphertext,).unwrap_err(),
             FormatError::AeadFailure
         );
     }
 
     #[test]
     fn aead_round_trips_all_registered_algorithms() {
-        for algo in [
-            AeadAlgo::AesGcmSiv256,
-            AeadAlgo::XChaCha20Poly1305,
-            AeadAlgo::AesGcm256,
-        ] {
+        for algo in [AeadAlgo::AesGcmSiv256, AeadAlgo::XChaCha20Poly1305, AeadAlgo::AesGcm256] {
             let key = [0x66; SUBKEY_LEN];
-            let nonce = derive_nonce(
-                &[0x77; SUBKEY_LEN],
-                b"envelope",
-                &uuid(),
-                &session(),
-                0,
-                algo.nonce_len(),
-            )
-            .unwrap();
+            let nonce = derive_nonce(&[0x77; SUBKEY_LEN], b"envelope", &uuid(), &session(), 0, algo.nonce_len()).unwrap();
             let aad = build_aad(b"envelope", &uuid(), &session(), 0).unwrap();
             let ciphertext = aead_encrypt(algo, &key, &nonce, &aad, b"plaintext").unwrap();
             assert_ne!(ciphertext, b"plaintext");
@@ -1440,22 +1183,15 @@ mod tests {
 
             let mut tampered = ciphertext;
             tampered[0] ^= 1;
-            assert_eq!(
-                aead_decrypt(algo, &key, &nonce, &aad, &tampered).unwrap_err(),
-                FormatError::AeadFailure
-            );
+            assert_eq!(aead_decrypt(algo, &key, &nonce, &aad, &tampered).unwrap_err(), FormatError::AeadFailure);
         }
     }
 
     #[test]
     fn aead_none_passes_plaintext_through() {
-        let ciphertext =
-            aead_encrypt(AeadAlgo::None, &[0; SUBKEY_LEN], &[], b"aad", b"plaintext").unwrap();
+        let ciphertext = aead_encrypt(AeadAlgo::None, &[0; SUBKEY_LEN], &[], b"aad", b"plaintext").unwrap();
         assert_eq!(ciphertext, b"plaintext");
-        assert_eq!(
-            aead_decrypt(AeadAlgo::None, &[0; SUBKEY_LEN], &[], b"aad", &ciphertext).unwrap(),
-            b"plaintext"
-        );
+        assert_eq!(aead_decrypt(AeadAlgo::None, &[0; SUBKEY_LEN], &[], b"aad", &ciphertext).unwrap(), b"plaintext");
         assert_eq!(AeadAlgo::None.nonce_len(), 0);
         assert_eq!(AeadAlgo::None.tag_len(), 0);
     }
@@ -1494,14 +1230,7 @@ mod tests {
         assert_eq!(plaintext, b"packed frames");
 
         assert_eq!(
-            decrypt_padded_aead_object(
-                AeadObjectContext {
-                    domain: b"idxroot",
-                    ..context
-                },
-                &ciphertext,
-            )
-            .unwrap_err(),
+            decrypt_padded_aead_object(AeadObjectContext { domain: b"idxroot", ..context }, &ciphertext,).unwrap_err(),
             FormatError::AeadFailure
         );
     }
@@ -1528,26 +1257,11 @@ mod tests {
         )
         .unwrap();
 
-        let nonce = derive_nonce(
-            &nonce_seed,
-            b"idxroot",
-            &uuid,
-            &session,
-            0,
-            AeadAlgo::AesGcmSiv256.nonce_len(),
-        )
-        .unwrap();
+        let nonce = derive_nonce(&nonce_seed, b"idxroot", &uuid, &session, 0, AeadAlgo::AesGcmSiv256.nonce_len()).unwrap();
         let mismatched_aad = build_aad(b"idxroot", &uuid, &session, 1).unwrap();
 
         assert_eq!(
-            aead_decrypt(
-                AeadAlgo::AesGcmSiv256,
-                &key,
-                &nonce,
-                &mismatched_aad,
-                &ciphertext,
-            )
-            .unwrap_err(),
+            aead_decrypt(AeadAlgo::AesGcmSiv256, &key, &nonce, &mismatched_aad, &ciphertext,).unwrap_err(),
             FormatError::AeadFailure
         );
     }

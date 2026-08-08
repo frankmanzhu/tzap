@@ -7,41 +7,31 @@ use crate::crypto::{compute_hmac, encrypt_padded_aead_object, AeadObjectContext,
 use crate::entry_metadata::RestorePolicy;
 use crate::fec::encode_parity_gf16;
 use crate::format::{
-    AeadAlgo, CompressionAlgo, FecAlgo, KdfAlgo, BLOCK_RECORD_FRAMING_LEN,
-    BOOTSTRAP_SIDECAR_HEADER_LEN, CRITICAL_METADATA_RECOVERY_HEADER_LEN,
-    CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN, CRITICAL_RECOVERY_LOCATOR_LEN,
-    CRYPTO_EXTENSION_HEADER_LEN, CRYPTO_HEADER_FIXED_LEN, FORMAT_VERSION, LOCATOR_PAIR_LEN,
-    MANIFEST_FOOTER_LEN, READER_MAX_CRYPTO_HEADER_LEN, READER_MAX_ENVELOPE_TARGET_SIZE,
-    READER_MAX_METADATA_OBJECT_SIZE, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV,
-    VOLUME_FORMAT_REV_45, VOLUME_TRAILER_LEN,
+    AeadAlgo, CompressionAlgo, FecAlgo, KdfAlgo, BLOCK_RECORD_FRAMING_LEN, BOOTSTRAP_SIDECAR_HEADER_LEN, CRITICAL_METADATA_RECOVERY_HEADER_LEN,
+    CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN, CRITICAL_RECOVERY_LOCATOR_LEN, CRYPTO_EXTENSION_HEADER_LEN, CRYPTO_HEADER_FIXED_LEN, FORMAT_VERSION,
+    LOCATOR_PAIR_LEN, MANIFEST_FOOTER_LEN, READER_MAX_CRYPTO_HEADER_LEN, READER_MAX_ENVELOPE_TARGET_SIZE, READER_MAX_METADATA_OBJECT_SIZE,
+    READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45, VOLUME_TRAILER_LEN,
 };
 use crate::metadata::{
-    hash_prefix, DirectoryHintEntry, DirectoryHintTableHeader, IndexRootHeader, IndexShardHeader,
-    ENVELOPE_ENTRY_LEN, FILE_ENTRY_LEN, FRAME_ENTRY_LEN, INDEX_SHARD_HEADER_LEN,
+    hash_prefix, DirectoryHintEntry, DirectoryHintTableHeader, IndexRootHeader, IndexShardHeader, ENVELOPE_ENTRY_LEN, FILE_ENTRY_LEN, FRAME_ENTRY_LEN,
+    INDEX_SHARD_HEADER_LEN,
 };
 use crate::non_seekable_reader::{
-    extract_non_seekable_stream_to_dir, list_non_seekable_stream, verify_non_seekable_stream,
-    verify_non_seekable_stream_with_bootstrap_sidecar, verify_non_seekable_stream_with_options,
-    verify_non_seekable_stream_with_recipient_wrap_resolver_options, NonSeekableReaderOptions,
+    extract_non_seekable_stream_to_dir, list_non_seekable_stream, verify_non_seekable_stream, verify_non_seekable_stream_with_bootstrap_sidecar,
+    verify_non_seekable_stream_with_options, verify_non_seekable_stream_with_recipient_wrap_resolver_options, NonSeekableReaderOptions,
     SequentialRootAuthStatus,
 };
-use crate::raw_stream_profile::{
-    serialize_raw_stream_content_model_extension, RAW_STREAM_UNSUPPORTED_MESSAGE,
-};
+use crate::raw_stream_profile::{serialize_raw_stream_content_model_extension, RAW_STREAM_UNSUPPORTED_MESSAGE};
 use crate::wire::{
-    compute_key_wrap_table_digest, BootstrapSidecarHeader, CriticalMetadataImage,
-    CriticalMetadataRecoveryHeader, CriticalMetadataRecoveryShard, CriticalRecoveryLocator,
-    RecipientRecordV1, RootAuthFooterV1, VolumeHeader,
+    compute_key_wrap_table_digest, BootstrapSidecarHeader, CriticalMetadataImage, CriticalMetadataRecoveryHeader, CriticalMetadataRecoveryShard,
+    CriticalRecoveryLocator, RecipientRecordV1, RootAuthFooterV1, VolumeHeader,
 };
 use crate::writer::NativeFileMetadata;
 use crate::writer::{
-    write_archive, write_archive_sources_to_sink_single_pass, write_archive_unencrypted,
-    write_archive_with_dictionary, write_archive_with_kdf,
-    write_archive_with_recipient_wrap_records, write_archive_with_root_auth,
-    write_archive_with_root_auth_and_kdf,
-    write_archive_with_root_auth_and_recipient_wrap_records, MemoryArchiveSink,
-    PortableFileMetadata, PortableModeOrigin, PortablePosixOwner, RegularFile, RegularFileSource,
-    RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, WriterOptions,
+    write_archive, write_archive_sources_to_sink_single_pass, write_archive_unencrypted, write_archive_with_dictionary, write_archive_with_kdf,
+    write_archive_with_recipient_wrap_records, write_archive_with_root_auth, write_archive_with_root_auth_and_kdf,
+    write_archive_with_root_auth_and_recipient_wrap_records, MemoryArchiveSink, PortableFileMetadata, PortableModeOrigin, PortablePosixOwner, RegularFile,
+    RegularFileSource, RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, WriterOptions,
 };
 #[cfg(target_os = "linux")]
 use crate::writer::{NativeAuxiliaryMetadata, NativeAuxiliaryNameEncoding};
@@ -83,25 +73,11 @@ fn recipient_wrap_layout(volume: &[u8]) -> (usize, usize, usize, usize, u32) {
     let crypto_start = header.crypto_header_offset as usize;
     let crypto_len = header.crypto_header_length as usize;
     let crypto_end = crypto_start + crypto_len;
-    let crypto = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        header.crypto_header_length,
-    )
-    .unwrap();
-    let KdfParams::RecipientWrap {
-        key_wrap_table_length,
-        ..
-    } = crypto.kdf_params
-    else {
+    let crypto = CryptoHeader::parse(&volume[crypto_start..crypto_end], header.crypto_header_length).unwrap();
+    let KdfParams::RecipientWrap { key_wrap_table_length, .. } = crypto.kdf_params else {
         panic!("expected RecipientWrap KdfParams");
     };
-    (
-        crypto_start,
-        crypto_len,
-        crypto_end,
-        key_wrap_table_length as usize,
-        key_wrap_table_length,
-    )
+    (crypto_start, crypto_len, crypto_end, key_wrap_table_length as usize, key_wrap_table_length)
 }
 
 fn rewrite_recipient_wrap_kdf_digest(crypto_bytes: &mut [u8], digest: [u8; 32]) {
@@ -110,8 +86,7 @@ fn rewrite_recipient_wrap_kdf_digest(crypto_bytes: &mut [u8], digest: [u8; 32]) 
 }
 
 fn mutate_top_level_recipient_wrap_public_profile(volume: &mut [u8]) {
-    let (crypto_start, crypto_len, table_start, table_len, table_len_u32) =
-        recipient_wrap_layout(volume);
+    let (crypto_start, crypto_len, table_start, table_len, table_len_u32) = recipient_wrap_layout(volume);
     let table_end = table_start + table_len;
     volume[table_end - 1] ^= 0x5a;
     let digest = compute_key_wrap_table_digest(table_len_u32, &volume[table_start..table_end]);
@@ -120,19 +95,10 @@ fn mutate_top_level_recipient_wrap_public_profile(volume: &mut [u8]) {
 
 fn mutate_cmra_recipient_wrap_public_profile(volume: &mut [u8]) {
     rewrite_public_cmra_image(volume, |image| {
-        let table_region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 6)
-            .unwrap();
+        let table_region = image.regions.iter_mut().find(|region| region.region_type == 6).unwrap();
         *table_region.bytes.last_mut().unwrap() ^= 0x5a;
-        let digest =
-            compute_key_wrap_table_digest(table_region.bytes.len() as u32, &table_region.bytes);
-        let crypto_region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 2)
-            .unwrap();
+        let digest = compute_key_wrap_table_digest(table_region.bytes.len() as u32, &table_region.bytes);
+        let crypto_region = image.regions.iter_mut().find(|region| region.region_type == 2).unwrap();
         rewrite_recipient_wrap_kdf_digest(&mut crypto_region.bytes, digest);
     });
 }
@@ -188,10 +154,7 @@ fn reader_options_reject_zero_jobs() {
     )
     .unwrap_err();
 
-    assert_eq!(
-        err,
-        FormatError::ReaderUnsupported("jobs must be at least 1")
-    );
+    assert_eq!(err, FormatError::ReaderUnsupported("jobs must be at least 1"));
 }
 
 const TEST_ROOT_AUTH_ID: u16 = 0xe001;
@@ -244,30 +207,22 @@ impl CountingReadAt {
 
 impl ArchiveReadAt for CountingReadAt {
     fn len(&self) -> Result<u64, FormatError> {
-        u64::try_from(self.bytes.as_ref().len())
-            .map_err(|_| FormatError::InvalidArchive("archive length overflow"))
+        u64::try_from(self.bytes.as_ref().len()).map_err(|_| FormatError::InvalidArchive("archive length overflow"))
     }
 
     fn read_exact_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), FormatError> {
         let end = checked_u64_add(offset, buf.len() as u64, "archive read range overflow")?;
         self.reads.lock().unwrap().push((offset, end));
-        if self
-            .denied_ranges
-            .iter()
-            .any(|(start, limit)| ranges_overlap(offset, end, *start, *limit))
-        {
+        if self.denied_ranges.iter().any(|(start, limit)| ranges_overlap(offset, end, *start, *limit)) {
             return Err(FormatError::InvalidArchive("denied test read"));
         }
         let start = to_usize(offset, "archive")?;
         let end_usize = checked_add(start, buf.len(), "archive")?;
-        let source = self
-            .bytes
-            .get(start..end_usize)
-            .ok_or(FormatError::InvalidLength {
-                structure: "archive",
-                expected: end_usize,
-                actual: self.bytes.as_ref().len(),
-            })?;
+        let source = self.bytes.get(start..end_usize).ok_or(FormatError::InvalidLength {
+            structure: "archive",
+            expected: end_usize,
+            actual: self.bytes.as_ref().len(),
+        })?;
         buf.copy_from_slice(source);
         Ok(())
     }
@@ -293,11 +248,7 @@ struct ChunkedReader {
 
 impl ChunkedReader {
     fn new(bytes: Vec<u8>, max_chunk: usize) -> Self {
-        Self {
-            bytes,
-            cursor: 0,
-            max_chunk,
-        }
+        Self { bytes, cursor: 0, max_chunk }
     }
 }
 
@@ -384,12 +335,7 @@ fn pseudo_random_bytes(len: usize) -> Vec<u8> {
 
 #[test]
 fn opens_lists_verifies_and_extracts_one_file_archive() {
-    let archive = write_archive(
-        &[RegularFile::new("dir/hello.txt", b"hello m7")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("dir/hello.txt", b"hello m7")], &master_key(), single_stream_options()).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
 
     assert_eq!(
@@ -412,10 +358,7 @@ fn opens_lists_verifies_and_extracts_one_file_archive() {
         }]
     );
     opened.verify().unwrap();
-    assert_eq!(
-        opened.extract_file("dir/hello.txt").unwrap(),
-        Some(b"hello m7".to_vec())
-    );
+    assert_eq!(opened.extract_file("dir/hello.txt").unwrap(), Some(b"hello m7".to_vec()));
     assert_eq!(opened.extract_file("missing.txt").unwrap(), None);
 }
 
@@ -438,18 +381,13 @@ fn root_auth_archive_round_trips_and_verifies_with_callback() {
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     opened.verify().unwrap();
     let verified = opened
-        .verify_root_auth_with(|footer, archive_root| {
-            Ok(footer.authenticator_value == archive_root.as_slice())
-        })
+        .verify_root_auth_with(|footer, archive_root| Ok(footer.authenticator_value == archive_root.as_slice()))
         .unwrap();
 
     assert_eq!(verified.authenticator_id, 0x7777);
     assert_eq!(verified.signer_identity_type, 1);
     assert_eq!(verified.signer_identity_bytes, b"test signer");
-    assert_eq!(
-        verified.archive_root,
-        opened.root_auth_footer.as_ref().unwrap().archive_root
-    );
+    assert_eq!(verified.archive_root, opened.root_auth_footer.as_ref().unwrap().archive_root);
     assert_eq!(
         verified.diagnostics,
         vec![
@@ -483,9 +421,7 @@ fn root_auth_rejects_fast_content_verification_token() {
         opened
             .verify_root_auth_with_verified_content(&content_verification, |_, _| Ok(true))
             .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "RootAuth verification requires full archive content verification"
-        )
+        FormatError::ReaderUnsupported("RootAuth verification requires full archive content verification")
     );
 }
 
@@ -528,10 +464,7 @@ fn public_no_key_verifies_encrypted_data_block_commitment_with_callback() {
     )
     .unwrap();
 
-    let verified = public_no_key_verify_archive_with(&archive.bytes, |footer, archive_root| {
-        Ok(footer.authenticator_value == archive_root.as_slice())
-    })
-    .unwrap();
+    let verified = public_no_key_verify_archive_with(&archive.bytes, |footer, archive_root| Ok(footer.authenticator_value == archive_root.as_slice())).unwrap();
 
     assert_eq!(verified.authenticator_id, 0x2222);
     assert_eq!(verified.signer_identity_bytes, b"public verifier");
@@ -631,11 +564,7 @@ fn public_no_key_rejects_recovered_footer_revision_mismatch() {
     .unwrap();
     let mut bytes = archive.bytes;
     rewrite_public_cmra_image(&mut bytes, |image| {
-        let root_auth_region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 4)
-            .unwrap();
+        let root_auth_region = image.regions.iter_mut().find(|region| region.region_type == 4).unwrap();
         rewrite_root_auth_footer_revision_bytes(&mut root_auth_region.bytes, 43);
     });
 
@@ -647,10 +576,7 @@ fn public_no_key_rejects_recovered_footer_revision_mismatch() {
     .unwrap_err();
 
     assert!(!called);
-    assert_eq!(
-        err,
-        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
-    );
+    assert_eq!(err, FormatError::InvalidArchive("no valid v45 public CMRA candidate found"));
 }
 
 #[test]
@@ -668,10 +594,9 @@ fn public_no_key_rejects_recovered_image_with_unknown_layout_flags() {
         |request| Ok(request.archive_root.to_vec()),
     )
     .unwrap();
-    let bytes =
-        rewrite_cmra_image_variable_len(&archive.bytes, CmraRecoveryMode::PublicNoKey, |image| {
-            image.layout_flags |= 0x8000_0000;
-        });
+    let bytes = rewrite_cmra_image_variable_len(&archive.bytes, CmraRecoveryMode::PublicNoKey, |image| {
+        image.layout_flags |= 0x8000_0000;
+    });
 
     let mut called = false;
     let err = public_no_key_verify_archive_with(&bytes, |_, _| {
@@ -681,19 +606,13 @@ fn public_no_key_rejects_recovered_image_with_unknown_layout_flags() {
     .unwrap_err();
 
     assert!(!called);
-    assert_eq!(
-        err,
-        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
-    );
+    assert_eq!(err, FormatError::InvalidArchive("no valid v45 public CMRA candidate found"));
 }
 
 #[test]
 fn public_no_key_ignores_untrusted_manifest_and_trailer_block_count_fields() {
     let archive = write_archive_with_root_auth(
-        &[RegularFile::new(
-            "public-fields.txt",
-            b"public source authority",
-        )],
+        &[RegularFile::new("public-fields.txt", b"public source authority")],
         &master_key(),
         single_stream_options(),
         RootAuthWriterConfig {
@@ -708,36 +627,22 @@ fn public_no_key_ignores_untrusted_manifest_and_trailer_block_count_fields() {
     let mut bytes = archive.bytes.clone();
 
     rewrite_public_cmra_image(&mut bytes, |image| {
-        let manifest_region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 3)
-            .unwrap();
+        let manifest_region = image.regions.iter_mut().find(|region| region.region_type == 3).unwrap();
         manifest_region.bytes[44..48].copy_from_slice(&99u32.to_le_bytes());
 
-        let trailer_region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 5)
-            .unwrap();
+        let trailer_region = image.regions.iter_mut().find(|region| region.region_type == 5).unwrap();
         let mut trailer = VolumeTrailer::parse(&trailer_region.bytes).unwrap();
         trailer.block_count += 7;
         trailer_region.bytes = trailer.to_bytes().to_vec();
     });
 
-    public_no_key_verify_archive_with(&bytes, |footer, archive_root| {
-        Ok(footer.authenticator_value == archive_root.as_slice())
-    })
-    .unwrap();
+    public_no_key_verify_archive_with(&bytes, |footer, archive_root| Ok(footer.authenticator_value == archive_root.as_slice())).unwrap();
 }
 
 #[test]
 fn public_no_key_compares_only_public_crypto_profile_across_volumes() {
     let archive = write_archive_with_root_auth(
-        &[RegularFile::new(
-            "public-crypto.txt",
-            b"cross-volume public profile",
-        )],
+        &[RegularFile::new("public-crypto.txt", b"cross-volume public profile")],
         &master_key(),
         WriterOptions {
             stripe_width: 2,
@@ -757,22 +662,14 @@ fn public_no_key_compares_only_public_crypto_profile_across_volumes() {
     let volume_header = VolumeHeader::parse(&volumes[1][..VOLUME_HEADER_LEN]).unwrap();
     let crypto_offset = volume_header.crypto_header_offset as usize;
     let expected_volume_size = 123_456_789u64;
-    volumes[1][crypto_offset + 52..crypto_offset + 60]
-        .copy_from_slice(&expected_volume_size.to_le_bytes());
+    volumes[1][crypto_offset + 52..crypto_offset + 60].copy_from_slice(&expected_volume_size.to_le_bytes());
     rewrite_public_cmra_image(&mut volumes[1], |image| {
-        let crypto_region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 2)
-            .unwrap();
+        let crypto_region = image.regions.iter_mut().find(|region| region.region_type == 2).unwrap();
         crypto_region.bytes[52..60].copy_from_slice(&expected_volume_size.to_le_bytes());
     });
 
     let volume_refs = volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    public_no_key_verify_volumes_with(&volume_refs, |footer, archive_root| {
-        Ok(footer.authenticator_value == archive_root.as_slice())
-    })
-    .unwrap();
+    public_no_key_verify_volumes_with(&volume_refs, |footer, archive_root| Ok(footer.authenticator_value == archive_root.as_slice())).unwrap();
 }
 
 #[test]
@@ -795,31 +692,18 @@ fn locator_based_cmra_recovery_treats_header_damage_as_recoverable() {
     let mut bad_crc = archive.bytes.clone();
     let crc_offset = final_locator.cmra_offset as usize + CRITICAL_METADATA_RECOVERY_HEADER_LEN - 1;
     bad_crc[crc_offset] ^= 0x55;
-    public_no_key_verify_archive_with(&bad_crc, |footer, archive_root| {
-        Ok(footer.authenticator_value == archive_root.as_slice())
-    })
-    .unwrap();
+    public_no_key_verify_archive_with(&bad_crc, |footer, archive_root| Ok(footer.authenticator_value == archive_root.as_slice())).unwrap();
 
     let mut bad_magic = archive.bytes.clone();
     bad_magic[final_locator.cmra_offset as usize] ^= 0x55;
-    public_no_key_verify_archive_with(&bad_magic, |footer, archive_root| {
-        Ok(footer.authenticator_value == archive_root.as_slice())
-    })
-    .unwrap();
+    public_no_key_verify_archive_with(&bad_magic, |footer, archive_root| Ok(footer.authenticator_value == archive_root.as_slice())).unwrap();
 
     let mut bad_hint = archive.bytes.clone();
     bad_hint[crc_offset] ^= 0xAA;
-    for offset in [
-        bad_hint.len() - LOCATOR_PAIR_LEN,
-        bad_hint.len() - CRITICAL_RECOVERY_LOCATOR_LEN,
-    ] {
-        let mut locator = CriticalRecoveryLocator::parse(
-            &bad_hint[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN],
-        )
-        .unwrap();
+    for offset in [bad_hint.len() - LOCATOR_PAIR_LEN, bad_hint.len() - CRITICAL_RECOVERY_LOCATOR_LEN] {
+        let mut locator = CriticalRecoveryLocator::parse(&bad_hint[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN]).unwrap();
         locator.volume_index_hint += 1;
-        bad_hint[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN]
-            .copy_from_slice(&locator.to_bytes());
+        bad_hint[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN].copy_from_slice(&locator.to_bytes());
     }
     assert_eq!(
         public_no_key_verify_archive_with(&bad_hint, |_, _| Ok(true)).unwrap_err(),
@@ -871,14 +755,10 @@ fn public_no_key_inspect_footer_reads_only_header_and_tail() {
     .unwrap();
 
     let volume_header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
-    let crypto_end = u64::from(volume_header.crypto_header_offset)
-        + u64::from(volume_header.crypto_header_length);
+    let crypto_end = u64::from(volume_header.crypto_header_offset) + u64::from(volume_header.crypto_header_length);
     let len = archive.bytes.len() as u64;
     let tail_budget = 1024 * 1024;
-    assert!(
-        len > crypto_end + tail_budget,
-        "fixture must have a data region"
-    );
+    assert!(len > crypto_end + tail_budget, "fixture must have a data region");
 
     // Deny the entire data region: any read into it surfaces as an error.
     let reader = CountingReadAt::new(archive.bytes.clone(), vec![(crypto_end, len - tail_budget)]);
@@ -887,14 +767,8 @@ fn public_no_key_inspect_footer_reads_only_header_and_tail() {
         panic!("expected signed inspection");
     };
     assert_eq!(inspection.root_auth_footer.authenticator_id, 0x7777);
-    assert_eq!(
-        inspection.root_auth_footer.signer_identity_bytes,
-        b"test signer"
-    );
-    assert_eq!(
-        inspection.archive_root,
-        inspection.root_auth_footer.archive_root
-    );
+    assert_eq!(inspection.root_auth_footer.signer_identity_bytes, b"test signer");
+    assert_eq!(inspection.archive_root, inspection.root_auth_footer.archive_root);
 
     let header_budget = (VOLUME_HEADER_LEN + READER_MAX_CRYPTO_HEADER_LEN as usize) as u64;
     let reads = reader.reads();
@@ -906,37 +780,17 @@ fn public_no_key_inspect_footer_reads_only_header_and_tail() {
         );
     }
     let total_read: u64 = reads.iter().map(|(start, end)| end - start).sum();
-    assert!(
-        total_read < tail_budget,
-        "footer inspection read {total_read} bytes"
-    );
+    assert!(total_read < tail_budget, "footer inspection read {total_read} bytes");
 }
 
 #[test]
 fn public_no_key_inspect_footer_reports_unsigned_archives() {
-    let unencrypted = write_archive_unencrypted(
-        &[RegularFile::new("plain.txt", b"no signature")],
-        single_stream_options(),
-    )
-    .unwrap();
-    let status = public_no_key_inspect_footer(
-        &CountingReadAt::new(unencrypted.bytes, vec![]),
-        ReaderOptions::default(),
-    )
-    .unwrap();
+    let unencrypted = write_archive_unencrypted(&[RegularFile::new("plain.txt", b"no signature")], single_stream_options()).unwrap();
+    let status = public_no_key_inspect_footer(&CountingReadAt::new(unencrypted.bytes, vec![]), ReaderOptions::default()).unwrap();
     assert!(matches!(status, PublicNoKeyFooterStatus::Unsigned));
 
-    let encrypted = write_archive(
-        &[RegularFile::new("plain.txt", b"no signature")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
-    let status = public_no_key_inspect_footer(
-        &CountingReadAt::new(encrypted.bytes, vec![]),
-        ReaderOptions::default(),
-    )
-    .unwrap();
+    let encrypted = write_archive(&[RegularFile::new("plain.txt", b"no signature")], &master_key(), single_stream_options()).unwrap();
+    let status = public_no_key_inspect_footer(&CountingReadAt::new(encrypted.bytes, vec![]), ReaderOptions::default()).unwrap();
     assert!(matches!(status, PublicNoKeyFooterStatus::Unsigned));
 }
 
@@ -949,24 +803,15 @@ fn public_no_key_inspect_footer_rejects_tampered_terminal() {
     // must fail.
     let locator = final_recovery_locator(&tampered);
     let kill_shards = usize::from(locator.cmra_parity_shard_count) + 1;
-    let shard_stride =
-        CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + locator.cmra_shard_size as usize;
+    let shard_stride = CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + locator.cmra_shard_size as usize;
     let start = locator.cmra_offset as usize + CRITICAL_METADATA_RECOVERY_HEADER_LEN;
-    let end = (start + kill_shards * shard_stride)
-        .min(locator.cmra_offset as usize + locator.cmra_length as usize);
+    let end = (start + kill_shards * shard_stride).min(locator.cmra_offset as usize + locator.cmra_length as usize);
     for byte in &mut tampered[start..end] {
         *byte ^= 0x55;
     }
 
-    let err = public_no_key_inspect_footer(
-        &CountingReadAt::new(tampered, vec![]),
-        ReaderOptions::default(),
-    )
-    .unwrap_err();
-    assert_eq!(
-        err,
-        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
-    );
+    let err = public_no_key_inspect_footer(&CountingReadAt::new(tampered, vec![]), ReaderOptions::default()).unwrap_err();
+    assert_eq!(err, FormatError::InvalidArchive("no valid v45 public CMRA candidate found"));
 }
 
 #[test]
@@ -987,23 +832,13 @@ fn public_no_key_inspect_footer_does_not_validate_authenticator() {
     )
     .unwrap();
 
-    let status = public_no_key_inspect_footer(
-        &CountingReadAt::new(archive.bytes, vec![]),
-        ReaderOptions::default(),
-    )
-    .unwrap();
+    let status = public_no_key_inspect_footer(&CountingReadAt::new(archive.bytes, vec![]), ReaderOptions::default()).unwrap();
     let PublicNoKeyFooterStatus::Signed(inspection) = status else {
         panic!("expected signed inspection");
     };
     assert_eq!(inspection.root_auth_footer.authenticator_id, 0x1234);
-    assert_eq!(
-        inspection.root_auth_footer.signer_identity_bytes,
-        b"forged signer"
-    );
-    assert_eq!(
-        inspection.archive_root,
-        inspection.root_auth_footer.archive_root
-    );
+    assert_eq!(inspection.root_auth_footer.signer_identity_bytes, b"forged signer");
+    assert_eq!(inspection.archive_root, inspection.root_auth_footer.archive_root);
 }
 
 #[test]
@@ -1014,22 +849,14 @@ fn public_no_key_inspect_footer_rejects_truncated_archive() {
     // the CMRA image exists exactly so the terminal survives lost locators.
     let cmra_offset = final_recovery_locator(&truncated).cmra_offset as usize;
     truncated.truncate(cmra_offset + CRITICAL_METADATA_RECOVERY_HEADER_LEN + 64);
-    assert!(public_no_key_inspect_footer(
-        &CountingReadAt::new(truncated, vec![]),
-        ReaderOptions::default(),
-    )
-    .is_err());
+    assert!(public_no_key_inspect_footer(&CountingReadAt::new(truncated, vec![]), ReaderOptions::default(),).is_err());
 }
 
 #[test]
 fn public_no_key_inspect_footer_rejects_short_file() {
     let bytes = b"not an archive".to_vec();
     assert_eq!(
-        public_no_key_inspect_footer(
-            &CountingReadAt::new(bytes, vec![]),
-            ReaderOptions::default(),
-        )
-        .unwrap_err(),
+        public_no_key_inspect_footer(&CountingReadAt::new(bytes, vec![]), ReaderOptions::default(),).unwrap_err(),
         FormatError::InvalidLength {
             structure: "archive",
             expected: VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN,
@@ -1046,19 +873,12 @@ fn public_no_key_inspect_footer_recovers_from_mirror_locator_when_final_is_corru
     let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
     bytes[final_offset..final_offset + 4].fill(0x00);
 
-    let status = public_no_key_inspect_footer(
-        &CountingReadAt::new(bytes, vec![]),
-        ReaderOptions::default(),
-    )
-    .unwrap();
+    let status = public_no_key_inspect_footer(&CountingReadAt::new(bytes, vec![]), ReaderOptions::default()).unwrap();
     let PublicNoKeyFooterStatus::Signed(inspection) = status else {
         panic!("expected signed inspection");
     };
     assert_eq!(inspection.root_auth_footer.authenticator_id, 0x7777);
-    assert_eq!(
-        inspection.root_auth_footer.signer_identity_bytes,
-        b"test signer"
-    );
+    assert_eq!(inspection.root_auth_footer.signer_identity_bytes, b"test signer");
 }
 
 #[test]
@@ -1067,14 +887,9 @@ fn public_no_key_inspect_footer_recovers_locatorless_when_both_locators_are_dest
     // Both locators destroyed: only the bounded tail scan can find the CMRA
     // via its TZCR recovery header (locatorless public recovery).
     let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-    bytes[final_offset - CRITICAL_RECOVERY_LOCATOR_LEN..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN]
-        .fill(0x00);
+    bytes[final_offset - CRITICAL_RECOVERY_LOCATOR_LEN..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN].fill(0x00);
 
-    let status = public_no_key_inspect_footer(
-        &CountingReadAt::new(bytes, vec![]),
-        ReaderOptions::default(),
-    )
-    .unwrap();
+    let status = public_no_key_inspect_footer(&CountingReadAt::new(bytes, vec![]), ReaderOptions::default()).unwrap();
     let PublicNoKeyFooterStatus::Signed(inspection) = status else {
         panic!("expected signed inspection");
     };
@@ -1088,22 +903,14 @@ fn public_no_key_inspect_footer_rejects_tampered_archive_root_commitment() {
     // commitment: wire validation passes, the recomputed archive_root does
     // not match the claimed one.
     rewrite_public_cmra_image(&mut bytes, |image| {
-        let region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 4)
-            .unwrap();
+        let region = image.regions.iter_mut().find(|region| region.region_type == 4).unwrap();
         let mut footer = RootAuthFooterV1::parse(&region.bytes).unwrap();
         footer.total_data_block_count += 1;
         region.bytes = footer.to_bytes().unwrap();
     });
 
     assert_eq!(
-        public_no_key_inspect_footer(
-            &CountingReadAt::new(bytes, vec![]),
-            ReaderOptions::default(),
-        )
-        .unwrap_err(),
+        public_no_key_inspect_footer(&CountingReadAt::new(bytes, vec![]), ReaderOptions::default(),).unwrap_err(),
         FormatError::InvalidArchive("public no-key archive_root mismatch")
     );
 }
@@ -1114,11 +921,7 @@ fn public_no_key_inspect_footer_rejects_tampered_signer_identity() {
     // Same-length identity replacement so footer_length and all structural
     // checks still hold; only the stale signer_identity_digest gives it away.
     rewrite_public_cmra_image(&mut bytes, |image| {
-        let region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 4)
-            .unwrap();
+        let region = image.regions.iter_mut().find(|region| region.region_type == 4).unwrap();
         let mut footer = RootAuthFooterV1::parse(&region.bytes).unwrap();
         assert_eq!(footer.signer_identity_bytes.len(), b"test forger".len());
         footer.signer_identity_bytes = b"test forger".to_vec();
@@ -1126,11 +929,7 @@ fn public_no_key_inspect_footer_rejects_tampered_signer_identity() {
     });
 
     assert_eq!(
-        public_no_key_inspect_footer(
-            &CountingReadAt::new(bytes, vec![]),
-            ReaderOptions::default(),
-        )
-        .unwrap_err(),
+        public_no_key_inspect_footer(&CountingReadAt::new(bytes, vec![]), ReaderOptions::default(),).unwrap_err(),
         FormatError::InvalidArchive("public no-key signer identity digest mismatch")
     );
 }
@@ -1139,29 +938,20 @@ fn public_no_key_inspect_footer_rejects_tampered_signer_identity() {
 fn public_no_key_inspect_footer_unsigned_requires_recoverable_image() {
     // A corrupt unsigned archive must error rather than be mislabeled
     // Unsigned: the layout-flags fallback needs a recoverable CMRA image.
-    let mut corrupted = write_archive_unencrypted(
-        &[RegularFile::new("plain.txt", b"no signature")],
-        single_stream_options(),
-    )
-    .unwrap()
-    .bytes;
+    let mut corrupted = write_archive_unencrypted(&[RegularFile::new("plain.txt", b"no signature")], single_stream_options())
+        .unwrap()
+        .bytes;
     let locator = final_recovery_locator(&corrupted);
     // Destroy (parity + 1) complete shard records — beyond GF16 repair
     // capacity. Each on-disk shard is SHARD_HEADER_LEN + shard_size bytes.
     let kill_shards = usize::from(locator.cmra_parity_shard_count) + 1;
-    let shard_stride =
-        CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + locator.cmra_shard_size as usize;
+    let shard_stride = CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + locator.cmra_shard_size as usize;
     let start = locator.cmra_offset as usize + CRITICAL_METADATA_RECOVERY_HEADER_LEN;
-    let end = (start + kill_shards * shard_stride)
-        .min(locator.cmra_offset as usize + locator.cmra_length as usize);
+    let end = (start + kill_shards * shard_stride).min(locator.cmra_offset as usize + locator.cmra_length as usize);
     for byte in &mut corrupted[start..end] {
         *byte ^= 0x55;
     }
-    assert!(public_no_key_inspect_footer(
-        &CountingReadAt::new(corrupted, vec![]),
-        ReaderOptions::default(),
-    )
-    .is_err());
+    assert!(public_no_key_inspect_footer(&CountingReadAt::new(corrupted, vec![]), ReaderOptions::default(),).is_err());
 }
 
 #[test]
@@ -1181,34 +971,20 @@ fn public_no_key_inspect_footer_reports_recipientwrap_signed_footers() {
     )
     .unwrap();
 
-    let status = public_no_key_inspect_footer(
-        &CountingReadAt::new(archive.bytes, vec![]),
-        ReaderOptions::default(),
-    )
-    .unwrap();
+    let status = public_no_key_inspect_footer(&CountingReadAt::new(archive.bytes, vec![]), ReaderOptions::default()).unwrap();
     let PublicNoKeyFooterStatus::Signed(inspection) = status else {
         panic!("expected signed inspection");
     };
     assert!(matches!(inspection.kdf_params, KdfParams::RecipientWrap { .. }));
     assert_eq!(inspection.root_auth_footer.authenticator_id, 0x3333);
-    assert_eq!(
-        inspection.root_auth_footer.signer_identity_bytes,
-        b"recipient signer"
-    );
+    assert_eq!(inspection.root_auth_footer.signer_identity_bytes, b"recipient signer");
 }
 
 /// Runs `public_no_key_inspect_footer` on the archive and asserts that every
 /// extracted piece matches an independent parse of the same volume and of the
 /// authoritative CMRA-stored copy of the footer.
-fn assert_signed_inspection_matches(
-    archive: &[u8],
-    config: RootAuthWriterConfig<'_>,
-) -> PublicNoKeyFooterInspection {
-    let status = public_no_key_inspect_footer(
-        &CountingReadAt::new(archive.to_vec(), vec![]),
-        ReaderOptions::default(),
-    )
-    .unwrap();
+fn assert_signed_inspection_matches(archive: &[u8], config: RootAuthWriterConfig<'_>) -> PublicNoKeyFooterInspection {
+    let status = public_no_key_inspect_footer(&CountingReadAt::new(archive.to_vec(), vec![]), ReaderOptions::default()).unwrap();
     let PublicNoKeyFooterStatus::Signed(inspection) = status else {
         panic!("expected signed inspection");
     };
@@ -1229,10 +1005,7 @@ fn assert_signed_inspection_matches(
         .iter()
         .find(|region| region.region_type == 4)
         .unwrap_or_else(|| panic!("CMRA image has no root-auth region"));
-    assert_eq!(
-        inspection.root_auth_footer_bytes.as_slice(),
-        region.bytes.as_slice()
-    );
+    assert_eq!(inspection.root_auth_footer_bytes.as_slice(), region.bytes.as_slice());
     let stored_footer = RootAuthFooterV1::parse(&region.bytes).unwrap();
     assert_eq!(inspection.root_auth_footer, stored_footer);
 
@@ -1242,11 +1015,7 @@ fn assert_signed_inspection_matches(
     assert_eq!(inspection.volume_header, volume_header);
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto = CryptoHeader::parse(
-        &archive[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto = CryptoHeader::parse(&archive[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     assert_eq!(inspection.crypto_header, crypto.fixed);
     assert_eq!(inspection.kdf_params, crypto.kdf_params);
 
@@ -1262,14 +1031,8 @@ fn assert_signed_inspection_matches(
 
     // The returned bytes are exactly the footer's wire form, and the archive
     // root recomputed by the inspection matches the footer commitment.
-    assert_eq!(
-        footer.footer_length().unwrap() as usize,
-        inspection.root_auth_footer_bytes.len()
-    );
-    assert_eq!(
-        RootAuthFooterV1::parse(&inspection.root_auth_footer_bytes).unwrap(),
-        *footer
-    );
+    assert_eq!(footer.footer_length().unwrap() as usize, inspection.root_auth_footer_bytes.len());
+    assert_eq!(RootAuthFooterV1::parse(&inspection.root_auth_footer_bytes).unwrap(), *footer);
     assert_eq!(inspection.archive_root, footer.archive_root);
 
     inspection
@@ -1338,10 +1101,7 @@ fn public_no_key_inspect_footer_extracts_varied_authenticator_values() {
         )
         .unwrap();
         let inspection = assert_signed_inspection_matches(&archive.bytes, config);
-        assert_eq!(
-            inspection.root_auth_footer.authenticator_value,
-            authenticator
-        );
+        assert_eq!(inspection.root_auth_footer.authenticator_value, authenticator);
     }
 }
 
@@ -1354,11 +1114,7 @@ fn public_no_key_inspect_footer_extracts_password_derived_and_raw_kdf_combos() {
         parallelism: 1,
         salt: b"0123456789abcdef".to_vec(),
     };
-    let passphrase_key = crate::crypto::MasterKey::derive_from_passphrase(
-        &passphrase_kdf,
-        "correct horse battery staple",
-    )
-    .unwrap();
+    let passphrase_key = crate::crypto::MasterKey::derive_from_passphrase(&passphrase_kdf, "correct horse battery staple").unwrap();
     let passphrase_config = RootAuthWriterConfig {
         authenticator_id: 0x0BAD,
         signer_identity_type: 1,
@@ -1509,11 +1265,7 @@ fn public_no_key_inspect_footer_extracts_across_cmra_geometries() {
     let mut unique = roots.clone();
     unique.sort();
     unique.dedup();
-    assert_eq!(
-        unique.len(),
-        roots.len(),
-        "archive roots must differ across geometry variants"
-    );
+    assert_eq!(unique.len(), roots.len(), "archive roots must differ across geometry variants");
 }
 
 #[test]
@@ -1530,10 +1282,7 @@ fn recovers_physical_volume_header_magic_from_cmra_authority() {
     corrupted[0] ^= 0x55;
 
     let opened = open_archive(&corrupted, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("volume-header.txt").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("volume-header.txt").unwrap(), Some(payload));
     opened.verify().unwrap();
 }
 
@@ -1543,35 +1292,18 @@ fn recovers_crc_valid_physical_volume_index_from_cmra_authority() {
     let mut options = small_block_recovery_options();
     options.stripe_width = 2;
     options.volume_loss_tolerance = 0;
-    let archive = write_archive(
-        &[RegularFile::new("volume-index.txt", &payload)],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("volume-index.txt", &payload)], &master_key(), options).unwrap();
 
     let mut corrupted = archive.volumes[0].clone();
     let mut header = VolumeHeader::parse(&corrupted[..VOLUME_HEADER_LEN]).unwrap();
     assert_eq!(header.volume_index, 0);
     header.volume_index = 1;
     corrupted[..VOLUME_HEADER_LEN].copy_from_slice(&header.to_bytes());
-    assert_eq!(
-        VolumeHeader::parse(&corrupted[..VOLUME_HEADER_LEN])
-            .unwrap()
-            .volume_index,
-        1
-    );
+    assert_eq!(VolumeHeader::parse(&corrupted[..VOLUME_HEADER_LEN]).unwrap().volume_index, 1);
 
-    let opened = open_archive_volumes(
-        &[corrupted.as_slice(), archive.volumes[1].as_slice()],
-        &master_key(),
-    )
-    .unwrap();
+    let opened = open_archive_volumes(&[corrupted.as_slice(), archive.volumes[1].as_slice()], &master_key()).unwrap();
     assert_eq!(opened.volume_header.volume_index, 0);
-    assert_eq!(
-        opened.extract_file("volume-index.txt").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("volume-index.txt").unwrap(), Some(payload));
     opened.verify().unwrap();
 }
 
@@ -1584,18 +1316,13 @@ fn recovers_physical_crypto_header_magic_from_cmra_authority() {
         small_block_recovery_options(),
     )
     .unwrap();
-    let crypto_offset = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN])
-        .unwrap()
-        .crypto_header_offset;
+    let crypto_offset = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap().crypto_header_offset;
 
     let mut corrupted = archive.bytes;
     corrupted[crypto_offset as usize] ^= 0x55;
 
     let opened = open_archive(&corrupted, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("crypto-header.txt").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("crypto-header.txt").unwrap(), Some(payload));
     opened.verify().unwrap();
 }
 
@@ -1613,10 +1340,7 @@ fn read_at_api_recovers_physical_header_magic_from_cmra_authority() {
     corrupted[0] ^= 0x55;
 
     let opened = open_seekable_archive(corrupted, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("read-at-header.txt").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("read-at-header.txt").unwrap(), Some(payload));
     opened.verify().unwrap();
 }
 
@@ -1626,12 +1350,7 @@ fn read_at_api_recovers_crc_valid_physical_volume_index_from_cmra_authority() {
     let mut options = small_block_recovery_options();
     options.stripe_width = 2;
     options.volume_loss_tolerance = 0;
-    let archive = write_archive(
-        &[RegularFile::new("read-at-volume-index.txt", &payload)],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("read-at-volume-index.txt", &payload)], &master_key(), options).unwrap();
 
     let mut corrupted = archive.volumes[0].clone();
     let mut header = VolumeHeader::parse(&corrupted[..VOLUME_HEADER_LEN]).unwrap();
@@ -1639,14 +1358,9 @@ fn read_at_api_recovers_crc_valid_physical_volume_index_from_cmra_authority() {
     header.volume_index = 1;
     corrupted[..VOLUME_HEADER_LEN].copy_from_slice(&header.to_bytes());
 
-    let opened =
-        open_seekable_archive_volumes(vec![corrupted, archive.volumes[1].clone()], &master_key())
-            .unwrap();
+    let opened = open_seekable_archive_volumes(vec![corrupted, archive.volumes[1].clone()], &master_key()).unwrap();
     assert_eq!(opened.volume_header.volume_index, 0);
-    assert_eq!(
-        opened.extract_file("read-at-volume-index.txt").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("read-at-volume-index.txt").unwrap(), Some(payload));
     opened.verify().unwrap();
 }
 
@@ -1665,10 +1379,7 @@ fn recovers_cmra_header_magic_from_locator_tuple() {
     corrupted[locator.cmra_offset as usize] ^= 0x55;
 
     let opened = open_archive(&corrupted, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("cmra-header-magic.txt").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("cmra-header-magic.txt").unwrap(), Some(payload));
     opened.verify().unwrap();
 }
 
@@ -1688,10 +1399,7 @@ fn recovers_cmra_shard_magic_as_erasure() {
     corrupted[first_shard_offset] ^= 0x55;
 
     let opened = open_archive(&corrupted, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("cmra-shard-magic.txt").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("cmra-shard-magic.txt").unwrap(), Some(payload));
     opened.verify().unwrap();
 }
 
@@ -1703,10 +1411,9 @@ fn key_holding_rejects_recovered_image_with_unknown_layout_flags() {
         small_block_recovery_options(),
     )
     .unwrap();
-    let mut mutated =
-        rewrite_cmra_image_variable_len(&archive.bytes, CmraRecoveryMode::KeyHolding, |image| {
-            image.layout_flags |= 0x8000_0000;
-        });
+    let mut mutated = rewrite_cmra_image_variable_len(&archive.bytes, CmraRecoveryMode::KeyHolding, |image| {
+        image.layout_flags |= 0x8000_0000;
+    });
     mutated[0] ^= 0x55;
 
     assert!(open_archive(&mutated, &master_key()).is_err());
@@ -1724,11 +1431,7 @@ fn key_holding_rejects_recovered_footer_revision_mismatch() {
     .unwrap();
     let mut mutated = archive.bytes;
     rewrite_cmra_image(&mut mutated, CmraRecoveryMode::KeyHolding, |image| {
-        let root_auth_region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 4)
-            .unwrap();
+        let root_auth_region = image.regions.iter_mut().find(|region| region.region_type == 4).unwrap();
         rewrite_root_auth_footer_revision_bytes(&mut root_auth_region.bytes, 43);
     });
     mutated[0] ^= 0x55;
@@ -1761,12 +1464,7 @@ fn key_holding_rejects_locator_image_revision_mismatch() {
 
 #[test]
 fn image_identity_allows_matching_current_revision() {
-    let archive = write_archive(
-        &[RegularFile::new("matching-v45.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("matching-v45.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let locator = final_recovery_locator(&archive.bytes);
     let recovered = recover_cmra(
         &archive.bytes,
@@ -1779,11 +1477,7 @@ fn image_identity_allows_matching_current_revision() {
     let header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = header.crypto_header_offset as usize;
     let crypto_end = crypto_start + header.crypto_header_length as usize;
-    let crypto = CryptoHeader::parse(
-        &archive.bytes[crypto_start..crypto_end],
-        header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto = CryptoHeader::parse(&archive.bytes[crypto_start..crypto_end], header.crypto_header_length).unwrap();
 
     validate_image_identity(&image, &header, &crypto.fixed).unwrap();
 }
@@ -1791,34 +1485,19 @@ fn image_identity_allows_matching_current_revision() {
 #[test]
 fn key_holding_rejects_cmra_below_authenticated_parity_floor() {
     let archive = write_archive(
-        &[RegularFile::new(
-            "cmra-floor.txt",
-            b"authenticated CMRA floor",
-        )],
+        &[RegularFile::new("cmra-floor.txt", b"authenticated CMRA floor")],
         &master_key(),
         single_stream_options(),
     )
     .unwrap();
     let malformed = rewrite_cmra_parity_count(&archive.bytes, 1);
     let final_offset = malformed.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-    let locator = CriticalRecoveryLocator::parse(
-        &malformed[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN],
-    )
-    .unwrap();
+    let locator = CriticalRecoveryLocator::parse(&malformed[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN]).unwrap();
     let volume_header = VolumeHeader::parse(&malformed[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &malformed[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&malformed[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
 
     assert_eq!(
         parse_locator_cmra_candidate(
@@ -1833,9 +1512,7 @@ fn key_holding_rejects_cmra_below_authenticated_parity_floor() {
             },
         )
         .unwrap_err(),
-        FormatError::InvalidArchive(
-            "CMRA parity shard count is below authenticated bit-rot lower bound"
-        )
+        FormatError::InvalidArchive("CMRA parity shard count is below authenticated bit-rot lower bound")
     );
     assert!(open_archive(&malformed, &master_key()).is_err());
 }
@@ -1843,10 +1520,7 @@ fn key_holding_rejects_cmra_below_authenticated_parity_floor() {
 #[test]
 fn locator_tuple_bounds_are_checked_before_locator_position_fields() {
     let archive = write_archive(
-        &[RegularFile::new(
-            "locator-order.txt",
-            b"locator tuple first",
-        )],
+        &[RegularFile::new("locator-order.txt", b"locator tuple first")],
         &master_key(),
         single_stream_options(),
     )
@@ -1858,17 +1532,8 @@ fn locator_tuple_bounds_are_checked_before_locator_position_fields() {
     let volume_header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &archive.bytes[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&archive.bytes[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
 
     assert_eq!(
         parse_locator_cmra_candidate(
@@ -1889,12 +1554,7 @@ fn locator_tuple_bounds_are_checked_before_locator_position_fields() {
 
 #[test]
 fn sequential_extract_rejects_bytes_after_terminal_locator() {
-    let archive = write_archive(
-        &[RegularFile::new("seq.txt", b"sequential EOF")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("seq.txt", b"sequential EOF")], &master_key(), single_stream_options()).unwrap();
     let mut appended = archive.bytes.clone();
     appended.extend_from_slice(&[0xAA; 32]);
 
@@ -1928,19 +1588,11 @@ fn root_auth_verifies_key_holding_and_public_no_key_modes() {
 
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let root_auth = opened
-        .verify_root_auth_with(|footer, archive_root| {
-            Ok(test_root_auth_verifies(footer, archive_root))
-        })
+        .verify_root_auth_with(|footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root)))
         .unwrap();
-    assert_eq!(
-        root_auth.archive_root,
-        opened.root_auth_footer.as_ref().unwrap().archive_root
-    );
+    assert_eq!(root_auth.archive_root, opened.root_auth_footer.as_ref().unwrap().archive_root);
 
-    let public = public_no_key_verify_archive_with(&archive.bytes, |footer, archive_root| {
-        Ok(test_root_auth_verifies(footer, archive_root))
-    })
-    .unwrap();
+    let public = public_no_key_verify_archive_with(&archive.bytes, |footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root))).unwrap();
     assert_eq!(public.archive_root, root_auth.archive_root);
     assert_eq!(
         public.diagnostics,
@@ -1980,9 +1632,7 @@ fn root_auth_verifies_with_tolerated_missing_volume_after_fec_repair() {
 
     let opened = open_archive_volumes(&[archive.volumes[0].as_slice()], &master_key()).unwrap();
     let root_auth = opened
-        .verify_root_auth_with(|footer, archive_root| {
-            Ok(test_root_auth_verifies(footer, archive_root))
-        })
+        .verify_root_auth_with(|footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root)))
         .unwrap();
     assert!(root_auth
         .diagnostics
@@ -1991,12 +1641,7 @@ fn root_auth_verifies_with_tolerated_missing_volume_after_fec_repair() {
 
 #[test]
 fn public_no_key_rejects_unsigned_archives() {
-    let archive = write_archive(
-        &[RegularFile::new("plain.txt", b"unsigned")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("plain.txt", b"unsigned")], &master_key(), single_stream_options()).unwrap();
 
     assert_eq!(
         public_no_key_verify_archive_with(&archive.bytes, |_, _| Ok(true)).unwrap_err(),
@@ -2006,12 +1651,7 @@ fn public_no_key_rejects_unsigned_archives() {
 
 #[test]
 fn unsigned_archive_reports_root_auth_absent() {
-    let archive = write_archive(
-        &[RegularFile::new("plain.txt", b"unsigned")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("plain.txt", b"unsigned")], &master_key(), single_stream_options()).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
 
     assert_eq!(
@@ -2022,34 +1662,19 @@ fn unsigned_archive_reports_root_auth_absent() {
 
 #[test]
 fn safe_extract_writes_regular_file_under_root() {
-    let archive = write_archive(
-        &[RegularFile::new("dir/hello.txt", b"safe m8")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("dir/hello.txt", b"safe m8")], &master_key(), single_stream_options()).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
     opened
-        .extract_file_to(
-            "dir/hello.txt",
-            tmp.path(),
-            SafeExtractionOptions::default(),
-        )
+        .extract_file_to("dir/hello.txt", tmp.path(), SafeExtractionOptions::default())
         .unwrap()
         .unwrap();
 
-    assert_eq!(
-        std::fs::read(tmp.path().join("dir").join("hello.txt")).unwrap(),
-        b"safe m8"
-    );
+    assert_eq!(std::fs::read(tmp.path().join("dir").join("hello.txt")).unwrap(), b"safe m8");
 }
 
-fn decoded_primary_metadata_storage(
-    opened: &OpenedArchive,
-    path: &str,
-) -> (crate::entry_metadata::PaxRecords, [u8; 512]) {
+fn decoded_primary_metadata_storage(opened: &OpenedArchive, path: &str) -> (crate::entry_metadata::PaxRecords, [u8; 512]) {
     let located = opened.locate_index_file(path.as_bytes()).unwrap().unwrap();
     let file = &located.shard.files[located.file_index];
     let mut reader = DecodedTarMemberGroupReader::new(opened, &located.shard, file).unwrap();
@@ -2066,9 +1691,7 @@ fn decoded_primary_metadata_storage(
     let pax_end = 512 + pax_size;
     let records = crate::entry_metadata::parse_canonical_pax(&group[512..pax_end]).unwrap();
     let primary_offset = pax_end + padding_to_512(pax_size);
-    let primary = group[primary_offset..primary_offset + 512]
-        .try_into()
-        .unwrap();
+    let primary = group[primary_offset..primary_offset + 512].try_into().unwrap();
     (records, primary)
 }
 
@@ -2079,10 +1702,7 @@ fn parse_test_tar_octal(field: &[u8]) -> u64 {
 }
 
 fn nul_trimmed_test_field(field: &[u8]) -> &[u8] {
-    let end = field
-        .iter()
-        .position(|byte| *byte == 0)
-        .unwrap_or(field.len());
+    let end = field.iter().position(|byte| *byte == 0).unwrap_or(field.len());
     &field[..end]
 }
 
@@ -2133,13 +1753,9 @@ fn compressed_archive_round_trips_header_and_pax_portable_metadata_stores() {
     let archive = write_archive(&files, &master_key(), single_stream_options()).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
 
-    assert_eq!(
-        opened.crypto_header.compression_algo,
-        CompressionAlgo::ZstdFramed
-    );
+    assert_eq!(opened.crypto_header.compression_algo, CompressionAlgo::ZstdFramed);
 
-    let (header_records, header_primary) =
-        decoded_primary_metadata_storage(&opened, "header-fields.txt");
+    let (header_records, header_primary) = decoded_primary_metadata_storage(&opened, "header-fields.txt");
     for key in ["uid", "gid", "uname", "gname", "mtime"] {
         assert!(!header_records.contains_key(key), "{key} should use ustar");
     }
@@ -2147,10 +1763,7 @@ fn compressed_archive_round_trips_header_and_pax_portable_metadata_stores() {
     assert_eq!(parse_test_tar_octal(&header_primary[116..124]), 84);
     assert_eq!(nul_trimmed_test_field(&header_primary[265..297]), b"alice");
     assert_eq!(nul_trimmed_test_field(&header_primary[297..329]), b"staff");
-    assert_eq!(
-        parse_test_tar_octal(&header_primary[136..148]),
-        1_700_000_000
-    );
+    assert_eq!(parse_test_tar_octal(&header_primary[136..148]), 1_700_000_000);
 
     let (pax_records, pax_primary) = decoded_primary_metadata_storage(&opened, "pax-overrides.txt");
     let long_uname = "u".repeat(40);
@@ -2175,17 +1788,11 @@ fn compressed_archive_round_trips_header_and_pax_portable_metadata_stores() {
         assert!(index.layout.compressed_size > 0);
         assert_eq!(
             index.flags,
-            crate::entry_metadata::EXTENDED_METADATA_V1
-                | crate::entry_metadata::REQUIRES_SYSTEM_RESTORE
+            crate::entry_metadata::EXTENDED_METADATA_V1 | crate::entry_metadata::REQUIRES_SYSTEM_RESTORE
         );
 
-        let located = opened
-            .locate_index_file(expected.path.as_bytes())
-            .unwrap()
-            .unwrap();
-        let member = opened
-            .decode_loaded_owned_tar_member(&located.shard, located.file_index, false)
-            .unwrap();
+        let located = opened.locate_index_file(expected.path.as_bytes()).unwrap().unwrap();
+        let member = opened.decode_loaded_owned_tar_member(&located.shard, located.file_index, false).unwrap();
         let metadata = member.v45_metadata.unwrap();
         let owner = expected.portable_metadata.posix_owner.as_ref().unwrap();
 
@@ -2193,37 +1800,18 @@ fn compressed_archive_round_trips_header_and_pax_portable_metadata_stores() {
         assert_eq!(member.mtime, expected.mtime);
         assert_eq!(
             metadata.file_entry_flags,
-            crate::entry_metadata::EXTENDED_METADATA_V1
-                | crate::entry_metadata::REQUIRES_SYSTEM_RESTORE
+            crate::entry_metadata::EXTENDED_METADATA_V1 | crate::entry_metadata::REQUIRES_SYSTEM_RESTORE
         );
-        assert_eq!(
-            metadata.declaration.source_os,
-            expected.portable_metadata.source_os
-        );
-        assert_eq!(
-            metadata.declaration.source_filesystem,
-            expected.portable_metadata.source_filesystem
-        );
+        assert_eq!(metadata.declaration.source_os, expected.portable_metadata.source_os);
+        assert_eq!(metadata.declaration.source_filesystem, expected.portable_metadata.source_filesystem);
         assert!(metadata.declaration.mode_origin_native);
         assert_eq!(metadata.portable_mirror.mode, expected.mode);
-        assert_eq!(
-            metadata.portable_mirror.mtime,
-            (expected.mtime.seconds, expected.mtime.nanoseconds)
-        );
-        assert_eq!(
-            metadata.portable_mirror.attributes,
-            expected.portable_metadata.attributes
-        );
+        assert_eq!(metadata.portable_mirror.mtime, (expected.mtime.seconds, expected.mtime.nanoseconds));
+        assert_eq!(metadata.portable_mirror.attributes, expected.portable_metadata.attributes);
         assert_eq!(metadata.portable_mirror.uid, Some(owner.uid));
         assert_eq!(metadata.portable_mirror.gid, Some(owner.gid));
-        assert_eq!(
-            metadata.portable_mirror.uname.as_deref(),
-            owner.uname.as_deref().map(str::as_bytes)
-        );
-        assert_eq!(
-            metadata.portable_mirror.gname.as_deref(),
-            owner.gname.as_deref().map(str::as_bytes)
-        );
+        assert_eq!(metadata.portable_mirror.uname.as_deref(), owner.uname.as_deref().map(str::as_bytes));
+        assert_eq!(metadata.portable_mirror.gname.as_deref(), owner.gname.as_deref().map(str::as_bytes));
     }
 }
 
@@ -2242,11 +1830,7 @@ fn compressed_archive_extraction_applies_portable_mode_and_pax_mtime() {
     .unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     assert_eq!(
-        opened
-            .lookup_index_entry("dated.txt")
-            .unwrap()
-            .unwrap()
-            .flags,
+        opened.lookup_index_entry("dated.txt").unwrap().unwrap().flags,
         crate::entry_metadata::EXTENDED_METADATA_V1
     );
     let content_root = tempfile::tempdir().unwrap();
@@ -2263,49 +1847,32 @@ fn compressed_archive_extraction_applies_portable_mode_and_pax_mtime() {
         .unwrap()
         .unwrap();
     for metadata_class in ["mode", "mtime"] {
-        assert!(content_diagnostics.iter().any(|diagnostic| {
-            diagnostic.metadata_class == metadata_class
-                && diagnostic.status == crate::tar_model::MetadataDiagnosticStatus::Skipped
-        }));
+        assert!(content_diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.metadata_class == metadata_class && diagnostic.status == crate::tar_model::MetadataDiagnosticStatus::Skipped }));
     }
-    let content_mtime = fs::metadata(content_root.path().join("dated.txt"))
-        .unwrap()
-        .modified()
-        .unwrap();
+    let content_mtime = fs::metadata(content_root.path().join("dated.txt")).unwrap().modified().unwrap();
     assert_ne!(
         content_mtime,
-        std::time::UNIX_EPOCH
-            + std::time::Duration::new(archived_mtime.seconds as u64, archived_mtime.nanoseconds,)
+        std::time::UNIX_EPOCH + std::time::Duration::new(archived_mtime.seconds as u64, archived_mtime.nanoseconds,)
     );
 
     let portable_root = tempfile::tempdir().unwrap();
     opened
-        .extract_file_to(
-            "dated.txt",
-            portable_root.path(),
-            SafeExtractionOptions::default(),
-        )
+        .extract_file_to("dated.txt", portable_root.path(), SafeExtractionOptions::default())
         .unwrap()
         .unwrap();
-    let portable_mtime = fs::metadata(portable_root.path().join("dated.txt"))
-        .unwrap()
-        .modified()
-        .unwrap();
+    let portable_mtime = fs::metadata(portable_root.path().join("dated.txt")).unwrap().modified().unwrap();
     assert_eq!(
         portable_mtime,
-        std::time::UNIX_EPOCH
-            + std::time::Duration::new(archived_mtime.seconds as u64, archived_mtime.nanoseconds,)
+        std::time::UNIX_EPOCH + std::time::Duration::new(archived_mtime.seconds as u64, archived_mtime.nanoseconds,)
     );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
 
         assert_eq!(
-            fs::metadata(portable_root.path().join("dated.txt"))
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o7777,
+            fs::metadata(portable_root.path().join("dated.txt")).unwrap().permissions().mode() & 0o7777,
             0o604
         );
     }
@@ -2314,15 +1881,9 @@ fn compressed_archive_extraction_applies_portable_mode_and_pax_mtime() {
 #[test]
 fn same_os_restore_rejects_required_native_profile_from_another_os() {
     let (source_os, required_profiles) = if cfg!(target_os = "macos") {
-        (
-            "linux",
-            vec!["posix-backup-v1".into(), "linux-backup-v1".into()],
-        )
+        ("linux", vec!["posix-backup-v1".into(), "linux-backup-v1".into()])
     } else {
-        (
-            "macos",
-            vec!["posix-backup-v1".into(), "macos-backup-v1".into()],
-        )
+        ("macos", vec!["posix-backup-v1".into(), "macos-backup-v1".into()])
     };
     let archive = write_archive(
         &[RegularFile {
@@ -2349,9 +1910,7 @@ fn same_os_restore_rejects_required_native_profile_from_another_os() {
                 ..SafeExtractionOptions::default()
             })
             .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "requested native metadata is not supported by this conformance class"
-        )
+        FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
     );
 }
 
@@ -2391,38 +1950,23 @@ fn compressed_archive_extraction_restores_setid_bits_only_for_authorized_system_
     .unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     assert_eq!(
-        opened
-            .lookup_index_entry("privileged.sh")
-            .unwrap()
-            .unwrap()
-            .flags,
-        crate::entry_metadata::EXTENDED_METADATA_V1
-            | crate::entry_metadata::REQUIRES_SYSTEM_RESTORE
+        opened.lookup_index_entry("privileged.sh").unwrap().unwrap().flags,
+        crate::entry_metadata::EXTENDED_METADATA_V1 | crate::entry_metadata::REQUIRES_SYSTEM_RESTORE
     );
 
     let portable_root = tempfile::tempdir().unwrap();
     let portable_diagnostics = opened
-        .extract_file_to(
-            "privileged.sh",
-            portable_root.path(),
-            SafeExtractionOptions::default(),
-        )
+        .extract_file_to("privileged.sh", portable_root.path(), SafeExtractionOptions::default())
         .unwrap()
         .unwrap();
-    assert!(portable_diagnostics.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "setid-mode"
-            && diagnostic.status == crate::tar_model::MetadataDiagnosticStatus::Skipped
-    }));
-    assert!(portable_diagnostics.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "numeric-ownership"
-            && diagnostic.status == crate::tar_model::MetadataDiagnosticStatus::Skipped
-    }));
+    assert!(portable_diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.metadata_class == "setid-mode" && diagnostic.status == crate::tar_model::MetadataDiagnosticStatus::Skipped }));
+    assert!(portable_diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.metadata_class == "numeric-ownership" && diagnostic.status == crate::tar_model::MetadataDiagnosticStatus::Skipped }));
     assert_eq!(
-        fs::metadata(portable_root.path().join("privileged.sh"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o7777,
+        fs::metadata(portable_root.path().join("privileged.sh")).unwrap().permissions().mode() & 0o7777,
         0o1751
     );
 
@@ -2439,11 +1983,7 @@ fn compressed_archive_extraction_restores_setid_bits_only_for_authorized_system_
         .unwrap()
         .unwrap();
     assert_eq!(
-        fs::metadata(same_os_root.path().join("privileged.sh"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o7777,
+        fs::metadata(same_os_root.path().join("privileged.sh")).unwrap().permissions().mode() & 0o7777,
         0o1751
     );
 
@@ -2459,9 +1999,7 @@ fn compressed_archive_extraction_restores_setid_bits_only_for_authorized_system_
                 },
             )
             .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "system restore policy requires explicit caller authorization"
-        )
+        FormatError::ReaderUnsupported("system restore policy requires explicit caller authorization")
     );
     assert!(!unauthorized_root.path().join("privileged.sh").exists());
 
@@ -2479,11 +2017,7 @@ fn compressed_archive_extraction_restores_setid_bits_only_for_authorized_system_
         .unwrap()
         .unwrap();
     assert_eq!(
-        fs::metadata(system_root.path().join("privileged.sh"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o7777,
+        fs::metadata(system_root.path().join("privileged.sh")).unwrap().permissions().mode() & 0o7777,
         0o7751
     );
     let restored = fs::metadata(system_root.path().join("privileged.sh")).unwrap();
@@ -2528,10 +2062,7 @@ fn compressed_archive_extraction_restores_native_xattrs_only_under_native_policy
             },
         )
         .unwrap();
-    assert_eq!(
-        xattr::get(portable_root.path().join("xattr.txt"), "user.tzap-test").unwrap(),
-        None
-    );
+    assert_eq!(xattr::get(portable_root.path().join("xattr.txt"), "user.tzap-test").unwrap(), None);
 
     let native_root = tempfile::tempdir().unwrap();
     opened
@@ -2635,13 +2166,9 @@ fn same_os_restore_reports_system_xattr_as_policy_skipped() {
         .unwrap()
         .unwrap();
     assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.metadata_class == "system-extended-attribute"
-            && diagnostic.status == crate::tar_model::MetadataDiagnosticStatus::Skipped
+        diagnostic.metadata_class == "system-extended-attribute" && diagnostic.status == crate::tar_model::MetadataDiagnosticStatus::Skipped
     }));
-    assert_eq!(
-        xattr::get(root.path().join("label.txt"), "security.selinux").unwrap(),
-        None
-    );
+    assert_eq!(xattr::get(root.path().join("label.txt"), "security.selinux").unwrap(), None);
 }
 
 #[cfg(target_os = "linux")]
@@ -2669,16 +2196,7 @@ fn compressed_archive_extraction_restores_linux_inode_flags() {
     fs::write(&probe_path, b"probe").unwrap();
     let probe = fs::File::open(&probe_path).unwrap();
     let mut intrinsic_flags: libc::c_long = 0;
-    assert_eq!(
-        unsafe {
-            libc::ioctl(
-                probe.as_raw_fd(),
-                libc::FS_IOC_GETFLAGS,
-                &mut intrinsic_flags,
-            )
-        },
-        0
-    );
+    assert_eq!(unsafe { libc::ioctl(probe.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut intrinsic_flags,) }, 0);
     drop(probe);
     fs::remove_file(probe_path).unwrap();
     let expected_flags = intrinsic_flags as u64 | u64::from(linux_raw_sys::general::FS_NODUMP_FL);
@@ -2686,10 +2204,9 @@ fn compressed_archive_extraction_restores_linux_inode_flags() {
         required_profiles: vec!["posix-backup-v1".into(), "linux-backup-v1".into()],
         ..NativeFileMetadata::default()
     };
-    native.primary_pax_records.insert(
-        "TZAP.linux.fsflags".into(),
-        format!("{expected_flags:016x}").into_bytes(),
-    );
+    native
+        .primary_pax_records
+        .insert("TZAP.linux.fsflags".into(), format!("{expected_flags:016x}").into_bytes());
     let archive = write_archive(
         &[RegularFile {
             portable_metadata: PortableFileMetadata {
@@ -2717,10 +2234,7 @@ fn compressed_archive_extraction_restores_linux_inode_flags() {
     let file = fs::File::open(root.path().join("flags.txt")).unwrap();
     let mut flags: libc::c_long = 0;
     // SAFETY: GETFLAGS writes one c_long to a valid pointer.
-    assert_eq!(
-        unsafe { libc::ioctl(file.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags,) },
-        0
-    );
+    assert_eq!(unsafe { libc::ioctl(file.as_raw_fd(), libc::FS_IOC_GETFLAGS, &mut flags,) }, 0);
     assert_eq!(flags as u64, expected_flags);
 }
 
@@ -2732,16 +2246,11 @@ fn compressed_archive_extraction_restores_canonical_posix_acl() {
         required_profiles: vec!["posix-backup-v1".into()],
         ..NativeFileMetadata::default()
     };
+    native.primary_pax_records.insert("SCHILY.acl.access".into(), acl.to_vec());
+    native.primary_pax_records.insert("TZAP.acl.projection".into(), b"exact".to_vec());
     native
         .primary_pax_records
-        .insert("SCHILY.acl.access".into(), acl.to_vec());
-    native
-        .primary_pax_records
-        .insert("TZAP.acl.projection".into(), b"exact".to_vec());
-    native.primary_pax_records.insert(
-        "TZAP.acl.syntax".into(),
-        b"schily-posix1e-extra-id-v1".to_vec(),
-    );
+        .insert("TZAP.acl.syntax".into(), b"schily-posix1e-extra-id-v1".to_vec());
     let archive = write_archive(
         &[RegularFile {
             mode: 0o640,
@@ -2768,13 +2277,8 @@ fn compressed_archive_extraction_restores_canonical_posix_acl() {
             },
         )
         .unwrap();
-    let binary = xattr::get(root.path().join("acl.txt"), "system.posix_acl_access")
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        crate::entry_metadata::linux_posix_acl_xattr_to_schily(&binary).unwrap(),
-        acl
-    );
+    let binary = xattr::get(root.path().join("acl.txt"), "system.posix_acl_access").unwrap().unwrap();
+    assert_eq!(crate::entry_metadata::linux_posix_acl_xattr_to_schily(&binary).unwrap(), acl);
 }
 
 #[cfg(windows)]
@@ -2803,11 +2307,7 @@ fn compressed_archive_extraction_restores_portable_readonly_attribute() {
     let root = tempfile::tempdir().unwrap();
 
     opened
-        .extract_file_to(
-            "readonly.txt",
-            root.path(),
-            SafeExtractionOptions::default(),
-        )
+        .extract_file_to("readonly.txt", root.path(), SafeExtractionOptions::default())
         .unwrap()
         .unwrap();
     let path = root.path().join("readonly.txt");
@@ -2822,10 +2322,7 @@ fn compressed_archive_extraction_restores_portable_readonly_attribute() {
 #[test]
 fn seekable_extract_all_to_streams_unique_archive() {
     let archive = write_archive(
-        &[
-            RegularFile::new("alpha.txt", b"alpha"),
-            RegularFile::new("dir/beta.txt", b"beta"),
-        ],
+        &[RegularFile::new("alpha.txt", b"alpha"), RegularFile::new("dir/beta.txt", b"beta")],
         &master_key(),
         single_stream_options(),
     )
@@ -2833,25 +2330,17 @@ fn seekable_extract_all_to_streams_unique_archive() {
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
-    let diagnostics = opened
-        .extract_all_to(tmp.path(), SafeExtractionOptions::default())
-        .unwrap();
+    let diagnostics = opened.extract_all_to(tmp.path(), SafeExtractionOptions::default()).unwrap();
 
     assert_eq!(diagnostics.len(), 2);
     assert_eq!(fs::read(tmp.path().join("alpha.txt")).unwrap(), b"alpha");
-    assert_eq!(
-        fs::read(tmp.path().join("dir").join("beta.txt")).unwrap(),
-        b"beta"
-    );
+    assert_eq!(fs::read(tmp.path().join("dir").join("beta.txt")).unwrap(), b"beta");
 }
 
 #[test]
 fn seekable_extract_all_to_rejects_duplicate_paths_for_cli_fallback() {
     let archive = write_archive(
-        &[
-            RegularFile::new("same.txt", b"old"),
-            RegularFile::new("same.txt", b"new"),
-        ],
+        &[RegularFile::new("same.txt", b"old"), RegularFile::new("same.txt", b"new")],
         &master_key(),
         single_stream_options(),
     )
@@ -2860,9 +2349,7 @@ fn seekable_extract_all_to_rejects_duplicate_paths_for_cli_fallback() {
     let tmp = tempfile::tempdir().unwrap();
 
     assert_eq!(
-        opened
-            .extract_all_to(tmp.path(), SafeExtractionOptions::default())
-            .unwrap_err(),
+        opened.extract_all_to(tmp.path(), SafeExtractionOptions::default()).unwrap_err(),
         FormatError::ReaderUnsupported("fast full extract requires unique archive paths")
     );
 }
@@ -2870,10 +2357,7 @@ fn seekable_extract_all_to_rejects_duplicate_paths_for_cli_fallback() {
 #[test]
 fn seekable_extract_indexed_files_to_restores_final_duplicate_winner() {
     let archive = write_archive(
-        &[
-            RegularFile::new("same.txt", b"old"),
-            RegularFile::new("same.txt", b"new"),
-        ],
+        &[RegularFile::new("same.txt", b"old"), RegularFile::new("same.txt", b"new")],
         &master_key(),
         single_stream_options(),
     )
@@ -2881,9 +2365,7 @@ fn seekable_extract_indexed_files_to_restores_final_duplicate_winner() {
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
-    let diagnostics = opened
-        .extract_indexed_files_to(tmp.path(), SafeExtractionOptions::default(), 2)
-        .unwrap();
+    let diagnostics = opened.extract_indexed_files_to(tmp.path(), SafeExtractionOptions::default(), 2).unwrap();
 
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].0, "same.txt");
@@ -2892,47 +2374,27 @@ fn seekable_extract_indexed_files_to_restores_final_duplicate_winner() {
 
 #[test]
 fn selected_restore_preflights_every_path_before_writing() {
-    let archive = write_archive(
-        &[RegularFile::new("alpha.txt", b"alpha")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("alpha.txt", b"alpha")], &master_key(), single_stream_options()).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
     let error = opened
-        .extract_selected_files_to(
-            &["alpha.txt".into(), "missing.txt".into()],
-            tmp.path(),
-            SafeExtractionOptions::default(),
-            2,
-        )
+        .extract_selected_files_to(&["alpha.txt".into(), "missing.txt".into()], tmp.path(), SafeExtractionOptions::default(), 2)
         .unwrap_err();
 
-    assert_eq!(
-        error,
-        FormatError::ReaderUnsupported("selected archive path is absent from the final index")
-    );
+    assert_eq!(error, FormatError::ReaderUnsupported("selected archive path is absent from the final index"));
     assert!(!tmp.path().join("alpha.txt").exists());
 }
 
 #[test]
 fn safe_extract_rejects_overwriting_existing_file_by_default() {
-    let archive = write_archive(
-        &[RegularFile::new("hello.txt", b"new")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("hello.txt", b"new")], &master_key(), single_stream_options()).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("hello.txt"), b"old").unwrap();
 
     assert_eq!(
-        opened
-            .extract_file_to("hello.txt", tmp.path(), SafeExtractionOptions::default())
-            .unwrap_err(),
+        opened.extract_file_to("hello.txt", tmp.path(), SafeExtractionOptions::default()).unwrap_err(),
         FormatError::UnsafeOverwrite
     );
     assert_eq!(std::fs::read(tmp.path().join("hello.txt")).unwrap(), b"old");
@@ -2959,20 +2421,13 @@ fn default_reader_options_allow_v36_trailing_garbage_scan() {
     with_trailing_garbage.extend_from_slice(b"ignored trailing bytes");
 
     let opened = open_archive(&with_trailing_garbage, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("garbage-tolerant.txt").unwrap(),
-        Some(b"still intact".to_vec())
-    );
+    assert_eq!(opened.extract_file("garbage-tolerant.txt").unwrap(), Some(b"still intact".to_vec()));
 }
 
 #[test]
 fn seekable_open_rejects_too_small_and_unavailable_header_crypto_bytes() {
     assert_eq!(
-        open_archive(
-            &[0u8; VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN - 1],
-            &master_key()
-        )
-        .unwrap_err(),
+        open_archive(&[0u8; VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN - 1], &master_key()).unwrap_err(),
         FormatError::InvalidLength {
             structure: "archive",
             expected: VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN,
@@ -2997,26 +2452,15 @@ fn seekable_open_rejects_too_small_and_unavailable_header_crypto_bytes() {
 
 #[test]
 fn seekable_open_recovers_physical_noncanonical_crypto_header_offset() {
-    let archive = write_archive(
-        &[RegularFile::new("offset.txt", b"offset")],
-        &master_key(),
-        small_block_recovery_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("offset.txt", b"offset")], &master_key(), small_block_recovery_options()).unwrap();
     let mut mutated = archive.bytes;
     let mut header = VolumeHeader::parse(&mutated[..VOLUME_HEADER_LEN]).unwrap();
     header.crypto_header_offset = VOLUME_HEADER_LEN as u32 + 1;
     mutated[..VOLUME_HEADER_LEN].copy_from_slice(&header.to_bytes());
 
     let opened = open_archive(&mutated, &master_key()).unwrap();
-    assert_eq!(
-        opened.volume_header.crypto_header_offset,
-        VOLUME_HEADER_LEN as u32
-    );
-    assert_eq!(
-        opened.extract_file("offset.txt").unwrap(),
-        Some(b"offset".to_vec())
-    );
+    assert_eq!(opened.volume_header.crypto_header_offset, VOLUME_HEADER_LEN as u32);
+    assert_eq!(opened.extract_file("offset.txt").unwrap(), Some(b"offset".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -3027,31 +2471,18 @@ fn rejects_wrong_key_before_metadata_release() {
 
     assert_eq!(
         open_archive(&archive.bytes, &wrong).unwrap_err(),
-        FormatError::HmacMismatch {
-            structure: "CryptoHeader"
-        }
+        FormatError::HmacMismatch { structure: "CryptoHeader" }
     );
 }
 
 #[test]
 fn ordinary_encrypted_writers_emit_v45_archives() {
-    let raw_key_archive = write_archive(
-        &[RegularFile::new("raw.txt", b"raw key payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let raw_key_archive = write_archive(&[RegularFile::new("raw.txt", b"raw key payload")], &master_key(), single_stream_options()).unwrap();
     let raw_header = VolumeHeader::parse(&raw_key_archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
     assert_eq!(raw_header.volume_format_rev, VOLUME_FORMAT_REV_45);
     let raw_opened = open_archive(&raw_key_archive.bytes, &master_key()).unwrap();
-    assert_eq!(
-        raw_opened.volume_header.volume_format_rev,
-        VOLUME_FORMAT_REV_45
-    );
-    assert_eq!(
-        raw_opened.extract_file("raw.txt").unwrap(),
-        Some(b"raw key payload".to_vec())
-    );
+    assert_eq!(raw_opened.volume_header.volume_format_rev, VOLUME_FORMAT_REV_45);
+    assert_eq!(raw_opened.extract_file("raw.txt").unwrap(), Some(b"raw key payload".to_vec()));
 
     let passphrase_kdf = KdfParams::Argon2id {
         t_cost: 1,
@@ -3066,18 +2497,11 @@ fn ordinary_encrypted_writers_emit_v45_archives() {
         &passphrase_kdf,
     )
     .unwrap();
-    let passphrase_header =
-        VolumeHeader::parse(&passphrase_archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
+    let passphrase_header = VolumeHeader::parse(&passphrase_archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
     assert_eq!(passphrase_header.volume_format_rev, VOLUME_FORMAT_REV_45);
     let passphrase_opened = open_archive(&passphrase_archive.bytes, &master_key()).unwrap();
-    assert_eq!(
-        passphrase_opened.volume_header.volume_format_rev,
-        VOLUME_FORMAT_REV_45
-    );
-    assert_eq!(
-        passphrase_opened.extract_file("pass.txt").unwrap(),
-        Some(b"passphrase payload".to_vec())
-    );
+    assert_eq!(passphrase_opened.volume_header.volume_format_rev, VOLUME_FORMAT_REV_45);
+    assert_eq!(passphrase_opened.extract_file("pass.txt").unwrap(), Some(b"passphrase payload".to_vec()));
 }
 
 #[test]
@@ -3115,21 +2539,13 @@ fn open_archive_unencrypted_accepts_v45_profile() {
 
     assert_eq!(header.volume_format_rev, VOLUME_FORMAT_REV_45);
     assert_eq!(opened.volume_header.volume_format_rev, VOLUME_FORMAT_REV_45);
-    assert_eq!(
-        opened.extract_file("payload.txt").unwrap(),
-        Some(b"smoke-v45-unencrypted".to_vec())
-    );
+    assert_eq!(opened.extract_file("payload.txt").unwrap(), Some(b"smoke-v45-unencrypted".to_vec()));
     opened.verify().unwrap();
 }
 
 #[test]
 fn full_verification_reports_v45_metadata_capabilities_separately() {
-    let archive = write_archive(
-        &[RegularFile::new("report.txt", b"report")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("report.txt", b"report")], &master_key(), single_stream_options()).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let verification = opened.verify_content().unwrap();
     let report = verification.metadata_report().unwrap();
@@ -3140,20 +2556,14 @@ fn full_verification_reports_v45_metadata_capabilities_separately() {
     assert!(report.auxiliary_kinds_present.is_empty());
     assert_eq!(report.entries.len(), 1);
     assert_eq!(report.entries[0].path, b"report.txt");
-    assert!(report.entries[0]
-        .policy_capabilities
-        .iter()
-        .all(|capability| capability.policy_complete));
+    assert!(report.entries[0].policy_capabilities.iter().all(|capability| capability.policy_complete));
     assert!(report.entries[0].diagnostics.is_empty());
 }
 
 #[test]
 fn root_auth_unencrypted_v45_round_trips_with_recomputed_archive_root() {
     let archive = write_archive_with_root_auth(
-        &[RegularFile::new(
-            "signed-v45.txt",
-            b"root-auth v45 plaintext",
-        )],
+        &[RegularFile::new("signed-v45.txt", b"root-auth v45 plaintext")],
         &master_key(),
         WriterOptions {
             aead_algo: AeadAlgo::None,
@@ -3168,23 +2578,15 @@ fn root_auth_unencrypted_v45_round_trips_with_recomputed_archive_root() {
 
     assert_eq!(header.volume_format_rev, VOLUME_FORMAT_REV_45);
     assert_eq!(opened.volume_header.volume_format_rev, VOLUME_FORMAT_REV_45);
-    assert_eq!(
-        opened.extract_file("signed-v45.txt").unwrap(),
-        Some(b"root-auth v45 plaintext".to_vec())
-    );
+    assert_eq!(opened.extract_file("signed-v45.txt").unwrap(), Some(b"root-auth v45 plaintext".to_vec()));
 
     let verified = opened
-        .verify_root_auth_with(|footer, archive_root| {
-            Ok(test_root_auth_verifies(footer, archive_root))
-        })
+        .verify_root_auth_with(|footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root)))
         .unwrap();
 
     assert_eq!(verified.format_version, FORMAT_VERSION);
     assert_eq!(verified.volume_format_rev, VOLUME_FORMAT_REV_45);
-    assert_eq!(
-        verified.archive_root,
-        opened.root_auth_footer.as_ref().unwrap().archive_root
-    );
+    assert_eq!(verified.archive_root, opened.root_auth_footer.as_ref().unwrap().archive_root);
 }
 
 #[test]
@@ -3199,19 +2601,13 @@ fn recipientwrap_open_accepts_candidate_after_header_hmac() {
     .unwrap();
 
     let opened = open_archive_with_recipient_wrap_resolver(&archive.bytes, |context| {
-        assert_eq!(
-            context.archive_identity.volume_format_rev,
-            VOLUME_FORMAT_REV_45
-        );
+        assert_eq!(context.archive_identity.volume_format_rev, VOLUME_FORMAT_REV_45);
         assert_eq!(context.record.profile_id, 1);
         Ok(vec![master.0])
     })
     .unwrap();
 
-    assert_eq!(
-        opened.extract_file("wrapped.txt").unwrap(),
-        Some(b"recipient payload".to_vec())
-    );
+    assert_eq!(opened.extract_file("wrapped.txt").unwrap(), Some(b"recipient payload".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -3229,10 +2625,7 @@ fn recipientwrap_seekable_open_uses_lazy_block_source() {
     let opened = open_seekable_archive_with_recipient_wrap_resolver_options(
         CountingReadAt::new(archive.bytes, vec![]),
         |context| {
-            assert_eq!(
-                context.archive_identity.volume_format_rev,
-                VOLUME_FORMAT_REV_45
-            );
+            assert_eq!(context.archive_identity.volume_format_rev, VOLUME_FORMAT_REV_45);
             assert_eq!(context.record.profile_id, 1);
             Ok(vec![master.0])
         },
@@ -3242,10 +2635,7 @@ fn recipientwrap_seekable_open_uses_lazy_block_source() {
 
     assert!(opened.blocks.is_empty());
     assert!(opened.lazy_blocks.is_some());
-    assert_eq!(
-        opened.extract_file("wrapped.txt").unwrap(),
-        Some(b"recipient payload".to_vec())
-    );
+    assert_eq!(opened.extract_file("wrapped.txt").unwrap(), Some(b"recipient payload".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -3268,10 +2658,7 @@ fn recipientwrap_seekable_volume_set_opens_with_resolver() {
     let opened = open_seekable_archive_volumes_with_recipient_wrap_resolver_options(
         archive.volumes,
         |context| {
-            assert_eq!(
-                context.archive_identity.volume_format_rev,
-                VOLUME_FORMAT_REV_45
-            );
+            assert_eq!(context.archive_identity.volume_format_rev, VOLUME_FORMAT_REV_45);
             assert_eq!(context.record.profile_id, 1);
             Ok(vec![master.0])
         },
@@ -3282,10 +2669,7 @@ fn recipientwrap_seekable_volume_set_opens_with_resolver() {
     assert_eq!(opened.observed_volume_count, 2);
     assert!(opened.blocks.is_empty());
     assert!(opened.lazy_blocks.is_some());
-    assert_eq!(
-        opened.extract_file("wrapped.txt").unwrap(),
-        Some(b"recipient payload".to_vec())
-    );
+    assert_eq!(opened.extract_file("wrapped.txt").unwrap(), Some(b"recipient payload".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -3316,14 +2700,8 @@ fn recipientwrap_open_tries_subsequent_records_after_failed_candidate() {
     })
     .unwrap();
 
-    assert_eq!(
-        attempts,
-        vec![b"first-candidate".to_vec(), b"second-candidate".to_vec(),]
-    );
-    assert_eq!(
-        opened.extract_file("wrapped.txt").unwrap(),
-        Some(b"recipient payload".to_vec())
-    );
+    assert_eq!(attempts, vec![b"first-candidate".to_vec(), b"second-candidate".to_vec(),]);
+    assert_eq!(opened.extract_file("wrapped.txt").unwrap(), Some(b"recipient payload".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -3405,10 +2783,7 @@ fn recipientwrap_stripe_width_mismatch_rejects_before_resolver_callback() {
     .unwrap_err();
 
     assert!(!called);
-    assert_eq!(
-        err,
-        FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ")
-    );
+    assert_eq!(err, FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ"));
 }
 
 #[test]
@@ -3433,10 +2808,7 @@ fn recipientwrap_defers_raw_stream_profile_rejection_until_after_resolver_callba
     .unwrap_err();
 
     assert!(called);
-    assert_eq!(
-        err,
-        FormatError::ReaderUnsupported(RAW_STREAM_UNSUPPORTED_MESSAGE)
-    );
+    assert_eq!(err, FormatError::ReaderUnsupported(RAW_STREAM_UNSUPPORTED_MESSAGE));
 }
 
 #[test]
@@ -3453,16 +2825,8 @@ fn recipientwrap_recovers_physical_key_wrap_table_from_cmra_authority() {
     let header = VolumeHeader::parse(&bytes[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = header.crypto_header_offset as usize;
     let crypto_end = crypto_start + header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &bytes[crypto_start..crypto_end],
-        header.crypto_header_length,
-    )
-    .unwrap();
-    let KdfParams::RecipientWrap {
-        key_wrap_table_length,
-        ..
-    } = crypto_header.kdf_params
-    else {
+    let crypto_header = CryptoHeader::parse(&bytes[crypto_start..crypto_end], header.crypto_header_length).unwrap();
+    let KdfParams::RecipientWrap { key_wrap_table_length, .. } = crypto_header.kdf_params else {
         panic!("expected RecipientWrap KdfParams");
     };
     let table_start = crypto_end;
@@ -3472,20 +2836,14 @@ fn recipientwrap_recovers_physical_key_wrap_table_from_cmra_authority() {
     let mut called = false;
     let opened = open_archive_with_recipient_wrap_resolver(&bytes, |context| {
         called = true;
-        assert_eq!(
-            context.archive_identity.volume_format_rev,
-            VOLUME_FORMAT_REV_45
-        );
+        assert_eq!(context.archive_identity.volume_format_rev, VOLUME_FORMAT_REV_45);
         assert_eq!(context.record.profile_id, 1);
         Ok(vec![master.0])
     })
     .unwrap();
 
     assert!(called);
-    assert_eq!(
-        opened.extract_file("wrapped.txt").unwrap(),
-        Some(b"recipient payload".to_vec())
-    );
+    assert_eq!(opened.extract_file("wrapped.txt").unwrap(), Some(b"recipient payload".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -3501,10 +2859,7 @@ fn recipientwrap_open_rejects_wrong_candidate_header_hmac() {
     let wrong_candidate = [0x99u8; 32];
 
     assert_eq!(
-        open_archive_with_recipient_wrap_resolver(&archive.bytes, |_| {
-            Ok(vec![wrong_candidate])
-        })
-        .unwrap_err(),
+        open_archive_with_recipient_wrap_resolver(&archive.bytes, |_| { Ok(vec![wrong_candidate]) }).unwrap_err(),
         FormatError::KeyMaterialMismatch
     );
 }
@@ -3526,14 +2881,8 @@ fn recipientwrap_open_recovers_tampered_physical_crypto_header_hmac_from_cmra() 
 
     let opened = open_archive_with_recipient_wrap_resolver(&bytes, |_| Ok(vec![master.0])).unwrap();
 
-    assert_eq!(
-        opened.extract_file("wrapped.txt").unwrap(),
-        Some(b"recipient payload".to_vec())
-    );
-    assert_eq!(
-        opened.crypto_header_bytes,
-        archive.bytes[header.crypto_header_offset as usize..hmac_end]
-    );
+    assert_eq!(opened.extract_file("wrapped.txt").unwrap(), Some(b"recipient payload".to_vec()));
+    assert_eq!(opened.crypto_header_bytes, archive.bytes[header.crypto_header_offset as usize..hmac_end]);
     opened.verify().unwrap();
 }
 
@@ -3548,10 +2897,7 @@ fn recipientwrap_archive_does_not_fall_back_to_raw_master_key_open() {
     )
     .unwrap();
 
-    assert_eq!(
-        open_archive(&archive.bytes, &master).unwrap_err(),
-        FormatError::KeyMaterialMismatch
-    );
+    assert_eq!(open_archive(&archive.bytes, &master).unwrap_err(), FormatError::KeyMaterialMismatch);
 }
 
 #[test]
@@ -3565,10 +2911,7 @@ fn recipientwrap_seekable_archive_does_not_fall_back_to_raw_master_key_open() {
     )
     .unwrap();
 
-    assert_eq!(
-        open_seekable_archive(archive.bytes, &master).unwrap_err(),
-        FormatError::KeyMaterialMismatch
-    );
+    assert_eq!(open_seekable_archive(archive.bytes, &master).unwrap_err(), FormatError::KeyMaterialMismatch);
 }
 
 #[test]
@@ -3583,10 +2926,7 @@ fn public_no_key_verifies_signed_recipientwrap_block_commitment() {
     )
     .unwrap();
 
-    let verified = public_no_key_verify_archive_with(&archive.bytes, |footer, archive_root| {
-        Ok(test_root_auth_verifies(footer, archive_root))
-    })
-    .unwrap();
+    let verified = public_no_key_verify_archive_with(&archive.bytes, |footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root))).unwrap();
 
     assert_eq!(verified.volume_format_rev, VOLUME_FORMAT_REV_45);
     assert_eq!(verified.total_data_block_count, 3);
@@ -3606,15 +2946,9 @@ fn public_no_key_rejects_recipientwrap_startup_and_cmra_kdf_mismatch() {
     let mut bytes = archive.bytes;
     mutate_top_level_recipient_wrap_public_profile(&mut bytes);
 
-    let err = public_no_key_verify_archive_with(&bytes, |footer, archive_root| {
-        Ok(test_root_auth_verifies(footer, archive_root))
-    })
-    .unwrap_err();
+    let err = public_no_key_verify_archive_with(&bytes, |footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root))).unwrap_err();
 
-    assert_eq!(
-        err,
-        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
-    );
+    assert_eq!(err, FormatError::InvalidArchive("no valid v45 public CMRA candidate found"));
 }
 
 #[test]
@@ -3637,15 +2971,9 @@ fn public_no_key_rejects_recipientwrap_kdf_profile_mismatch_across_volumes() {
     mutate_cmra_recipient_wrap_public_profile(&mut volumes[1]);
 
     let volume_refs = volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let err = public_no_key_verify_volumes_with(&volume_refs, |footer, archive_root| {
-        Ok(test_root_auth_verifies(footer, archive_root))
-    })
-    .unwrap_err();
+    let err = public_no_key_verify_volumes_with(&volume_refs, |footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root))).unwrap_err();
 
-    assert_eq!(
-        err,
-        FormatError::InvalidArchive("public no-key volume global metadata differs")
-    );
+    assert_eq!(err, FormatError::InvalidArchive("public no-key volume global metadata differs"));
 }
 
 #[test]
@@ -3695,20 +3023,12 @@ fn open_seekable_archive_rejects_future_volume_format_revision() {
 
 #[test]
 fn rejects_payload_tamper_even_with_recomputed_block_crc() {
-    let mut archive = write_archive(
-        &[RegularFile::new("file.txt", b"authenticated")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap()
-    .bytes;
+    let mut archive = write_archive(&[RegularFile::new("file.txt", b"authenticated")], &master_key(), single_stream_options())
+        .unwrap()
+        .bytes;
     let volume = VolumeHeader::parse(&archive[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_end = VOLUME_HEADER_LEN + usize::try_from(volume.crypto_header_length).unwrap();
-    let crypto = CryptoHeader::parse(
-        &archive[VOLUME_HEADER_LEN..crypto_end],
-        volume.crypto_header_length,
-    )
-    .unwrap();
+    let crypto = CryptoHeader::parse(&archive[VOLUME_HEADER_LEN..crypto_end], volume.crypto_header_length).unwrap();
     let block_size = crypto.fixed.block_size as usize;
     archive[crypto_end + 16] ^= 1;
     let crc_offset = crypto_end + 16 + block_size;
@@ -3770,10 +3090,7 @@ fn list_and_extract_use_final_view_for_duplicate_paths() {
             gname: None,
         }]
     );
-    assert_eq!(
-        opened.extract_file("same.txt").unwrap(),
-        Some(b"newer".to_vec())
-    );
+    assert_eq!(opened.extract_file("same.txt").unwrap(), Some(b"newer".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -3818,48 +3135,24 @@ fn index_entry_layout_stats_match_frame_and_envelope_tables() {
     .unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let entry = opened.list_index_entries().unwrap().remove(0);
-    let located = opened
-        .locate_index_file(b"chunked.bin")
-        .unwrap()
-        .expect("indexed file exists");
+    let located = opened.locate_index_file(b"chunked.bin").unwrap().expect("indexed file exists");
     let file = &located.shard.files[located.file_index];
     let frames = frame_range_for_file(&located.shard, file).unwrap();
     assert!(frames.len() > 1);
 
-    let expected_compressed_size = frames
-        .iter()
-        .map(|frame| frame.compressed_size as u64)
-        .sum::<u64>();
-    let expected_decompressed_frame_size = frames
-        .iter()
-        .map(|frame| frame.decompressed_size as u64)
-        .sum::<u64>();
-    let envelope_indexes = frames
-        .iter()
-        .map(|frame| frame.envelope_index)
-        .collect::<BTreeSet<_>>();
+    let expected_compressed_size = frames.iter().map(|frame| frame.compressed_size as u64).sum::<u64>();
+    let expected_decompressed_frame_size = frames.iter().map(|frame| frame.decompressed_size as u64).sum::<u64>();
+    let envelope_indexes = frames.iter().map(|frame| frame.envelope_index).collect::<BTreeSet<_>>();
     assert!(envelope_indexes.len() > 1);
 
     let envelopes = envelope_indexes
         .iter()
         .map(|index| envelope_by_index(&located.shard, *index).unwrap())
         .collect::<Vec<_>>();
-    let expected_first_payload_block_index = envelopes
-        .iter()
-        .map(|envelope| envelope.first_block_index)
-        .min();
-    let expected_payload_data_block_count = envelopes
-        .iter()
-        .map(|envelope| envelope.data_block_count as u64)
-        .sum::<u64>();
-    let expected_payload_parity_block_count = envelopes
-        .iter()
-        .map(|envelope| envelope.parity_block_count as u64)
-        .sum::<u64>();
-    let expected_payload_encrypted_size = envelopes
-        .iter()
-        .map(|envelope| envelope.encrypted_size as u64)
-        .sum::<u64>();
+    let expected_first_payload_block_index = envelopes.iter().map(|envelope| envelope.first_block_index).min();
+    let expected_payload_data_block_count = envelopes.iter().map(|envelope| envelope.data_block_count as u64).sum::<u64>();
+    let expected_payload_parity_block_count = envelopes.iter().map(|envelope| envelope.parity_block_count as u64).sum::<u64>();
+    let expected_payload_encrypted_size = envelopes.iter().map(|envelope| envelope.encrypted_size as u64).sum::<u64>();
 
     assert_eq!(entry.path, "chunked.bin");
     assert_eq!(entry.name, "chunked.bin");
@@ -3868,40 +3161,16 @@ fn index_entry_layout_stats_match_frame_and_envelope_tables() {
     assert_eq!(entry.tar_member_group_size, file.tar_member_group_size);
     assert_eq!(entry.first_frame_index, file.first_frame_index);
     assert_eq!(entry.frame_count, file.frame_count);
-    assert_eq!(
-        entry.offset_in_first_frame_plaintext,
-        file.offset_in_first_frame_plaintext
-    );
+    assert_eq!(entry.offset_in_first_frame_plaintext, file.offset_in_first_frame_plaintext);
     assert_eq!(entry.layout.compressed_size, expected_compressed_size);
-    assert_eq!(
-        entry.layout.decompressed_frame_size,
-        expected_decompressed_frame_size
-    );
+    assert_eq!(entry.layout.decompressed_frame_size, expected_decompressed_frame_size);
     assert_eq!(entry.layout.envelope_count as usize, envelope_indexes.len());
-    assert_eq!(
-        entry.layout.first_envelope_index,
-        envelope_indexes.iter().next().copied()
-    );
-    assert_eq!(
-        entry.layout.last_envelope_index,
-        envelope_indexes.iter().next_back().copied()
-    );
-    assert_eq!(
-        entry.layout.first_payload_block_index,
-        expected_first_payload_block_index
-    );
-    assert_eq!(
-        entry.layout.payload_data_block_count,
-        expected_payload_data_block_count
-    );
-    assert_eq!(
-        entry.layout.payload_parity_block_count,
-        expected_payload_parity_block_count
-    );
-    assert_eq!(
-        entry.layout.payload_encrypted_size,
-        expected_payload_encrypted_size
-    );
+    assert_eq!(entry.layout.first_envelope_index, envelope_indexes.iter().next().copied());
+    assert_eq!(entry.layout.last_envelope_index, envelope_indexes.iter().next_back().copied());
+    assert_eq!(entry.layout.first_payload_block_index, expected_first_payload_block_index);
+    assert_eq!(entry.layout.payload_data_block_count, expected_payload_data_block_count);
+    assert_eq!(entry.layout.payload_parity_block_count, expected_payload_parity_block_count);
+    assert_eq!(entry.layout.payload_encrypted_size, expected_payload_encrypted_size);
 }
 
 #[test]
@@ -3911,14 +3180,8 @@ fn extract_file_does_not_decrypt_unselected_payload_envelope() {
     let (mut opened, broken_payload_block) = multi_envelope_reader_fixture();
     corrupt_payload_record(&mut opened.blocks, broken_payload_block);
 
-    assert_eq!(
-        opened.extract_file("healthy.txt").unwrap(),
-        Some(b"healthy payload\n".to_vec())
-    );
-    assert_eq!(
-        opened.extract_file("broken.txt").unwrap_err(),
-        FormatError::AeadFailure
-    );
+    assert_eq!(opened.extract_file("healthy.txt").unwrap(), Some(b"healthy payload\n".to_vec()));
+    assert_eq!(opened.extract_file("broken.txt").unwrap_err(), FormatError::AeadFailure);
     assert_eq!(opened.verify().unwrap_err(), FormatError::AeadFailure);
 }
 
@@ -3942,10 +3205,7 @@ fn seekable_extract_does_not_read_unselected_payload_envelope() {
         ..WriterOptions::default()
     };
     let archive = write_archive(
-        &[
-            RegularFile::new("healthy.bin", &healthy),
-            RegularFile::new("broken.bin", &broken),
-        ],
+        &[RegularFile::new("healthy.bin", &healthy), RegularFile::new("broken.bin", &broken)],
         &master_key(),
         options,
     )
@@ -3981,16 +3241,11 @@ fn seekable_extract_does_not_read_unselected_payload_envelope() {
     assert_eq!(opened.extract_file("healthy.bin").unwrap(), Some(healthy));
     for (read_start, read_end) in reader.reads() {
         assert!(
-            denied_ranges
-                .iter()
-                .all(|(start, end)| !ranges_overlap(read_start, read_end, *start, *end)),
+            denied_ranges.iter().all(|(start, end)| !ranges_overlap(read_start, read_end, *start, *end)),
             "targeted extract read an unrelated payload BlockRecord range"
         );
     }
-    assert_eq!(
-        opened.extract_file("broken.bin").unwrap_err(),
-        FormatError::InvalidArchive("denied test read")
-    );
+    assert_eq!(opened.extract_file("broken.bin").unwrap_err(), FormatError::InvalidArchive("denied test read"));
 }
 
 #[test]
@@ -4023,18 +3278,10 @@ fn extract_file_to_writer_streams_before_reading_later_envelopes() {
         index_root_fec_parity_shards: 0,
         ..WriterOptions::default()
     };
-    let archive = write_archive(
-        &[RegularFile::new("large.bin", &payload)],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("large.bin", &payload)], &master_key(), options).unwrap();
     let eager = open_archive(&archive.bytes, &master_key()).unwrap();
     let envelopes = envelope_entries_for_path(&eager, "large.bin");
-    let first_envelope = envelopes
-        .first()
-        .expect("large fixture should have at least one envelope")
-        .envelope_index;
+    let first_envelope = envelopes.first().expect("large fixture should have at least one envelope").envelope_index;
     let later_envelope_blocks = envelopes
         .iter()
         .filter(|entry| entry.envelope_index != first_envelope)
@@ -4043,10 +3290,7 @@ fn extract_file_to_writer_streams_before_reading_later_envelopes() {
             entry.first_block_index..entry.first_block_index + block_count
         })
         .collect::<BTreeSet<_>>();
-    assert!(
-        !later_envelope_blocks.is_empty(),
-        "fixture must span more than one payload envelope"
-    );
+    assert!(!later_envelope_blocks.is_empty(), "fixture must span more than one payload envelope");
     let denied_ranges = block_record_slots(&archive.bytes)
         .into_iter()
         .filter_map(|(offset, len, record)| {
@@ -4061,15 +3305,11 @@ fn extract_file_to_writer_streams_before_reading_later_envelopes() {
     let opened = open_seekable_archive(reader.clone(), &master_key()).unwrap();
     let mut writer = FailOnFirstWrite;
 
-    let err = opened
-        .extract_file_to_writer("large.bin", &mut writer)
-        .unwrap_err();
+    let err = opened.extract_file_to_writer("large.bin", &mut writer).unwrap_err();
     assert_eq!(err.to_string(), "extraction output write failed");
     for (read_start, read_end) in reader.reads() {
         assert!(
-            denied_ranges
-                .iter()
-                .all(|(start, end)| !ranges_overlap(read_start, read_end, *start, *end)),
+            denied_ranges.iter().all(|(start, end)| !ranges_overlap(read_start, read_end, *start, *end)),
             "streaming writer read a later payload envelope before surfacing writer failure"
         );
     }
@@ -4112,12 +3352,7 @@ fn extract_file_to_writer_writes_bounded_chunks() {
         index_root_fec_parity_shards: 0,
         ..WriterOptions::default()
     };
-    let archive = write_archive(
-        &[RegularFile::new("large.bin", &payload)],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("large.bin", &payload)], &master_key(), options).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let mut writer = ChunkRecorder {
         total: 0,
@@ -4125,10 +3360,7 @@ fn extract_file_to_writer_writes_bounded_chunks() {
         writes: 0,
     };
 
-    opened
-        .extract_file_to_writer("large.bin", &mut writer)
-        .unwrap()
-        .unwrap();
+    opened.extract_file_to_writer("large.bin", &mut writer).unwrap().unwrap();
 
     assert_eq!(writer.total, payload.len());
     assert!(writer.writes > 1);
@@ -4173,12 +3405,7 @@ fn extract_file_to_writer_with_progress_reports_payload_bytes() {
         index_root_fec_parity_shards: 0,
         ..WriterOptions::default()
     };
-    let archive = write_archive(
-        &[RegularFile::new("large.bin", &payload)],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("large.bin", &payload)], &master_key(), options).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let mut writer = ChunkRecorder { total: 0 };
     let mut progress_events = Vec::new();
@@ -4216,17 +3443,10 @@ fn streaming_filesystem_extract_does_not_publish_partial_file_on_late_payload_er
         index_root_fec_parity_shards: 0,
         ..WriterOptions::default()
     };
-    let archive = write_archive(
-        &[RegularFile::new("large.bin", &payload)],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("large.bin", &payload)], &master_key(), options).unwrap();
     let eager = open_archive(&archive.bytes, &master_key()).unwrap();
     let envelopes = envelope_entries_for_path(&eager, "large.bin");
-    let last_envelope = envelopes
-        .last()
-        .expect("large fixture should have at least one envelope");
+    let last_envelope = envelopes.last().expect("large fixture should have at least one envelope");
     assert_ne!(
         envelopes.first().unwrap().envelope_index,
         last_envelope.envelope_index,
@@ -4235,9 +3455,7 @@ fn streaming_filesystem_extract_does_not_publish_partial_file_on_late_payload_er
     let corrupt_slot = block_record_slots(&archive.bytes)
         .into_iter()
         .enumerate()
-        .find_map(|(slot, (_, _, record))| {
-            (record.block_index == last_envelope.first_block_index).then_some(slot)
-        })
+        .find_map(|(slot, (_, _, record))| (record.block_index == last_envelope.first_block_index).then_some(slot))
         .unwrap();
     let mut corrupted = archive.bytes;
     corrupt_block_record_payload_at_slot(&mut corrupted, corrupt_slot);
@@ -4245,9 +3463,7 @@ fn streaming_filesystem_extract_does_not_publish_partial_file_on_late_payload_er
     let tmp = tempfile::tempdir().unwrap();
 
     assert!(matches!(
-        opened
-            .extract_file_to("large.bin", tmp.path(), SafeExtractionOptions::default())
-            .unwrap_err(),
+        opened.extract_file_to("large.bin", tmp.path(), SafeExtractionOptions::default()).unwrap_err(),
         FormatError::AeadFailure | FormatError::FecTooFewAvailableShards
     ));
     assert!(!tmp.path().join("large.bin").exists());
@@ -4256,18 +3472,8 @@ fn streaming_filesystem_extract_does_not_publish_partial_file_on_late_payload_er
 
 #[test]
 fn bootstrap_sidecar_opens_lists_verifies_and_extracts() {
-    let archive = write_archive(
-        &[RegularFile::new("dir/sidecar.txt", b"hello sidecar")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
-    let opened = open_archive_with_bootstrap_sidecar(
-        &archive.bytes,
-        &archive.bootstrap_sidecar,
-        &master_key(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("dir/sidecar.txt", b"hello sidecar")], &master_key(), single_stream_options()).unwrap();
+    let opened = open_archive_with_bootstrap_sidecar(&archive.bytes, &archive.bootstrap_sidecar, &master_key()).unwrap();
 
     assert_eq!(
         opened.list_files().unwrap(),
@@ -4288,10 +3494,7 @@ fn bootstrap_sidecar_opens_lists_verifies_and_extracts() {
             gname: None,
         }]
     );
-    assert_eq!(
-        opened.extract_file("dir/sidecar.txt").unwrap(),
-        Some(b"hello sidecar".to_vec())
-    );
+    assert_eq!(opened.extract_file("dir/sidecar.txt").unwrap(), Some(b"hello sidecar".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -4304,10 +3507,7 @@ fn fast_verify_plaintext_zero_recovery_defers_payload_semantics() {
         ..single_stream_options()
     };
     let archive = write_archive_unencrypted(
-        &[RegularFile::new(
-            "payload.txt",
-            b"payload bytes large enough to produce a zstd frame",
-        )],
+        &[RegularFile::new("payload.txt", b"payload bytes large enough to produce a zstd frame")],
         options,
     )
     .unwrap();
@@ -4349,10 +3549,7 @@ fn fast_verify_root_auth_archive_requires_full_root_auth_scan() {
 
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     assert!(!opened.fast_verify_defers_payload_semantics());
-    assert!(matches!(
-        opened.verify_content_fast().unwrap().mode,
-        ContentVerificationMode::Fast
-    ));
+    assert!(matches!(opened.verify_content_fast().unwrap().mode, ContentVerificationMode::Fast));
 }
 
 #[test]
@@ -4377,12 +3574,7 @@ fn fast_verify_encrypted_archive_does_not_defer_payload_semantics() {
         bit_rot_buffer_pct: 0,
         ..single_stream_options()
     };
-    let archive = write_archive(
-        &[RegularFile::new("payload.txt", b"encrypted payload")],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("payload.txt", b"encrypted payload")], &master_key(), options).unwrap();
 
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     assert!(!opened.fast_verify_defers_payload_semantics());
@@ -4396,12 +3588,7 @@ fn fast_verify_repair_archive_does_not_defer_payload_semantics() {
         bit_rot_buffer_pct: 0,
         ..single_stream_options()
     };
-    let archive = write_archive(
-        &[RegularFile::new("payload.txt", b"payload for repair")],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("payload.txt", b"payload for repair")], &master_key(), options).unwrap();
 
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     assert!(!opened.fast_verify_defers_payload_semantics());
@@ -4410,10 +3597,7 @@ fn fast_verify_repair_archive_does_not_defer_payload_semantics() {
 #[test]
 fn dictionary_archive_opens_lists_verifies_and_extracts_seekable() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "dir/dict.txt",
-            b"common words common words dictionary payload",
-        )],
+        &[RegularFile::new("dir/dict.txt", b"common words common words dictionary payload")],
         &master_key(),
         single_stream_options(),
         dictionary(),
@@ -4452,10 +3636,7 @@ fn dictionary_archive_opens_lists_verifies_and_extracts_seekable() {
 #[test]
 fn dictionary_object_tamper_fails_before_payload_decompression() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "dir/dict.txt",
-            b"common words common words dictionary payload",
-        )],
+        &[RegularFile::new("dir/dict.txt", b"common words common words dictionary payload")],
         &master_key(),
         single_stream_options(),
         dictionary(),
@@ -4465,8 +3646,7 @@ fn dictionary_object_tamper_fails_before_payload_decompression() {
     let volume_header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_end = VOLUME_HEADER_LEN + volume_header.crypto_header_length as usize;
     let record_len = opened.crypto_header.block_size as usize + BLOCK_RECORD_FRAMING_LEN;
-    let dictionary_offset =
-        crypto_end + opened.index_root.header.dictionary_first_block as usize * record_len;
+    let dictionary_offset = crypto_end + opened.index_root.header.dictionary_first_block as usize * record_len;
 
     let mut tampered = archive.bytes.clone();
     tampered[dictionary_offset + 16] ^= 0x01;
@@ -4474,30 +3654,19 @@ fn dictionary_object_tamper_fails_before_payload_decompression() {
     let crc = crc32c::crc32c(&tampered[dictionary_offset..crc_offset]);
     tampered[crc_offset..crc_offset + 4].copy_from_slice(&crc.to_le_bytes());
 
-    assert_eq!(
-        open_archive(&tampered, &master_key()).unwrap_err(),
-        FormatError::AeadFailure
-    );
+    assert_eq!(open_archive(&tampered, &master_key()).unwrap_err(), FormatError::AeadFailure);
 }
 
 #[test]
 fn dictionary_archive_bootstraps_from_sidecar_for_non_seekable_open() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "dict-sidecar.txt",
-            b"common words common words sidecar payload",
-        )],
+        &[RegularFile::new("dict-sidecar.txt", b"common words common words sidecar payload")],
         &master_key(),
         single_stream_options(),
         dictionary(),
     )
     .unwrap();
-    let opened = open_non_seekable_archive(
-        &archive.bytes,
-        &master_key(),
-        Some(&archive.bootstrap_sidecar),
-    )
-    .unwrap();
+    let opened = open_non_seekable_archive(&archive.bytes, &master_key(), Some(&archive.bootstrap_sidecar)).unwrap();
 
     assert_eq!(
         opened.extract_file("dict-sidecar.txt").unwrap(),
@@ -4509,10 +3678,7 @@ fn dictionary_archive_bootstraps_from_sidecar_for_non_seekable_open() {
 #[test]
 fn non_seekable_full_sidecar_bootstraps_when_terminal_trailer_is_corrupt() {
     let archive = write_archive(
-        &[RegularFile::new(
-            "sidecar-terminal.txt",
-            b"sidecar authority",
-        )],
+        &[RegularFile::new("sidecar-terminal.txt", b"sidecar authority")],
         &master_key(),
         single_stream_options(),
     )
@@ -4521,25 +3687,17 @@ fn non_seekable_full_sidecar_bootstraps_when_terminal_trailer_is_corrupt() {
     corrupt_v45_terminal_recovery(&mut corrupted);
     assert!(open_archive(&corrupted, &master_key()).is_err());
 
-    let opened =
-        open_non_seekable_archive(&corrupted, &master_key(), Some(&archive.bootstrap_sidecar))
-            .unwrap();
+    let opened = open_non_seekable_archive(&corrupted, &master_key(), Some(&archive.bootstrap_sidecar)).unwrap();
 
     assert!(opened.volume_trailer.is_none());
-    assert_eq!(
-        opened.extract_file("sidecar-terminal.txt").unwrap(),
-        Some(b"sidecar authority".to_vec())
-    );
+    assert_eq!(opened.extract_file("sidecar-terminal.txt").unwrap(), Some(b"sidecar authority".to_vec()));
     opened.verify().unwrap();
 }
 
 #[test]
 fn dictionary_full_sidecar_bootstraps_when_terminal_material_is_absent() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "dict-no-terminal.txt",
-            b"common words common words without terminal",
-        )],
+        &[RegularFile::new("dict-no-terminal.txt", b"common words common words without terminal")],
         &master_key(),
         single_stream_options(),
         dictionary(),
@@ -4549,9 +3707,7 @@ fn dictionary_full_sidecar_bootstraps_when_terminal_material_is_absent() {
     let truncated = archive.bytes[..terminal_offset].to_vec();
     assert!(open_archive(&truncated, &master_key()).is_err());
 
-    let opened =
-        open_non_seekable_archive(&truncated, &master_key(), Some(&archive.bootstrap_sidecar))
-            .unwrap();
+    let opened = open_non_seekable_archive(&truncated, &master_key(), Some(&archive.bootstrap_sidecar)).unwrap();
 
     assert!(opened.volume_trailer.is_none());
     assert_eq!(
@@ -4564,10 +3720,7 @@ fn dictionary_full_sidecar_bootstraps_when_terminal_material_is_absent() {
 #[test]
 fn bootstrap_sidecar_treats_crc_failed_payload_block_as_erasure() {
     let archive = write_archive(
-        &[RegularFile::new(
-            "sidecar-erasure.txt",
-            b"repair through sidecar",
-        )],
+        &[RegularFile::new("sidecar-erasure.txt", b"repair through sidecar")],
         &master_key(),
         single_stream_options(),
     )
@@ -4575,23 +3728,13 @@ fn bootstrap_sidecar_treats_crc_failed_payload_block_as_erasure() {
     let mut corrupted = archive.bytes.clone();
     corrupt_first_block_record_payload(&mut corrupted);
 
-    let opened =
-        open_archive_with_bootstrap_sidecar(&corrupted, &archive.bootstrap_sidecar, &master_key())
-            .unwrap();
-    assert_eq!(
-        opened.extract_file("sidecar-erasure.txt").unwrap(),
-        Some(b"repair through sidecar".to_vec())
-    );
+    let opened = open_archive_with_bootstrap_sidecar(&corrupted, &archive.bootstrap_sidecar, &master_key()).unwrap();
+    assert_eq!(opened.extract_file("sidecar-erasure.txt").unwrap(), Some(b"repair through sidecar".to_vec()));
 }
 
 #[test]
 fn extraction_rejects_logical_payload_above_total_size_cap() {
-    let archive = write_archive(
-        &[RegularFile::new("cap.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("cap.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let options = ReaderOptions {
         max_total_extraction_size: 3,
         ..ReaderOptions::default()
@@ -4606,12 +3749,7 @@ fn extraction_rejects_logical_payload_above_total_size_cap() {
 
 #[test]
 fn verify_does_not_apply_extraction_payload_cap() {
-    let archive = write_archive(
-        &[RegularFile::new("verify-cap.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("verify-cap.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let options = ReaderOptions {
         max_total_extraction_size: 3,
         ..ReaderOptions::default()
@@ -4628,12 +3766,7 @@ fn verify_does_not_apply_extraction_payload_cap() {
 #[test]
 fn verify_streams_past_legacy_in_memory_tar_cap() {
     let data = vec![0x5a; 4096];
-    let archive = write_archive(
-        &[RegularFile::new("verify-large.txt", &data)],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("verify-large.txt", &data)], &master_key(), single_stream_options()).unwrap();
     let options = ReaderOptions {
         max_verify_tar_size: 1,
         ..ReaderOptions::default()
@@ -4652,11 +3785,8 @@ fn dictionary_sidecar_requires_dictionary_record_section() {
         dictionary(),
     )
     .unwrap();
-    let header =
-        BootstrapSidecarHeader::parse(&archive.bootstrap_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN])
-            .unwrap();
-    let mut missing_dictionary =
-        archive.bootstrap_sidecar[..header.dictionary_records_offset as usize].to_vec();
+    let header = BootstrapSidecarHeader::parse(&archive.bootstrap_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
+    let mut missing_dictionary = archive.bootstrap_sidecar[..header.dictionary_records_offset as usize].to_vec();
     rewrite_sidecar_header(&mut missing_dictionary, &master_key(), |header| {
         header.flags &= !0x04;
         header.dictionary_records_offset = 0;
@@ -4664,8 +3794,7 @@ fn dictionary_sidecar_requires_dictionary_record_section() {
     });
 
     assert_eq!(
-        open_non_seekable_archive(&archive.bytes, &master_key(), Some(&missing_dictionary))
-            .unwrap_err(),
+        open_non_seekable_archive(&archive.bytes, &master_key(), Some(&missing_dictionary)).unwrap_err(),
         FormatError::ReaderUnsupported("dictionary bootstrap required")
     );
 }
@@ -4685,8 +3814,7 @@ fn dictionary_sidecar_records_are_validated_against_dictionary_extent() {
         record.kind = BlockKind::IndexRootData;
     });
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_kind, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_kind, &master_key()).unwrap_err(),
         FormatError::InvalidArchive("sidecar BlockRecord section has wrong kind")
     );
 
@@ -4695,55 +3823,30 @@ fn dictionary_sidecar_records_are_validated_against_dictionary_extent() {
         record.flags = 0;
     });
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_last, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_last, &master_key()).unwrap_err(),
         FormatError::InvalidArchive("sidecar BlockRecord section has wrong last-data flag")
     );
 }
 
 #[test]
 fn non_seekable_random_access_requires_sidecar() {
-    let archive = write_archive(
-        &[RegularFile::new("file.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("file.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
 
     assert_eq!(
         open_non_seekable_archive(&archive.bytes, &master_key(), None).unwrap_err(),
         FormatError::ReaderUnsupported("non-seekable random access requires a bootstrap sidecar")
     );
-    assert!(open_non_seekable_archive(
-        &archive.bytes,
-        &master_key(),
-        Some(&archive.bootstrap_sidecar)
-    )
-    .is_ok());
+    assert!(open_non_seekable_archive(&archive.bytes, &master_key(), Some(&archive.bootstrap_sidecar)).is_ok());
 }
 
 #[test]
 fn non_seekable_bootstrap_rejects_index_root_only_sidecar() {
-    let archive = write_archive(
-        &[RegularFile::new("sparse.txt", b"sparse sidecar")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
-    let index_root_only = sparse_bootstrap_sidecar(
-        &archive.bootstrap_sidecar,
-        &master_key(),
-        false,
-        true,
-        false,
-    );
+    let archive = write_archive(&[RegularFile::new("sparse.txt", b"sparse sidecar")], &master_key(), single_stream_options()).unwrap();
+    let index_root_only = sparse_bootstrap_sidecar(&archive.bootstrap_sidecar, &master_key(), false, true, false);
 
     assert_eq!(
-        open_non_seekable_archive(&archive.bytes, &master_key(), Some(&index_root_only))
-            .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections"
-        )
+        open_non_seekable_archive(&archive.bytes, &master_key(), Some(&index_root_only)).unwrap_err(),
+        FormatError::ReaderUnsupported("non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections")
     );
 }
 
@@ -4757,36 +3860,20 @@ fn seekable_sidecar_uses_index_root_records_after_terminal_manifest_authority() 
     .unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let mut corrupted = archive.bytes.clone();
-    corrupt_object_extent_records(
-        &mut corrupted,
-        index_root_extent_from_manifest(&opened.manifest_footer),
-    );
+    corrupt_object_extent_records(&mut corrupted, index_root_extent_from_manifest(&opened.manifest_footer));
     assert!(open_archive(&corrupted, &master_key()).is_err());
 
-    let index_root_only = sparse_bootstrap_sidecar(
-        &archive.bootstrap_sidecar,
-        &master_key(),
-        false,
-        true,
-        false,
-    );
-    let recovered =
-        open_archive_with_bootstrap_sidecar(&corrupted, &index_root_only, &master_key()).unwrap();
+    let index_root_only = sparse_bootstrap_sidecar(&archive.bootstrap_sidecar, &master_key(), false, true, false);
+    let recovered = open_archive_with_bootstrap_sidecar(&corrupted, &index_root_only, &master_key()).unwrap();
 
-    assert_eq!(
-        recovered.extract_file("sparse-index.txt").unwrap(),
-        Some(b"recover index root".to_vec())
-    );
+    assert_eq!(recovered.extract_file("sparse-index.txt").unwrap(), Some(b"recover index root".to_vec()));
     recovered.verify().unwrap();
 }
 
 #[test]
 fn seekable_sidecar_uses_dictionary_records_after_index_root_authority() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "sparse-dict.txt",
-            b"common words common words sparse dictionary",
-        )],
+        &[RegularFile::new("sparse-dict.txt", b"common words common words sparse dictionary")],
         &master_key(),
         single_stream_options(),
         dictionary(),
@@ -4794,29 +3881,16 @@ fn seekable_sidecar_uses_dictionary_records_after_index_root_authority() {
     .unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     let mut corrupted = archive.bytes.clone();
-    corrupt_object_extent_records(
-        &mut corrupted,
-        dictionary_extent_from_index_root(&opened.index_root).unwrap(),
-    );
+    corrupt_object_extent_records(&mut corrupted, dictionary_extent_from_index_root(&opened.index_root).unwrap());
     assert!(open_archive(&corrupted, &master_key()).is_err());
 
-    let dictionary_only = sparse_bootstrap_sidecar(
-        &archive.bootstrap_sidecar,
-        &master_key(),
-        false,
-        false,
-        true,
-    );
+    let dictionary_only = sparse_bootstrap_sidecar(&archive.bootstrap_sidecar, &master_key(), false, false, true);
     assert_eq!(
-        open_non_seekable_archive(&archive.bytes, &master_key(), Some(&dictionary_only))
-            .unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections"
-        )
+        open_non_seekable_archive(&archive.bytes, &master_key(), Some(&dictionary_only)).unwrap_err(),
+        FormatError::ReaderUnsupported("non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections")
     );
 
-    let recovered =
-        open_archive_with_bootstrap_sidecar(&corrupted, &dictionary_only, &master_key()).unwrap();
+    let recovered = open_archive_with_bootstrap_sidecar(&corrupted, &dictionary_only, &master_key()).unwrap();
     assert_eq!(
         recovered.extract_file("sparse-dict.txt").unwrap(),
         Some(b"common words common words sparse dictionary".to_vec())
@@ -4826,12 +3900,7 @@ fn seekable_sidecar_uses_dictionary_records_after_index_root_authority() {
 
 #[test]
 fn sequential_extracts_dictionary_free_tar_stream() {
-    let archive = write_archive(
-        &[RegularFile::new("seq.txt", b"streaming")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("seq.txt", b"streaming")], &master_key(), single_stream_options()).unwrap();
 
     let tar_stream = sequential_extract_tar_stream(&archive.bytes, &master_key()).unwrap();
     let member = parse_tar_member_group(&tar_stream, 4096).unwrap();
@@ -4841,52 +3910,35 @@ fn sequential_extracts_dictionary_free_tar_stream() {
 
 #[test]
 fn sequential_rejects_logical_payload_above_total_size_cap() {
-    let archive = write_archive(
-        &[RegularFile::new("seq-cap.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("seq-cap.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let options = ReaderOptions {
         max_total_extraction_size: 3,
         ..ReaderOptions::default()
     };
 
     assert_eq!(
-        sequential_extract_tar_stream_with_options(&archive.bytes, &master_key(), options)
-            .unwrap_err(),
+        sequential_extract_tar_stream_with_options(&archive.bytes, &master_key(), options).unwrap_err(),
         FormatError::ReaderUnsupported("total extraction size exceeds configured cap")
     );
 }
 
 #[test]
 fn sequential_rejects_tar_stream_above_buffer_cap_during_decode() {
-    let archive = write_archive(
-        &[RegularFile::new("seq-buffer-cap.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("seq-buffer-cap.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let options = ReaderOptions {
         max_verify_tar_size: 512,
         ..ReaderOptions::default()
     };
 
     assert_eq!(
-        sequential_extract_tar_stream_with_options(&archive.bytes, &master_key(), options)
-            .unwrap_err(),
+        sequential_extract_tar_stream_with_options(&archive.bytes, &master_key(), options).unwrap_err(),
         FormatError::ReaderUnsupported("sequential tar stream exceeds configured verification cap")
     );
 }
 
 #[test]
 fn sequential_repairs_crc_failed_payload_data_when_parity_is_guaranteed() {
-    let archive = write_archive(
-        &[RegularFile::new("seq-erasure.txt", b"stream repair")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("seq-erasure.txt", b"stream repair")], &master_key(), single_stream_options()).unwrap();
     let mut corrupted = archive.bytes;
     corrupt_first_block_record_payload(&mut corrupted);
 
@@ -4915,19 +3967,14 @@ fn sequential_rejects_crc_failed_payload_data_without_guaranteed_parity() {
 
     assert_eq!(
         sequential_extract_tar_stream(&corrupted, &master_key()).unwrap_err(),
-        FormatError::BadCrc {
-            structure: "BlockRecord"
-        }
+        FormatError::BadCrc { structure: "BlockRecord" }
     );
 }
 
 #[test]
 fn sequential_rejects_when_terminal_authentication_fails_without_returning_bytes() {
     let archive = write_archive(
-        &[RegularFile::new(
-            "seq.txt",
-            b"payload must not be returned after terminal auth failure",
-        )],
+        &[RegularFile::new("seq.txt", b"payload must not be returned after terminal auth failure")],
         &master_key(),
         single_stream_options(),
     )
@@ -4936,24 +3983,15 @@ fn sequential_rejects_when_terminal_authentication_fails_without_returning_bytes
     corrupt_v45_terminal_recovery(&mut corrupted);
 
     match sequential_extract_tar_stream(&corrupted, &master_key()) {
-        Ok(bytes) => panic!(
-            "sequential helper returned {} decoded byte(s) despite terminal HMAC failure",
-            bytes.len()
-        ),
-        Err(err) => assert_eq!(
-            err,
-            FormatError::InvalidArchive("no valid v45 CMRA candidate found")
-        ),
+        Ok(bytes) => panic!("sequential helper returned {} decoded byte(s) despite terminal HMAC failure", bytes.len()),
+        Err(err) => assert_eq!(err, FormatError::InvalidArchive("no valid v45 CMRA candidate found")),
     }
 }
 
 #[test]
 fn sequential_rejects_dictionary_archive_without_bootstrap_before_payload_release() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "seq-dict.txt",
-            b"common words common words dictionary payload",
-        )],
+        &[RegularFile::new("seq-dict.txt", b"common words common words dictionary payload")],
         &master_key(),
         single_stream_options(),
         b"common words dictionary",
@@ -4961,26 +3999,21 @@ fn sequential_rejects_dictionary_archive_without_bootstrap_before_payload_releas
     .unwrap();
 
     match sequential_extract_tar_stream(&archive.bytes, &master_key()) {
-            Ok(bytes) => panic!(
-                "sequential helper returned {} decoded byte(s) for dictionary archive without bootstrap",
-                bytes.len()
-            ),
-            Err(err) => assert_eq!(
-                err,
-                FormatError::ReaderUnsupported(
-                    "dictionary bootstrap required for non-seekable sequential extraction"
-                )
-            ),
-        }
+        Ok(bytes) => panic!(
+            "sequential helper returned {} decoded byte(s) for dictionary archive without bootstrap",
+            bytes.len()
+        ),
+        Err(err) => assert_eq!(
+            err,
+            FormatError::ReaderUnsupported("dictionary bootstrap required for non-seekable sequential extraction")
+        ),
+    }
 }
 
 #[test]
 fn non_seekable_dictionary_error_keeps_missing_bootstrap_wording() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "seq-dict-open.txt",
-            b"common words common words bootstrap required",
-        )],
+        &[RegularFile::new("seq-dict-open.txt", b"common words common words bootstrap required")],
         &master_key(),
         single_stream_options(),
         b"common words bootstrap",
@@ -4999,8 +4032,7 @@ fn sequential_zstd_stream_rejects_skippable_frame_segments() {
     let mut output = Vec::new();
 
     assert_eq!(
-        decode_concatenated_zstd_frames_with_cap(&skippable, None, &mut output, usize::MAX, None,)
-            .unwrap_err(),
+        decode_concatenated_zstd_frames_with_cap(&skippable, None, &mut output, usize::MAX, None,).unwrap_err(),
         FormatError::NotStandardZstdFrame
     );
     assert!(output.is_empty());
@@ -5008,15 +4040,9 @@ fn sequential_zstd_stream_rejects_skippable_frame_segments() {
 
 #[test]
 fn live_non_seekable_verify_stream_accepts_single_volume_archive() {
-    let archive = write_archive(
-        &[RegularFile::new("live.txt", b"stream verify")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("live.txt", b"stream verify")], &master_key(), single_stream_options()).unwrap();
 
-    let report =
-        verify_non_seekable_stream(std::io::Cursor::new(archive.bytes), &master_key()).unwrap();
+    let report = verify_non_seekable_stream(std::io::Cursor::new(archive.bytes), &master_key()).unwrap();
 
     assert_eq!(report.file_count, 1);
     assert_eq!(report.total_volumes, 1);
@@ -5028,10 +4054,7 @@ fn live_non_seekable_verify_stream_accepts_single_volume_archive() {
 fn live_non_seekable_verify_stream_accepts_recipientwrap_archive() {
     let master = master_key();
     let archive = write_archive_with_recipient_wrap_records(
-        &[RegularFile::new(
-            "wrapped-live.txt",
-            b"stream recipient verify",
-        )],
+        &[RegularFile::new("wrapped-live.txt", b"stream recipient verify")],
         &master,
         single_stream_options(),
         vec![recipient_wrap_test_record()],
@@ -5043,10 +4066,7 @@ fn live_non_seekable_verify_stream_accepts_recipientwrap_archive() {
         std::io::Cursor::new(archive.bytes),
         |context| {
             called = true;
-            assert_eq!(
-                context.archive_identity.volume_format_rev,
-                VOLUME_FORMAT_REV_45
-            );
+            assert_eq!(context.archive_identity.volume_format_rev, VOLUME_FORMAT_REV_45);
             assert_eq!(context.record.profile_id, 1);
             Ok(vec![master.0])
         },
@@ -5062,11 +4082,7 @@ fn live_non_seekable_verify_stream_accepts_recipientwrap_archive() {
 
 #[test]
 fn live_non_seekable_recipientwrap_resolver_rejects_unencrypted_archive() {
-    let archive = write_archive_unencrypted(
-        &[RegularFile::new("plain-live.txt", b"plaintext payload")],
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive_unencrypted(&[RegularFile::new("plain-live.txt", b"plaintext payload")], single_stream_options()).unwrap();
 
     let mut called = false;
     let err = verify_non_seekable_stream_with_recipient_wrap_resolver_options(
@@ -5092,8 +4108,7 @@ fn live_non_seekable_verify_stream_accepts_tiny_read_chunks() {
     )
     .unwrap();
 
-    let report =
-        verify_non_seekable_stream(ChunkedReader::new(archive.bytes, 1), &master_key()).unwrap();
+    let report = verify_non_seekable_stream(ChunkedReader::new(archive.bytes, 1), &master_key()).unwrap();
 
     assert_eq!(report.file_count, 1);
     assert_eq!(report.tar_total_size % 512, 0);
@@ -5103,8 +4118,7 @@ fn live_non_seekable_verify_stream_accepts_tiny_read_chunks() {
 fn live_non_seekable_verify_stream_accepts_empty_archive() {
     let archive = write_archive(&[], &master_key(), single_stream_options()).unwrap();
 
-    let report =
-        verify_non_seekable_stream(std::io::Cursor::new(archive.bytes), &master_key()).unwrap();
+    let report = verify_non_seekable_stream(std::io::Cursor::new(archive.bytes), &master_key()).unwrap();
 
     assert_eq!(report.file_count, 0);
     assert_eq!(report.payload_block_count, 0);
@@ -5114,10 +4128,7 @@ fn live_non_seekable_verify_stream_accepts_empty_archive() {
 #[test]
 fn live_non_seekable_verify_rejects_dictionary_archive_without_bootstrap() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "live-dict.txt",
-            b"common words common words dictionary payload",
-        )],
+        &[RegularFile::new("live-dict.txt", b"common words common words dictionary payload")],
         &master_key(),
         single_stream_options(),
         b"common words dictionary",
@@ -5126,19 +4137,14 @@ fn live_non_seekable_verify_rejects_dictionary_archive_without_bootstrap() {
 
     assert_eq!(
         verify_non_seekable_stream(std::io::Cursor::new(archive.bytes), &master_key()).unwrap_err(),
-        FormatError::ReaderUnsupported(
-            "dictionary bootstrap required for non-seekable sequential verification"
-        )
+        FormatError::ReaderUnsupported("dictionary bootstrap required for non-seekable sequential verification")
     );
 }
 
 #[test]
 fn live_non_seekable_verify_accepts_dictionary_archive_with_bootstrap() {
     let archive = write_archive_with_dictionary(
-        &[RegularFile::new(
-            "live-dict-sidecar.txt",
-            b"common words common words dictionary payload",
-        )],
+        &[RegularFile::new("live-dict-sidecar.txt", b"common words common words dictionary payload")],
         &master_key(),
         single_stream_options(),
         b"common words dictionary",
@@ -5159,112 +4165,66 @@ fn live_non_seekable_verify_accepts_dictionary_archive_with_bootstrap() {
 
 #[test]
 fn live_non_seekable_verify_rejects_terminal_tail_above_cap() {
-    let archive = write_archive(
-        &[RegularFile::new("tail-cap.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("tail-cap.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let options = NonSeekableReaderOptions {
         max_terminal_tail_size: 8,
         ..NonSeekableReaderOptions::default()
     };
 
     assert_eq!(
-        verify_non_seekable_stream_with_options(
-            std::io::Cursor::new(archive.bytes),
-            &master_key(),
-            options
-        )
-        .unwrap_err(),
+        verify_non_seekable_stream_with_options(std::io::Cursor::new(archive.bytes), &master_key(), options).unwrap_err(),
         FormatError::ReaderUnsupported("terminal tail exceeds configured cap")
     );
 }
 
 #[test]
 fn live_non_seekable_verify_rejects_metadata_above_retention_cap() {
-    let archive = write_archive(
-        &[RegularFile::new("metadata-cap.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("metadata-cap.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let options = NonSeekableReaderOptions {
         max_retained_metadata_bytes: 1,
         ..NonSeekableReaderOptions::default()
     };
 
     assert_eq!(
-        verify_non_seekable_stream_with_options(
-            std::io::Cursor::new(archive.bytes),
-            &master_key(),
-            options
-        )
-        .unwrap_err(),
+        verify_non_seekable_stream_with_options(std::io::Cursor::new(archive.bytes), &master_key(), options).unwrap_err(),
         FormatError::ReaderUnsupported("retained metadata exceeds configured streaming cap")
     );
 }
 
 #[test]
 fn live_non_seekable_verify_repairs_crc_failed_metadata_block() {
-    let archive = write_archive(
-        &[RegularFile::new("metadata-erasure.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("metadata-erasure.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let mut corrupted = archive.bytes;
     let slot = first_block_record_slot_with_kind(&corrupted, BlockKind::IndexRootData).unwrap();
     corrupt_block_record_payload_at_slot(&mut corrupted, slot);
 
-    let report =
-        verify_non_seekable_stream(std::io::Cursor::new(corrupted), &master_key()).unwrap();
+    let report = verify_non_seekable_stream(std::io::Cursor::new(corrupted), &master_key()).unwrap();
 
     assert_eq!(report.file_count, 1);
 }
 
 #[test]
 fn live_non_seekable_verify_rejects_member_count_above_cap() {
-    let archive = write_archive(
-        &[RegularFile::new("member-cap.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("member-cap.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let options = NonSeekableReaderOptions {
         max_streamed_member_count: 0,
         ..NonSeekableReaderOptions::default()
     };
 
     assert_eq!(
-        verify_non_seekable_stream_with_options(
-            std::io::Cursor::new(archive.bytes),
-            &master_key(),
-            options
-        )
-        .unwrap_err(),
+        verify_non_seekable_stream_with_options(std::io::Cursor::new(archive.bytes), &master_key(), options).unwrap_err(),
         FormatError::ReaderUnsupported("tar member count exceeds configured streaming cap")
     );
 }
 
 #[test]
 fn live_non_seekable_verify_rejects_total_extraction_cap_during_decode() {
-    let archive = write_archive(
-        &[RegularFile::new("live-total-cap.txt", b"payload")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("live-total-cap.txt", b"payload")], &master_key(), single_stream_options()).unwrap();
     let mut options = NonSeekableReaderOptions::default();
     options.reader.max_total_extraction_size = 3;
 
     assert_eq!(
-        verify_non_seekable_stream_with_options(
-            std::io::Cursor::new(archive.bytes),
-            &master_key(),
-            options
-        )
-        .unwrap_err(),
+        verify_non_seekable_stream_with_options(std::io::Cursor::new(archive.bytes), &master_key(), options).unwrap_err(),
         FormatError::ReaderUnsupported("total extraction size exceeds configured cap")
     );
 }
@@ -5280,8 +4240,7 @@ fn live_non_seekable_verify_reports_root_auth_wire_only() {
     )
     .unwrap();
 
-    let report =
-        verify_non_seekable_stream(std::io::Cursor::new(archive.bytes), &master_key()).unwrap();
+    let report = verify_non_seekable_stream(std::io::Cursor::new(archive.bytes), &master_key()).unwrap();
 
     assert_eq!(report.root_auth, SequentialRootAuthStatus::WireValidOnly);
 }
@@ -5289,10 +4248,7 @@ fn live_non_seekable_verify_reports_root_auth_wire_only() {
 #[test]
 fn live_non_seekable_extract_stream_commits_after_terminal_verify() {
     let archive = write_archive(
-        &[
-            RegularFile::new("alpha.txt", b"alpha"),
-            RegularFile::new("nested/beta.txt", b"beta"),
-        ],
+        &[RegularFile::new("alpha.txt", b"alpha"), RegularFile::new("nested/beta.txt", b"beta")],
         &master_key(),
         single_stream_options(),
     )
@@ -5335,10 +4291,7 @@ fn live_non_seekable_extract_stream_accepts_tiny_read_chunks() {
     )
     .unwrap();
 
-    assert_eq!(
-        fs::read(out.join("tiny-extract.txt")).unwrap(),
-        b"chunked extraction"
-    );
+    assert_eq!(fs::read(out.join("tiny-extract.txt")).unwrap(), b"chunked extraction");
 }
 
 #[test]
@@ -5363,10 +4316,7 @@ fn live_non_seekable_extract_stream_terminal_failure_leaves_no_final_output() {
     )
     .unwrap_err()
     {
-        ExtractError::Format(err) => assert_eq!(
-            err,
-            FormatError::InvalidArchive("no valid v45 CMRA candidate found")
-        ),
+        ExtractError::Format(err) => assert_eq!(err, FormatError::InvalidArchive("no valid v45 CMRA candidate found")),
         ExtractError::Output(err) => panic!("unexpected output error: {err}"),
     }
     assert!(!out.exists());
@@ -5374,12 +4324,7 @@ fn live_non_seekable_extract_stream_terminal_failure_leaves_no_final_output() {
 
 #[test]
 fn live_non_seekable_extract_stream_existing_destination_obeys_overwrite_policy() {
-    let archive = write_archive(
-        &[RegularFile::new("same.txt", b"new")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("same.txt", b"new")], &master_key(), single_stream_options()).unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("out");
     fs::create_dir(&out).unwrap();
@@ -5416,10 +4361,7 @@ fn live_non_seekable_extract_stream_existing_destination_obeys_overwrite_policy(
 #[test]
 fn live_non_seekable_list_stream_matches_seekable_final_view() {
     let archive = write_archive(
-        &[
-            RegularFile::new("a.txt", b"a"),
-            RegularFile::new("b.txt", b"bb"),
-        ],
+        &[RegularFile::new("a.txt", b"a"), RegularFile::new("b.txt", b"bb")],
         &master_key(),
         single_stream_options(),
     )
@@ -5427,12 +4369,7 @@ fn live_non_seekable_list_stream_matches_seekable_final_view() {
     let seekable = open_archive(&archive.bytes, &master_key()).unwrap();
     let expected = seekable.list_files().unwrap();
 
-    let report = list_non_seekable_stream(
-        std::io::Cursor::new(archive.bytes),
-        &master_key(),
-        NonSeekableReaderOptions::default(),
-    )
-    .unwrap();
+    let report = list_non_seekable_stream(std::io::Cursor::new(archive.bytes), &master_key(), NonSeekableReaderOptions::default()).unwrap();
 
     assert_eq!(report.verification.file_count, 2);
     assert_eq!(report.entries, expected);
@@ -5466,8 +4403,7 @@ fn bootstrap_sidecar_rejects_bad_manifest_footer_semantics() {
         footer.volume_index = 1;
     });
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_volume, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_volume, &master_key()).unwrap_err(),
         FormatError::InvalidArchive("sidecar ManifestFooter volume_index must be zero")
     );
 
@@ -5476,8 +4412,7 @@ fn bootstrap_sidecar_rejects_bad_manifest_footer_semantics() {
         footer.is_authoritative = 0;
     });
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &non_authoritative, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &non_authoritative, &master_key()).unwrap_err(),
         FormatError::InvalidArchive("sidecar ManifestFooter is not authoritative")
     );
 }
@@ -5488,27 +4423,12 @@ fn sidecar_manifest_validation_does_not_compare_opened_volume_index() {
     let volume_header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &archive.bytes[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&archive.bytes[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     let mut opened_header = volume_header;
     opened_header.volume_index = 1;
 
-    let parsed = parse_bootstrap_sidecar(
-        &archive.bootstrap_sidecar,
-        &opened_header,
-        &crypto_header.fixed,
-        &subkeys,
-    )
-    .unwrap();
+    let parsed = parse_bootstrap_sidecar(&archive.bootstrap_sidecar, &opened_header, &crypto_header.fixed, &subkeys).unwrap();
 
     assert_eq!(parsed.manifest_footer.unwrap().volume_index, 0);
 }
@@ -5522,8 +4442,7 @@ fn bootstrap_sidecar_rejects_conflicting_manifest_bootstrap_fields() {
     });
 
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &conflicting, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &conflicting, &master_key()).unwrap_err(),
         FormatError::InvalidArchive("bootstrap sidecar conflicts with terminal ManifestFooter")
     );
 }
@@ -5549,19 +4468,9 @@ fn sidecar_size_cap_counts_only_present_sparse_sections() {
         header_crc32c: 0,
     };
 
-    validate_sidecar_size_cap(
-        &header,
-        &crypto_header,
-        BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + record_len,
-    )
-    .unwrap();
+    validate_sidecar_size_cap(&header, &crypto_header, BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + record_len).unwrap();
     assert_eq!(
-        validate_sidecar_size_cap(
-            &header,
-            &crypto_header,
-            BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + record_len + 1,
-        )
-        .unwrap_err(),
+        validate_sidecar_size_cap(&header, &crypto_header, BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + record_len + 1,).unwrap_err(),
         FormatError::InvalidArchive("bootstrap sidecar exceeds resource cap")
     );
 }
@@ -5587,12 +4496,7 @@ fn sidecar_size_cap_rejects_sparse_section_above_class_max() {
     };
 
     assert_eq!(
-        validate_sidecar_size_cap(
-            &header,
-            &crypto_header,
-            BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + record_len * 2,
-        )
-        .unwrap_err(),
+        validate_sidecar_size_cap(&header, &crypto_header, BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + record_len * 2,).unwrap_err(),
         FormatError::InvalidArchive("bootstrap sidecar IndexRoot records exceed resource cap")
     );
 }
@@ -5604,13 +4508,9 @@ fn sidecar_size_cap_uses_wide_arithmetic_for_large_record_classes() {
     crypto_header.index_root_fec_data_shards = u16::MAX;
     crypto_header.index_root_fec_parity_shards = u16::MAX;
     let record_len = crypto_header.block_size as u64 + BLOCK_RECORD_FRAMING_LEN as u64;
-    let max_records = crypto_header.index_root_fec_data_shards as u64
-        + crypto_header.index_root_fec_parity_shards as u64;
+    let max_records = crypto_header.index_root_fec_data_shards as u64 + crypto_header.index_root_fec_parity_shards as u64;
     let max_section_len = max_records * record_len;
-    let cap = BOOTSTRAP_SIDECAR_HEADER_LEN as u64
-        + MANIFEST_FOOTER_LEN as u64
-        + max_section_len
-        + max_section_len;
+    let cap = BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + MANIFEST_FOOTER_LEN as u64 + max_section_len + max_section_len;
     let header = BootstrapSidecarHeader {
         archive_uuid: [0x31; 16],
         session_id: [0x42; 16],
@@ -5636,8 +4536,7 @@ fn sidecar_size_cap_uses_wide_arithmetic_for_large_record_classes() {
 fn bootstrap_sidecar_rejects_dictionary_section_for_no_dictionary_archive() {
     let archive = write_archive(&[], &master_key(), single_stream_options()).unwrap();
     let mut with_dictionary = archive.bootstrap_sidecar.clone();
-    let header =
-        BootstrapSidecarHeader::parse(&with_dictionary[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
+    let header = BootstrapSidecarHeader::parse(&with_dictionary[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     let record_len = sidecar_record_len(&with_dictionary);
     let first_record = header.index_root_records_offset as usize;
     let copied_record = with_dictionary[first_record..first_record + record_len].to_vec();
@@ -5650,11 +4549,8 @@ fn bootstrap_sidecar_rejects_dictionary_section_for_no_dictionary_archive() {
     });
 
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &with_dictionary, &master_key())
-            .unwrap_err(),
-        FormatError::InvalidArchive(
-            "bootstrap sidecar has dictionary records while has_dictionary is false"
-        )
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &with_dictionary, &master_key()).unwrap_err(),
+        FormatError::InvalidArchive("bootstrap sidecar has dictionary records while has_dictionary is false")
     );
 }
 
@@ -5685,8 +4581,7 @@ fn bootstrap_sidecar_rejects_missing_duplicate_wrong_kind_and_wrong_last_flag() 
     let mut misordered = archive.bootstrap_sidecar.clone();
     swap_sidecar_index_records(&mut misordered, 0, 1);
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &misordered, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &misordered, &master_key()).unwrap_err(),
         FormatError::InvalidArchive("sidecar BlockRecord section has missing or duplicate blocks")
     );
 
@@ -5695,8 +4590,7 @@ fn bootstrap_sidecar_rejects_missing_duplicate_wrong_kind_and_wrong_last_flag() 
         record.kind = BlockKind::PayloadData;
     });
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_kind, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_kind, &master_key()).unwrap_err(),
         FormatError::InvalidArchive("sidecar BlockRecord section has wrong kind")
     );
 
@@ -5705,8 +4599,7 @@ fn bootstrap_sidecar_rejects_missing_duplicate_wrong_kind_and_wrong_last_flag() 
         record.flags = 0;
     });
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_last, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &wrong_last, &master_key()).unwrap_err(),
         FormatError::InvalidArchive("sidecar BlockRecord section has wrong last-data flag")
     );
 }
@@ -5882,12 +4775,7 @@ fn load_metadata_object_rejects_oversized_declared_size_before_allocation() {
     // resource-limit cap before zstd sees the size.
     let volume_header = test_volume_header();
     let crypto_header = test_crypto_header();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     let mut next_block_index = 0u64;
 
     let index_root_payload = b"index root metadata object";
@@ -5921,27 +4809,14 @@ fn verify_rejects_authenticated_content_hash_mismatch() {
         index_root_fec_parity_shards: 0,
         ..single_stream_options()
     };
-    let archive = write_archive(
-        &[RegularFile::new("content-hash.txt", b"hash covered")],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("content-hash.txt", b"hash covered")], &master_key(), options).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
 
     let mut root = opened.index_root.clone();
     root.header.content_sha256 = [0xa5; 32];
     let root_plaintext = root.to_bytes();
-    IndexRoot::parse(
-        &root_plaintext,
-        false,
-        metadata_limits(&opened.crypto_header),
-    )
-    .unwrap();
-    assert_eq!(
-        root_plaintext.len() as u32,
-        opened.manifest_footer.index_root_decompressed_size
-    );
+    IndexRoot::parse(&root_plaintext, false, metadata_limits(&opened.crypto_header)).unwrap();
+    assert_eq!(root_plaintext.len() as u32, opened.manifest_footer.index_root_decompressed_size);
 
     let compressed_root = compress_zstd_frame(&root_plaintext, options.zstd_level).unwrap();
     let mut next_block_index = opened.manifest_footer.index_root_first_block;
@@ -5956,18 +4831,11 @@ fn verify_rejects_authenticated_content_hash_mismatch() {
         &opened.crypto_header,
         &opened.volume_header,
     );
-    assert_eq!(
-        replacement.extent.data_block_count,
-        opened.manifest_footer.index_root_data_block_count
-    );
-    assert_eq!(
-        replacement.extent.encrypted_size,
-        opened.manifest_footer.index_root_encrypted_size
-    );
+    assert_eq!(replacement.extent.data_block_count, opened.manifest_footer.index_root_data_block_count);
+    assert_eq!(replacement.extent.encrypted_size, opened.manifest_footer.index_root_encrypted_size);
 
     let volume_header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
-    let crypto_end =
-        volume_header.crypto_header_offset as usize + volume_header.crypto_header_length as usize;
+    let crypto_end = volume_header.crypto_header_offset as usize + volume_header.crypto_header_length as usize;
     let record_len = opened.crypto_header.block_size as usize + BLOCK_RECORD_FRAMING_LEN;
     let mut malformed = archive.bytes.clone();
     for record in replacement.records {
@@ -6011,13 +4879,7 @@ fn verify_rejects_inconsistent_duplicate_local_frame_rows_across_shards() {
     duplicate.header.shard_index = 1;
     duplicate.frames[0].flags ^= 0x0000_0001;
     let duplicate_plaintext = duplicate.to_bytes();
-    let mut next_block_index = opened
-        .blocks
-        .keys()
-        .last()
-        .copied()
-        .map(|index| index + 1)
-        .unwrap_or(0);
+    let mut next_block_index = opened.blocks.keys().last().copied().map(|index| index + 1).unwrap_or(0);
     let duplicate_object = encrypt_test_object(
         &compress_zstd_frame(&duplicate_plaintext, 1).unwrap(),
         &opened.subkeys.index_shard_key,
@@ -6057,13 +4919,7 @@ fn verify_rejects_inconsistent_duplicate_local_envelope_rows_across_shards() {
     duplicate.header.shard_index = 1;
     duplicate.envelopes[0].first_block_index += 1;
     let duplicate_plaintext = duplicate.to_bytes();
-    let mut next_block_index = opened
-        .blocks
-        .keys()
-        .last()
-        .copied()
-        .map(|index| index + 1)
-        .unwrap_or(0);
+    let mut next_block_index = opened.blocks.keys().last().copied().map(|index| index + 1).unwrap_or(0);
     let duplicate_object = encrypt_test_object(
         &compress_zstd_frame(&duplicate_plaintext, 1).unwrap(),
         &opened.subkeys.index_shard_key,
@@ -6099,18 +4955,10 @@ fn verify_rejects_inconsistent_duplicate_local_envelope_rows_across_shards() {
 fn verify_rejects_non_contiguous_global_envelope_indexes() {
     let (mut opened, _) = multi_envelope_reader_fixture();
     replace_first_index_shard(&mut opened, |shard| {
-        let frame = shard
-            .frames
-            .iter_mut()
-            .find(|entry| entry.frame_index == 1)
-            .unwrap();
+        let frame = shard.frames.iter_mut().find(|entry| entry.frame_index == 1).unwrap();
         frame.envelope_index = 2;
 
-        let envelope = shard
-            .envelopes
-            .iter_mut()
-            .find(|entry| entry.envelope_index == 1)
-            .unwrap();
+        let envelope = shard.envelopes.iter_mut().find(|entry| entry.envelope_index == 1).unwrap();
         envelope.envelope_index = 2;
     });
 
@@ -6141,12 +4989,7 @@ fn verify_rejects_payload_object_extent_overlap() {
 fn verify_accepts_cross_shard_shared_envelope_frame_union() {
     let volume_header = test_volume_header();
     let crypto_header = test_crypto_header();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     let mut next_block_index = 0u64;
     let mut blocks = BTreeMap::new();
 
@@ -6351,12 +5194,7 @@ fn verify_rejects_authenticated_archive_missing_required_directory_hints() {
         index_root_fec_parity_shards: 0,
         ..single_stream_options()
     };
-    let archive = write_archive(
-        &[RegularFile::new("only.txt", b"only payload")],
-        &master_key(),
-        options,
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("only.txt", b"only payload")], &master_key(), options).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
     assert!(opened.index_root.directory_hint_shards.is_empty());
 
@@ -6364,16 +5202,8 @@ fn verify_rejects_authenticated_archive_missing_required_directory_hints() {
     root.header.file_count = DIRECTORY_HINT_REQUIRED_FILE_COUNT + 1;
     root.shards[0].file_count = (DIRECTORY_HINT_REQUIRED_FILE_COUNT + 1) as u32;
     let root_plaintext = root.to_bytes();
-    IndexRoot::parse(
-        &root_plaintext,
-        false,
-        metadata_limits(&opened.crypto_header),
-    )
-    .unwrap();
-    assert_eq!(
-        root_plaintext.len() as u32,
-        opened.manifest_footer.index_root_decompressed_size
-    );
+    IndexRoot::parse(&root_plaintext, false, metadata_limits(&opened.crypto_header)).unwrap();
+    assert_eq!(root_plaintext.len() as u32, opened.manifest_footer.index_root_decompressed_size);
 
     let compressed_root = compress_zstd_frame(&root_plaintext, options.zstd_level).unwrap();
     let mut next_block_index = opened.manifest_footer.index_root_first_block;
@@ -6388,22 +5218,12 @@ fn verify_rejects_authenticated_archive_missing_required_directory_hints() {
         &opened.crypto_header,
         &opened.volume_header,
     );
-    assert_eq!(
-        replacement.extent.first_block_index,
-        opened.manifest_footer.index_root_first_block
-    );
-    assert_eq!(
-        replacement.extent.data_block_count,
-        opened.manifest_footer.index_root_data_block_count
-    );
-    assert_eq!(
-        replacement.extent.encrypted_size,
-        opened.manifest_footer.index_root_encrypted_size
-    );
+    assert_eq!(replacement.extent.first_block_index, opened.manifest_footer.index_root_first_block);
+    assert_eq!(replacement.extent.data_block_count, opened.manifest_footer.index_root_data_block_count);
+    assert_eq!(replacement.extent.encrypted_size, opened.manifest_footer.index_root_encrypted_size);
 
     let volume_header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
-    let crypto_end =
-        volume_header.crypto_header_offset as usize + volume_header.crypto_header_length as usize;
+    let crypto_end = volume_header.crypto_header_offset as usize + volume_header.crypto_header_length as usize;
     let record_len = opened.crypto_header.block_size as usize + BLOCK_RECORD_FRAMING_LEN;
     let mut malformed = archive.bytes.clone();
     for record in replacement.records {
@@ -6412,10 +5232,7 @@ fn verify_rejects_authenticated_archive_missing_required_directory_hints() {
     }
 
     let reopened = open_archive(&malformed, &master_key()).unwrap();
-    assert_eq!(
-        reopened.index_root.header.file_count,
-        DIRECTORY_HINT_REQUIRED_FILE_COUNT + 1
-    );
+    assert_eq!(reopened.index_root.header.file_count, DIRECTORY_HINT_REQUIRED_FILE_COUNT + 1);
     assert!(reopened.index_root.directory_hint_shards.is_empty());
 
     assert_eq!(
@@ -6432,10 +5249,7 @@ fn expected_directory_hint_rows_include_ancestors_and_directory_entries() {
 
     assert_eq!(map.get(&Vec::new()), Some(&BTreeSet::from([2, 4])));
     assert_eq!(map.get(b"foo".as_slice()), Some(&BTreeSet::from([2, 4])));
-    assert_eq!(
-        map.get(b"foo/bar".as_slice()),
-        Some(&BTreeSet::from([2, 4]))
-    );
+    assert_eq!(map.get(b"foo/bar".as_slice()), Some(&BTreeSet::from([2, 4])));
     assert!(!map.contains_key(b"foo/bar/baz.txt".as_slice()));
     assert!(!map.contains_key(b"foobar".as_slice()));
 }
@@ -6448,30 +5262,21 @@ fn directory_hint_validation_requires_exact_global_map() {
     let rows = sorted_directory_hint_rows(&expected);
     let table = directory_hint_table_from_rows(7, &rows, 2);
 
-    validate_directory_hint_tables_against_expected(std::slice::from_ref(&table), &expected)
-        .unwrap();
+    validate_directory_hint_tables_against_expected(std::slice::from_ref(&table), &expected).unwrap();
 
     let mut missing_root = expected.clone();
     missing_root.remove(&Vec::new());
     let missing_root_rows = sorted_directory_hint_rows(&missing_root);
     let missing_root_table = directory_hint_table_from_rows(8, &missing_root_rows, 2);
     assert_eq!(
-        validate_directory_hint_tables_against_expected(&[missing_root_table], &expected)
-            .unwrap_err(),
+        validate_directory_hint_tables_against_expected(&[missing_root_table], &expected).unwrap_err(),
         FormatError::InvalidArchive("directory hint map does not match decoded files")
     );
 
     let mut expected_missing_directory_entry = expected.clone();
-    expected_missing_directory_entry
-        .get_mut(b"foo".as_slice())
-        .unwrap()
-        .remove(&1);
+    expected_missing_directory_entry.get_mut(b"foo".as_slice()).unwrap().remove(&1);
     assert_eq!(
-        validate_directory_hint_tables_against_expected(
-            std::slice::from_ref(&table),
-            &expected_missing_directory_entry,
-        )
-        .unwrap_err(),
+        validate_directory_hint_tables_against_expected(std::slice::from_ref(&table), &expected_missing_directory_entry,).unwrap_err(),
         FormatError::InvalidArchive("directory hint map does not match decoded files")
     );
 
@@ -6577,9 +5382,7 @@ fn object_extent_rejects_parity_below_recoverability_requirement() {
 #[test]
 fn encrypted_object_extent_matrix_rejects_overlaps() {
     let (opened, _) = multi_envelope_reader_fixture();
-    let loaded_shard = opened
-        .load_index_shard(&opened.index_root.shards[0])
-        .unwrap();
+    let loaded_shard = opened.load_index_shard(&opened.index_root.shards[0]).unwrap();
     let base_envelopes = loaded_shard
         .envelopes
         .iter()
@@ -6589,89 +5392,43 @@ fn encrypted_object_extent_matrix_rejects_overlaps() {
     let overlap = FormatError::InvalidArchive("encrypted object block ranges overlap");
 
     let mut payload_overlap = base_envelopes.clone();
-    payload_overlap
-        .get_mut(&loaded_shard.envelopes[1].envelope_index)
-        .unwrap()
-        .first_block_index = payload_start;
-    assert_eq!(
-        opened
-            .validate_encrypted_object_block_ranges(&payload_overlap)
-            .unwrap_err(),
-        overlap
-    );
+    payload_overlap.get_mut(&loaded_shard.envelopes[1].envelope_index).unwrap().first_block_index = payload_start;
+    assert_eq!(opened.validate_encrypted_object_block_ranges(&payload_overlap).unwrap_err(), overlap);
 
     let mut shard_overlap = opened.clone();
     let shard = shard_overlap.index_root.shards[0].clone();
-    shard_overlap.index_root.shards.push(ShardEntry {
-        shard_index: 1,
-        ..shard
-    });
-    assert_eq!(
-        shard_overlap
-            .validate_encrypted_object_block_ranges(&base_envelopes)
-            .unwrap_err(),
-        overlap
-    );
+    shard_overlap.index_root.shards.push(ShardEntry { shard_index: 1, ..shard });
+    assert_eq!(shard_overlap.validate_encrypted_object_block_ranges(&base_envelopes).unwrap_err(), overlap);
 
     let mut dictionary_overlap = opened.clone();
     dictionary_overlap.crypto_header.has_dictionary = 1;
     dictionary_overlap.index_root.header.dictionary_first_block = payload_start;
-    dictionary_overlap
-        .index_root
-        .header
-        .dictionary_data_block_count = 1;
-    dictionary_overlap
-        .index_root
-        .header
-        .dictionary_parity_block_count = 0;
-    dictionary_overlap
-        .index_root
-        .header
-        .dictionary_encrypted_size = 4096;
-    dictionary_overlap
-        .index_root
-        .header
-        .dictionary_decompressed_size = 128;
-    assert_eq!(
-        dictionary_overlap
-            .validate_encrypted_object_block_ranges(&base_envelopes)
-            .unwrap_err(),
-        overlap
-    );
+    dictionary_overlap.index_root.header.dictionary_data_block_count = 1;
+    dictionary_overlap.index_root.header.dictionary_parity_block_count = 0;
+    dictionary_overlap.index_root.header.dictionary_encrypted_size = 4096;
+    dictionary_overlap.index_root.header.dictionary_decompressed_size = 128;
+    assert_eq!(dictionary_overlap.validate_encrypted_object_block_ranges(&base_envelopes).unwrap_err(), overlap);
 
     let mut hint_overlap = opened.clone();
-    hint_overlap
-        .index_root
-        .directory_hint_shards
-        .push(DirectoryHintShardEntry {
-            hint_shard_index: 0,
-            first_dir_hash: [0; 8],
-            last_dir_hash: [0; 8],
-            first_block_index: payload_start,
-            data_block_count: 1,
-            parity_block_count: 0,
-            encrypted_size: 4096,
-            decompressed_size: 128,
-            entry_count: 1,
-        });
-    assert_eq!(
-        hint_overlap
-            .validate_encrypted_object_block_ranges(&base_envelopes)
-            .unwrap_err(),
-        overlap
-    );
+    hint_overlap.index_root.directory_hint_shards.push(DirectoryHintShardEntry {
+        hint_shard_index: 0,
+        first_dir_hash: [0; 8],
+        last_dir_hash: [0; 8],
+        first_block_index: payload_start,
+        data_block_count: 1,
+        parity_block_count: 0,
+        encrypted_size: 4096,
+        decompressed_size: 128,
+        entry_count: 1,
+    });
+    assert_eq!(hint_overlap.validate_encrypted_object_block_ranges(&base_envelopes).unwrap_err(), overlap);
 }
 
 #[test]
 fn load_metadata_object_rejects_per_object_zstd_frame_exactness_mutations() {
     let volume_header = test_volume_header();
     let crypto_header = test_crypto_header();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     let mut next_block_index = 0u64;
 
     let index_root_payload = b"index root metadata object";
@@ -6855,12 +5612,7 @@ fn load_metadata_object_rejects_per_object_zstd_frame_exactness_mutations() {
 fn load_metadata_object_extent_rejects_encrypted_size_not_data_block_count_times_block_size() {
     let volume_header = test_volume_header();
     let crypto_header = test_crypto_header();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     let mut next_block_index = 0u64;
 
     let index_root_payload = b"index root metadata object";
@@ -6877,18 +5629,11 @@ fn load_metadata_object_extent_rejects_encrypted_size_not_data_block_count_times
         &mut next_block_index,
     );
     let mut index_root_extent = index_root_extent;
-    index_root_extent.encrypted_size = index_root_extent
-        .encrypted_size
-        .saturating_add(crypto_header.block_size);
+    index_root_extent.encrypted_size = index_root_extent.encrypted_size.saturating_add(crypto_header.block_size);
     assert_eq!(
         load_metadata_object_from_parts(
             &index_root_records,
-            ObjectLoadContext::index_root(
-                &volume_header,
-                &crypto_header,
-                &subkeys,
-                index_root_extent,
-            ),
+            ObjectLoadContext::index_root(&volume_header, &crypto_header, &subkeys, index_root_extent,),
             index_root_payload.len() as u32,
         )
         .unwrap_err(),
@@ -6909,9 +5654,7 @@ fn load_metadata_object_extent_rejects_encrypted_size_not_data_block_count_times
         &mut next_block_index,
     );
     let mut index_shard_extent = index_shard_extent;
-    index_shard_extent.encrypted_size = index_shard_extent
-        .encrypted_size
-        .saturating_add(crypto_header.block_size);
+    index_shard_extent.encrypted_size = index_shard_extent.encrypted_size.saturating_add(crypto_header.block_size);
     assert_eq!(
         load_metadata_object_from_parts(
             &index_shard_records,
@@ -6948,9 +5691,7 @@ fn load_metadata_object_extent_rejects_encrypted_size_not_data_block_count_times
         &mut next_block_index,
     );
     let mut directory_hint_extent = directory_hint_extent;
-    directory_hint_extent.encrypted_size = directory_hint_extent
-        .encrypted_size
-        .saturating_add(crypto_header.block_size);
+    directory_hint_extent.encrypted_size = directory_hint_extent.encrypted_size.saturating_add(crypto_header.block_size);
     assert_eq!(
         load_metadata_object_from_parts(
             &directory_hint_records,
@@ -6987,9 +5728,7 @@ fn load_metadata_object_extent_rejects_encrypted_size_not_data_block_count_times
         &mut next_block_index,
     );
     let mut dictionary_extent = dictionary_extent;
-    dictionary_extent.encrypted_size = dictionary_extent
-        .encrypted_size
-        .saturating_add(crypto_header.block_size);
+    dictionary_extent.encrypted_size = dictionary_extent.encrypted_size.saturating_add(crypto_header.block_size);
     assert_eq!(
         load_metadata_object_from_parts(
             &dictionary_records,
@@ -7028,19 +5767,12 @@ fn opens_complete_multi_volume_archive() {
     .unwrap();
     assert_eq!(archive.volumes.len(), 2);
 
-    let volume_refs = archive
-        .volumes
-        .iter()
-        .map(Vec::as_slice)
-        .collect::<Vec<_>>();
+    let volume_refs = archive.volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let opened = open_archive_volumes(&volume_refs, &master_key()).unwrap();
 
     assert_eq!(opened.volume_header.stripe_width, 2);
     assert_eq!(opened.list_files().unwrap()[0].path, "alpha.txt");
-    assert_eq!(
-        opened.extract_file("alpha.txt").unwrap(),
-        Some(b"hello from volume stripes".to_vec())
-    );
+    assert_eq!(opened.extract_file("alpha.txt").unwrap(), Some(b"hello from volume stripes".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -7059,10 +5791,7 @@ fn recovers_from_one_missing_volume_when_parity_allows() {
     .unwrap();
 
     let recovered = open_archive_volumes(&[archive.volumes[1].as_slice()], &master_key()).unwrap();
-    assert_eq!(
-        recovered.extract_file("alpha.txt").unwrap(),
-        Some(b"recover me".to_vec())
-    );
+    assert_eq!(recovered.extract_file("alpha.txt").unwrap(), Some(b"recover me".to_vec()));
     recovered.verify().unwrap();
 }
 
@@ -7085,10 +5814,7 @@ fn recovers_from_crc_corrupted_block_when_parity_allows() {
     let volume_refs = volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let recovered = open_archive_volumes(&volume_refs, &master_key()).unwrap();
 
-    assert_eq!(
-        recovered.extract_file("alpha.txt").unwrap(),
-        Some(b"repair corrupt block".to_vec())
-    );
+    assert_eq!(recovered.extract_file("alpha.txt").unwrap(), Some(b"repair corrupt block".to_vec()));
     recovered.verify().unwrap();
 }
 
@@ -7131,11 +5857,7 @@ fn rejects_multi_volume_manifest_bootstrap_field_mismatch() {
         footer.index_root_first_block = footer.index_root_first_block.wrapping_add(1);
     });
 
-    open_archive_volumes(
-        &[bad_first.as_slice(), archive.volumes[1].as_slice()],
-        &master_key(),
-    )
-    .unwrap();
+    open_archive_volumes(&[bad_first.as_slice(), archive.volumes[1].as_slice()], &master_key()).unwrap();
 }
 
 #[test]
@@ -7165,10 +5887,7 @@ fn repairs_corrupted_index_root_block_in_multi_volume_archive() {
 
     let volume_refs = volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let opened = open_archive_volumes(&volume_refs, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("alpha.txt").unwrap(),
-        Some(b"repair meta root".to_vec())
-    );
+    assert_eq!(opened.extract_file("alpha.txt").unwrap(), Some(b"repair meta root".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -7189,8 +5908,7 @@ fn repairs_corrupted_index_shard_block_in_multi_volume_archive() {
 
     let mut corrupted = false;
     for volume in &mut volumes {
-        if let Some(slot) = block_record_slots_with_kind(volume, BlockKind::IndexShardData).first()
-        {
+        if let Some(slot) = block_record_slots_with_kind(volume, BlockKind::IndexShardData).first() {
             corrupt_block_record_payload_at_slot(volume, *slot);
             corrupted = true;
             break;
@@ -7200,19 +5918,13 @@ fn repairs_corrupted_index_shard_block_in_multi_volume_archive() {
 
     let volume_refs = volumes.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let opened = open_archive_volumes(&volume_refs, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("alpha.txt").unwrap(),
-        Some(b"repair meta shard".to_vec())
-    );
+    assert_eq!(opened.extract_file("alpha.txt").unwrap(), Some(b"repair meta shard".to_vec()));
     opened.verify().unwrap();
 }
 
 #[test]
 fn rejects_missing_volume_when_loss_tolerance_zero_even_with_bitrot_parity() {
-    let files = [RegularFile::new(
-        "alpha.txt",
-        b"bitrot parity is not volume loss",
-    )];
+    let files = [RegularFile::new("alpha.txt", b"bitrot parity is not volume loss")];
     let archive = write_archive(
         &files,
         &master_key(),
@@ -7234,34 +5946,20 @@ fn rejects_missing_volume_when_loss_tolerance_zero_even_with_bitrot_parity() {
 #[test]
 fn repairs_crc_erasure_only_within_parity_budget() {
     let payload = pseudo_random_bytes(12_000);
-    let archive = write_archive(
-        &[RegularFile::new("rot.bin", &payload)],
-        &master_key(),
-        small_block_recovery_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("rot.bin", &payload)], &master_key(), small_block_recovery_options()).unwrap();
     let payload_slots = first_payload_data_run_slots(&archive.bytes);
-    assert!(
-        payload_slots.len() >= 2,
-        "fixture must contain a multi-block payload object"
-    );
+    assert!(payload_slots.len() >= 2, "fixture must contain a multi-block payload object");
 
     let mut one_erasure = archive.bytes.clone();
     corrupt_block_record_payload_at_slot(&mut one_erasure, payload_slots[0]);
     let repaired = open_archive(&one_erasure, &master_key()).unwrap();
-    assert_eq!(
-        repaired.extract_file("rot.bin").unwrap(),
-        Some(payload.clone())
-    );
+    assert_eq!(repaired.extract_file("rot.bin").unwrap(), Some(payload.clone()));
 
     let mut two_erasures = archive.bytes.clone();
     corrupt_block_record_payload_at_slot(&mut two_erasures, payload_slots[0]);
     corrupt_block_record_payload_at_slot(&mut two_erasures, payload_slots[1]);
     let unrepaired = open_archive(&two_erasures, &master_key()).unwrap();
-    assert_eq!(
-        unrepaired.extract_file("rot.bin").unwrap_err(),
-        FormatError::FecTooFewAvailableShards
-    );
+    assert_eq!(unrepaired.extract_file("rot.bin").unwrap_err(), FormatError::FecTooFewAvailableShards);
 }
 
 #[test]
@@ -7269,10 +5967,7 @@ fn verify_rejects_missing_required_object_block_extent() {
     let (mut opened, missing_block) = multi_envelope_reader_fixture();
     assert!(opened.blocks.remove(&missing_block).is_some());
 
-    assert_eq!(
-        opened.verify().unwrap_err(),
-        FormatError::FecTooFewAvailableShards
-    );
+    assert_eq!(opened.verify().unwrap_err(), FormatError::FecTooFewAvailableShards);
 }
 
 #[test]
@@ -7286,31 +5981,20 @@ fn parity_crc_erasure_does_not_hide_authenticated_data() {
     .unwrap();
     let payload_slot = first_payload_data_run_slots(&archive.bytes)[0];
     let parity_slots = block_record_slots_with_kind(&archive.bytes, BlockKind::PayloadParity);
-    assert!(
-        parity_slots.len() >= 2,
-        "fixture must contain redundant parity shards"
-    );
+    assert!(parity_slots.len() >= 2, "fixture must contain redundant parity shards");
     let mut corrupted = archive.bytes;
     corrupt_block_record_payload_at_slot(&mut corrupted, payload_slot);
     corrupt_block_record_payload_at_slot(&mut corrupted, parity_slots[0]);
 
     let opened = open_archive(&corrupted, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("parity-erasure.bin").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("parity-erasure.bin").unwrap(), Some(payload));
     opened.verify().unwrap();
 }
 
 #[test]
 fn repair_patches_restore_crc_erased_payload_block() {
     let payload = pseudo_random_bytes(12_000);
-    let archive = write_archive(
-        &[RegularFile::new("rot.bin", &payload)],
-        &master_key(),
-        small_block_recovery_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("rot.bin", &payload)], &master_key(), small_block_recovery_options()).unwrap();
     let payload_slot = first_payload_data_run_slots(&archive.bytes)[0];
     let mut corrupted = archive.bytes.clone();
     corrupt_block_record_payload_at_slot(&mut corrupted, payload_slot);
@@ -7352,12 +6036,7 @@ fn repair_patches_restore_crc_erased_payload_parity_block() {
 
 #[test]
 fn recovers_physical_odd_block_size_from_cmra_authority() {
-    let archive = write_archive(
-        &[RegularFile::new("odd-block.txt", b"payload")],
-        &master_key(),
-        small_block_recovery_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("odd-block.txt", b"payload")], &master_key(), small_block_recovery_options()).unwrap();
     let mut malformed = archive.bytes;
     let volume_header = VolumeHeader::parse(&malformed[..VOLUME_HEADER_LEN]).unwrap();
     let block_size_offset = volume_header.crypto_header_offset as usize + 24;
@@ -7365,10 +6044,7 @@ fn recovers_physical_odd_block_size_from_cmra_authority() {
 
     let opened = open_archive(&malformed, &master_key()).unwrap();
     assert_ne!(opened.crypto_header.block_size, 4097);
-    assert_eq!(
-        opened.extract_file("odd-block.txt").unwrap(),
-        Some(b"payload".to_vec())
-    );
+    assert_eq!(opened.extract_file("odd-block.txt").unwrap(), Some(b"payload".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -7386,10 +6062,7 @@ fn repairs_structurally_malformed_payload_block_slots() {
     let mut bad_magic = archive.bytes.clone();
     corrupt_block_record_magic_at_slot(&mut bad_magic, payload_slot);
     assert_eq!(
-        open_archive(&bad_magic, &master_key())
-            .unwrap()
-            .extract_file("structural-block.bin")
-            .unwrap(),
+        open_archive(&bad_magic, &master_key()).unwrap().extract_file("structural-block.bin").unwrap(),
         Some(payload.clone())
     );
 
@@ -7419,10 +6092,7 @@ fn repair_patches_restore_structurally_malformed_payload_block_slot() {
 
     let opened = open_seekable_archive(corrupted.clone(), &master_key()).unwrap();
     opened.verify().unwrap();
-    assert_eq!(
-        opened.extract_file("structural-patch.bin").unwrap(),
-        Some(payload)
-    );
+    assert_eq!(opened.extract_file("structural-patch.bin").unwrap(), Some(payload));
     let patches = opened.repair_patches().unwrap();
     assert_eq!(patches.len(), 1);
     apply_repair_patches(&mut corrupted, &patches);
@@ -7435,24 +6105,17 @@ fn repair_patches_restore_structurally_malformed_payload_block_slot() {
 #[test]
 fn repairs_structurally_malformed_index_root_block_slot() {
     let archive = write_archive(
-        &[RegularFile::new(
-            "structural-index-root.txt",
-            b"metadata repair",
-        )],
+        &[RegularFile::new("structural-index-root.txt", b"metadata repair")],
         &master_key(),
         small_block_recovery_options(),
     )
     .unwrap();
-    let index_root_slot =
-        first_block_record_slot_with_kind(&archive.bytes, BlockKind::IndexRootData).unwrap();
+    let index_root_slot = first_block_record_slot_with_kind(&archive.bytes, BlockKind::IndexRootData).unwrap();
     let mut corrupted = archive.bytes;
     corrupt_block_record_magic_at_slot(&mut corrupted, index_root_slot);
 
     let opened = open_archive(&corrupted, &master_key()).unwrap();
-    assert_eq!(
-        opened.extract_file("structural-index-root.txt").unwrap(),
-        Some(b"metadata repair".to_vec())
-    );
+    assert_eq!(opened.extract_file("structural-index-root.txt").unwrap(), Some(b"metadata repair".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -7464,33 +6127,21 @@ fn rejects_parity_block_with_last_data_flag() {
         small_block_recovery_options(),
     )
     .unwrap();
-    let parity_slot =
-        first_block_record_slot_with_kind(&archive.bytes, BlockKind::PayloadParity).unwrap();
+    let parity_slot = first_block_record_slot_with_kind(&archive.bytes, BlockKind::PayloadParity).unwrap();
     let mut malformed = archive.bytes;
     mutate_block_record_at_slot(&mut malformed, parity_slot, |record| {
         record.flags = 0x01;
     });
 
-    assert_eq!(
-        open_archive(&malformed, &master_key()).unwrap_err(),
-        FormatError::ParityBlockHasLastDataFlag
-    );
+    assert_eq!(open_archive(&malformed, &master_key()).unwrap_err(), FormatError::ParityBlockHasLastDataFlag);
 }
 
 #[test]
 fn rejects_missing_and_duplicate_payload_last_data_flags() {
     let payload = pseudo_random_bytes(12_000);
-    let archive = write_archive(
-        &[RegularFile::new("flags.bin", &payload)],
-        &master_key(),
-        small_block_recovery_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("flags.bin", &payload)], &master_key(), small_block_recovery_options()).unwrap();
     let payload_slots = first_payload_data_run_slots(&archive.bytes);
-    assert!(
-        payload_slots.len() >= 2,
-        "fixture must contain a multi-block payload object"
-    );
+    assert!(payload_slots.len() >= 2, "fixture must contain a multi-block payload object");
 
     let mut duplicate_last = archive.bytes.clone();
     mutate_block_record_at_slot(&mut duplicate_last, payload_slots[0], |record| {
@@ -7503,13 +6154,9 @@ fn rejects_missing_and_duplicate_payload_last_data_flags() {
     );
 
     let mut missing_last = archive.bytes;
-    mutate_block_record_at_slot(
-        &mut missing_last,
-        *payload_slots.last().unwrap(),
-        |record| {
-            record.flags = 0;
-        },
-    );
+    mutate_block_record_at_slot(&mut missing_last, *payload_slots.last().unwrap(), |record| {
+        record.flags = 0;
+    });
     let opened = open_archive(&missing_last, &master_key()).unwrap();
     assert_eq!(
         opened.extract_file("flags.bin").unwrap_err(),
@@ -7519,10 +6166,7 @@ fn rejects_missing_and_duplicate_payload_last_data_flags() {
 
 #[test]
 fn recovers_from_one_corrupt_manifest_footer_copy_when_another_volume_authenticates() {
-    let files = [RegularFile::new(
-        "footer-copy.txt",
-        b"survives one bad footer",
-    )];
+    let files = [RegularFile::new("footer-copy.txt", b"survives one bad footer")];
     let archive = write_archive(
         &files,
         &master_key(),
@@ -7541,21 +6185,13 @@ fn recovers_from_one_corrupt_manifest_footer_copy_when_another_volume_authentica
     assert_eq!(opened.manifest_footer.volume_index, 0);
     assert_eq!(opened.volume_header.volume_index, 0);
     assert_eq!(opened.volume_trailer.as_ref().unwrap().volume_index, 0);
-    assert_eq!(
-        opened.extract_file("footer-copy.txt").unwrap(),
-        Some(b"survives one bad footer".to_vec())
-    );
+    assert_eq!(opened.extract_file("footer-copy.txt").unwrap(), Some(b"survives one bad footer".to_vec()));
     opened.verify().unwrap();
 }
 
 #[test]
 fn manifest_footer_corruption_requires_trusted_sidecar() {
-    let archive = write_archive(
-        &[RegularFile::new("footer.txt", b"sidecar authority")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("footer.txt", b"sidecar authority")], &master_key(), single_stream_options()).unwrap();
     let manifest_offset = terminal_material_offset(&archive.bytes);
     let mut corrupted = archive.bytes.clone();
     corrupted[manifest_offset + MANIFEST_HMAC_COVERED_LEN] ^= 0x01;
@@ -7563,14 +6199,9 @@ fn manifest_footer_corruption_requires_trusted_sidecar() {
 
     assert!(open_archive(&corrupted, &master_key()).is_err());
 
-    let opened =
-        open_non_seekable_archive(&corrupted, &master_key(), Some(&archive.bootstrap_sidecar))
-            .unwrap();
+    let opened = open_non_seekable_archive(&corrupted, &master_key(), Some(&archive.bootstrap_sidecar)).unwrap();
     assert!(opened.volume_trailer.is_none());
-    assert_eq!(
-        opened.extract_file("footer.txt").unwrap(),
-        Some(b"sidecar authority".to_vec())
-    );
+    assert_eq!(opened.extract_file("footer.txt").unwrap(), Some(b"sidecar authority".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -7592,82 +6223,59 @@ fn sidecar_hmac_boundaries_enforced_physical_terminal_flips_tolerated() {
     };
 
     let manifest_offset = terminal_material_offset(&archive.bytes);
-    for offset in [
-        manifest_offset + 71,
-        manifest_offset + MANIFEST_HMAC_COVERED_LEN,
-    ] {
+    for offset in [manifest_offset + 71, manifest_offset + MANIFEST_HMAC_COVERED_LEN] {
         let mut corrupted = archive.bytes.clone();
         corrupted[offset] ^= 0x01;
         open_archive(&corrupted, &master_key()).unwrap();
     }
 
     let trailer_offset = manifest_offset + MANIFEST_FOOTER_LEN;
-    for offset in [
-        trailer_offset + 75,
-        trailer_offset + TRAILER_HMAC_COVERED_LEN,
-    ] {
+    for offset in [trailer_offset + 75, trailer_offset + TRAILER_HMAC_COVERED_LEN] {
         let mut corrupted = archive.bytes.clone();
         corrupted[offset] ^= 0x01;
         OpenedArchive::open_with_options(&corrupted, &master_key(), strict_options).unwrap();
     }
 
     let mut covered_sidecar = archive.bootstrap_sidecar.clone();
-    let mut header =
-        BootstrapSidecarHeader::parse(&covered_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
+    let mut header = BootstrapSidecarHeader::parse(&covered_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     header.manifest_footer_offset += 1;
     covered_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN].copy_from_slice(&header.to_bytes());
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &covered_sidecar, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &covered_sidecar, &master_key()).unwrap_err(),
         FormatError::HmacMismatch {
             structure: "BootstrapSidecarHeader"
         }
     );
 
     let mut tag_sidecar = archive.bootstrap_sidecar.clone();
-    let mut header =
-        BootstrapSidecarHeader::parse(&tag_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
+    let mut header = BootstrapSidecarHeader::parse(&tag_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     header.sidecar_hmac[0] ^= 1;
     tag_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN].copy_from_slice(&header.to_bytes());
     assert_eq!(
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &tag_sidecar, &master_key())
-            .unwrap_err(),
+        open_archive_with_bootstrap_sidecar(&archive.bytes, &tag_sidecar, &master_key()).unwrap_err(),
         FormatError::HmacMismatch {
             structure: "BootstrapSidecarHeader"
         }
     );
 
     let mut non_covered_sidecar = archive.bootstrap_sidecar.clone();
-    let header =
-        BootstrapSidecarHeader::parse(&non_covered_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN])
-            .unwrap();
+    let header = BootstrapSidecarHeader::parse(&non_covered_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     let mut header_bytes = header.to_bytes();
     header_bytes[124] ^= 0x01;
     let crc = crc32c::crc32c(&header_bytes[..124]);
     header_bytes[124..128].copy_from_slice(&crc.to_le_bytes());
     non_covered_sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN].copy_from_slice(&header_bytes);
-    let opened =
-        open_archive_with_bootstrap_sidecar(&archive.bytes, &non_covered_sidecar, &master_key())
-            .unwrap();
-    assert_eq!(
-        opened.extract_file("hmac-boundary.txt").unwrap(),
-        Some(b"boundary bytes".to_vec())
-    );
+    let opened = open_archive_with_bootstrap_sidecar(&archive.bytes, &non_covered_sidecar, &master_key()).unwrap();
+    assert_eq!(opened.extract_file("hmac-boundary.txt").unwrap(), Some(b"boundary bytes".to_vec()));
 }
 
 #[test]
-fn physical_footer_and_trailer_volume_index_mutations_tolerated_under_recovered_terminal_authority()
-{
+fn physical_footer_and_trailer_volume_index_mutations_tolerated_under_recovered_terminal_authority() {
     // The physical footer/trailer copies are not the terminal authority: the
     // seekable open path verifies the CMRA-recovered terminal (§30.12 steps
     // 6-7), whose HMAC-verified copies are authoritative even when physical
     // bytes differ (§17.1.2.j). These mutations must open successfully.
-    let archive = write_archive(
-        &[RegularFile::new("volume-index.txt", b"identity")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("volume-index.txt", b"identity")], &master_key(), single_stream_options()).unwrap();
 
     let mut bad_trailer = archive.bytes.clone();
     rewrite_volume_trailer(&mut bad_trailer, &master_key(), |trailer| {
@@ -7684,23 +6292,10 @@ fn physical_footer_and_trailer_volume_index_mutations_tolerated_under_recovered_
 
 #[test]
 fn rejects_same_key_header_terminal_material_splice() {
-    let first = write_archive(
-        &[RegularFile::new("splice.txt", b"same shape")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
-    let second = write_archive(
-        &[RegularFile::new("splice.txt", b"same shape")],
-        &master_key(),
-        single_stream_options(),
-    )
-    .unwrap();
+    let first = write_archive(&[RegularFile::new("splice.txt", b"same shape")], &master_key(), single_stream_options()).unwrap();
+    let second = write_archive(&[RegularFile::new("splice.txt", b"same shape")], &master_key(), single_stream_options()).unwrap();
     assert_ne!(first.archive_uuid, second.archive_uuid);
-    assert_eq!(
-        terminal_material_offset(&first.bytes),
-        terminal_material_offset(&second.bytes)
-    );
+    assert_eq!(terminal_material_offset(&first.bytes), terminal_material_offset(&second.bytes));
     assert_eq!(first.bytes.len(), second.bytes.len());
 
     let terminal_offset = terminal_material_offset(&first.bytes);
@@ -7730,19 +6325,10 @@ fn rejects_cmra_crypto_header_pre_hmac_mismatch() {
     .unwrap();
     let mut mutated = archive.bytes.clone();
     let volume_header = VolumeHeader::parse(&mutated[..VOLUME_HEADER_LEN]).unwrap();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
 
     rewrite_cmra_image(&mut mutated, CmraRecoveryMode::KeyHolding, |image| {
-        let crypto_region = image
-            .regions
-            .iter_mut()
-            .find(|region| region.region_type == 2)
-            .unwrap();
+        let crypto_region = image.regions.iter_mut().find(|region| region.region_type == 2).unwrap();
         let hmac_offset = crypto_region.bytes.len() - CRYPTO_HEADER_HMAC_LEN;
         let salt_start = CRYPTO_HEADER_FIXED_LEN + 16;
         crypto_region.bytes[salt_start] ^= 0x01;
@@ -7760,11 +6346,7 @@ fn rejects_cmra_crypto_header_pre_hmac_mismatch() {
     let locator = final_recovery_locator(&mutated);
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let parsed_crypto = CryptoHeader::parse(
-        &mutated[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let parsed_crypto = CryptoHeader::parse(&mutated[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     assert_eq!(
         parse_locator_cmra_candidate(
             &mutated,
@@ -7796,39 +6378,22 @@ fn recovers_physical_crypto_header_splice_from_cmra_authority() {
         ..small_block_recovery_options()
     };
 
-    let first = write_archive(
-        &[RegularFile::new("splice.txt", b"same shape")],
-        &master_key(),
-        base,
-    )
-    .unwrap();
-    let second = write_archive(
-        &[RegularFile::new("splice.txt", b"same shape")],
-        &master_key(),
-        same_archive,
-    )
-    .unwrap();
+    let first = write_archive(&[RegularFile::new("splice.txt", b"same shape")], &master_key(), base).unwrap();
+    let second = write_archive(&[RegularFile::new("splice.txt", b"same shape")], &master_key(), same_archive).unwrap();
 
     let volume_header = VolumeHeader::parse(&first.bytes[..VOLUME_HEADER_LEN]).unwrap();
     let second_volume_header = VolumeHeader::parse(&second.bytes[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let second_crypto_end = second_volume_header.crypto_header_offset as usize
-        + second_volume_header.crypto_header_length as usize;
+    let second_crypto_end = second_volume_header.crypto_header_offset as usize + second_volume_header.crypto_header_length as usize;
     assert_eq!(crypto_end, second_crypto_end);
 
     let mut spliced = first.bytes.clone();
     spliced[crypto_start..crypto_end].copy_from_slice(&second.bytes[crypto_start..crypto_end]);
 
     let opened = open_archive(&spliced, &master_key()).unwrap();
-    assert_eq!(
-        opened.crypto_header_bytes,
-        first.bytes[crypto_start..crypto_end].to_vec()
-    );
-    assert_eq!(
-        opened.extract_file("splice.txt").unwrap(),
-        Some(b"same shape".to_vec())
-    );
+    assert_eq!(opened.crypto_header_bytes, first.bytes[crypto_start..crypto_end].to_vec());
+    assert_eq!(opened.extract_file("splice.txt").unwrap(), Some(b"same shape".to_vec()));
     opened.verify().unwrap();
 }
 
@@ -7856,20 +6421,15 @@ fn rejects_same_key_object_splice_with_session_mismatch() {
     .unwrap();
 
     let volume_header = VolumeHeader::parse(&first.bytes[..VOLUME_HEADER_LEN]).unwrap();
-    let crypto_end =
-        volume_header.crypto_header_offset as usize + volume_header.crypto_header_length as usize;
+    let crypto_end = volume_header.crypto_header_offset as usize + volume_header.crypto_header_length as usize;
     let terminal_offset = terminal_material_offset(&first.bytes);
     let second_terminal_offset = terminal_material_offset(&second.bytes);
     assert_eq!(terminal_offset, second_terminal_offset);
 
     let mut spliced = first.bytes.clone();
-    spliced[crypto_end..terminal_offset]
-        .copy_from_slice(&second.bytes[crypto_end..terminal_offset]);
+    spliced[crypto_end..terminal_offset].copy_from_slice(&second.bytes[crypto_end..terminal_offset]);
 
-    assert_eq!(
-        open_archive(&spliced, &master_key()).unwrap_err(),
-        FormatError::AeadFailure
-    );
+    assert_eq!(open_archive(&spliced, &master_key()).unwrap_err(), FormatError::AeadFailure);
 }
 
 #[test]
@@ -7878,10 +6438,7 @@ fn physical_trailer_pointer_and_count_mutations_tolerated_under_recovered_termin
     // VolumeTrailer is never the terminal source — the CMRA-recovered trailer
     // (keyed-HMAC verified) is, per §30.12 and §17.1.2.j.
     let archive = write_archive(
-        &[RegularFile::new(
-            "trailer-range.txt",
-            b"authenticated ranges",
-        )],
+        &[RegularFile::new("trailer-range.txt", b"authenticated ranges")],
         &master_key(),
         single_stream_options(),
     )
@@ -7901,10 +6458,7 @@ fn physical_trailer_pointer_and_count_mutations_tolerated_under_recovered_termin
     OpenedArchive::open_with_options(&wrong_footer_length, &master_key(), strict_options).unwrap();
 
     for (label, offset) in [
-        (
-            "offset before trailer by 1",
-            manifest_offset.saturating_sub(1),
-        ),
+        ("offset before trailer by 1", manifest_offset.saturating_sub(1)),
         ("offset after trailer", manifest_offset + 1),
         ("offset at stream start", 0),
         ("offset at trailer", trailer_offset),
@@ -7914,8 +6468,7 @@ fn physical_trailer_pointer_and_count_mutations_tolerated_under_recovered_termin
         rewrite_volume_trailer(&mut wrong_footer_offset, &master_key(), |trailer| {
             trailer.manifest_footer_offset = offset as u64;
         });
-        open_archive(&wrong_footer_offset, &master_key())
-            .unwrap_or_else(|err| panic!("manifest offset case {label}: {err:?}"));
+        open_archive(&wrong_footer_offset, &master_key()).unwrap_or_else(|err| panic!("manifest offset case {label}: {err:?}"));
     }
 
     let mut wrong_bytes_written = bytes.clone();
@@ -7940,10 +6493,7 @@ fn physical_trailer_pointer_and_count_mutations_tolerated_under_recovered_termin
 #[test]
 fn rejects_authenticated_trailer_outside_trailing_scan_cap() {
     let archive = write_archive(
-        &[RegularFile::new(
-            "trailer-trailing-scan.txt",
-            b"trailer scan boundaries",
-        )],
+        &[RegularFile::new("trailer-trailing-scan.txt", b"trailer scan boundaries")],
         &master_key(),
         single_stream_options(),
     )
@@ -7962,10 +6512,7 @@ fn rejects_authenticated_trailer_outside_trailing_scan_cap() {
     );
 
     let mut beyond_scan = archive.bytes.clone();
-    beyond_scan.resize(
-        beyond_scan.len() + max_critical_recovery_scan(options).unwrap() + 1,
-        0xAA,
-    );
+    beyond_scan.resize(beyond_scan.len() + max_critical_recovery_scan(options).unwrap() + 1, 0xAA);
     assert_eq!(
         OpenedArchive::open_with_options(&beyond_scan, &master_key(), options).unwrap_err(),
         FormatError::InvalidArchive("no valid v45 CMRA candidate found")
@@ -7981,16 +6528,12 @@ fn rejects_authenticated_index_root_extent_size_mismatch_at_open() {
     )
     .unwrap();
     let mut malformed = archive.bytes;
-    let slot = first_block_record_slot_with_kind(&malformed, BlockKind::IndexRootData)
-        .expect("archive should contain IndexRootData");
+    let slot = first_block_record_slot_with_kind(&malformed, BlockKind::IndexRootData).expect("archive should contain IndexRootData");
     mutate_block_record_at_slot(&mut malformed, slot, |record| {
         record.payload[0] ^= 0x55;
     });
 
-    assert_eq!(
-        open_archive(&malformed, &master_key()).unwrap_err(),
-        FormatError::AeadFailure
-    );
+    assert_eq!(open_archive(&malformed, &master_key()).unwrap_err(), FormatError::AeadFailure);
 }
 
 #[test]
@@ -8054,11 +6597,7 @@ fn rejects_duplicate_authenticated_volume_indexes() {
     .unwrap();
 
     assert_eq!(
-        open_archive_volumes(
-            &[archive.volumes[0].as_slice(), archive.volumes[0].as_slice()],
-            &master_key()
-        )
-        .unwrap_err(),
+        open_archive_volumes(&[archive.volumes[0].as_slice(), archive.volumes[0].as_slice()], &master_key()).unwrap_err(),
         FormatError::InvalidArchive("duplicate authenticated volume index")
     );
 }
@@ -8080,20 +6619,12 @@ fn rejects_conflicting_duplicate_authenticated_volume_indexes_by_default() {
     corrupt_first_block_record_payload(&mut conflicting);
 
     assert_eq!(
-        open_archive_volumes(
-            &[archive.volumes[0].as_slice(), conflicting.as_slice()],
-            &master_key()
-        )
-        .unwrap_err(),
+        open_archive_volumes(&[archive.volumes[0].as_slice(), conflicting.as_slice()], &master_key()).unwrap_err(),
         FormatError::InvalidArchive("duplicate authenticated volume index")
     );
 }
 
-fn directory_hint_table_from_rows(
-    hint_shard_index: u64,
-    rows: &[(Vec<u8>, Vec<u32>)],
-    shard_count: u32,
-) -> DirectoryHintTable {
+fn directory_hint_table_from_rows(hint_shard_index: u64, rows: &[(Vec<u8>, Vec<u32>)], shard_count: u32) -> DirectoryHintTable {
     let mut entries = Vec::new();
     let mut shard_row_indexes = Vec::new();
     let mut string_pool = Vec::new();
@@ -8117,8 +6648,7 @@ fn directory_hint_table_from_rows(
         });
     }
 
-    let table_bytes =
-        directory_hint_table_bytes(hint_shard_index, entries, shard_row_indexes, string_pool);
+    let table_bytes = directory_hint_table_bytes(hint_shard_index, entries, shard_row_indexes, string_pool);
     let locating = DirectoryHintShardEntry {
         hint_shard_index,
         first_dir_hash: hash_prefix(&rows.first().unwrap().0),
@@ -8130,21 +6660,10 @@ fn directory_hint_table_from_rows(
         decompressed_size: table_bytes.len() as u32,
         entry_count: rows.len() as u64,
     };
-    DirectoryHintTable::parse(
-        &table_bytes,
-        &locating,
-        shard_count,
-        MetadataLimits::default(),
-    )
-    .unwrap()
+    DirectoryHintTable::parse(&table_bytes, &locating, shard_count, MetadataLimits::default()).unwrap()
 }
 
-fn directory_hint_table_bytes(
-    hint_shard_index: u64,
-    entries: Vec<DirectoryHintEntry>,
-    shard_row_indexes: Vec<u32>,
-    string_pool: Vec<u8>,
-) -> Vec<u8> {
+fn directory_hint_table_bytes(hint_shard_index: u64, entries: Vec<DirectoryHintEntry>, shard_row_indexes: Vec<u32>, string_pool: Vec<u8>) -> Vec<u8> {
     let header_len = DirectoryHintTableHeader {
         version: 1,
         hint_shard_index,
@@ -8156,15 +6675,8 @@ fn directory_hint_table_bytes(
     }
     .to_bytes()
     .len();
-    let entry_len = entries
-        .first()
-        .map(|entry| entry.to_bytes().len())
-        .unwrap_or(0);
-    let shard_list_offset = if entries.is_empty() {
-        0
-    } else {
-        header_len + entries.len() * entry_len
-    };
+    let entry_len = entries.first().map(|entry| entry.to_bytes().len()).unwrap_or(0);
+    let shard_list_offset = if entries.is_empty() { 0 } else { header_len + entries.len() * entry_len };
     let string_pool_offset = if string_pool.is_empty() {
         0
     } else {
@@ -8175,11 +6687,7 @@ fn directory_hint_table_bytes(
         version: 1,
         hint_shard_index,
         entry_count: entries.len() as u64,
-        entry_table_offset: if entries.is_empty() {
-            0
-        } else {
-            header_len as u64
-        },
+        entry_table_offset: if entries.is_empty() { 0 } else { header_len as u64 },
         shard_list_offset: shard_list_offset as u64,
         string_pool_offset: string_pool_offset as u64,
         string_pool_size: string_pool.len() as u64,
@@ -8232,10 +6740,7 @@ fn corrupt_manifest_footer_hmac(volume: &mut [u8]) {
 
 fn final_recovery_locator(volume: &[u8]) -> CriticalRecoveryLocator {
     let final_offset = volume.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-    CriticalRecoveryLocator::parse(
-        &volume[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN],
-    )
-    .unwrap()
+    CriticalRecoveryLocator::parse(&volume[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN]).unwrap()
 }
 
 fn rewrite_cmra_parity_count(volume: &[u8], parity_shard_count: u16) -> Vec<u8> {
@@ -8246,10 +6751,7 @@ fn rewrite_cmra_parity_count(volume: &[u8], parity_shard_count: u16) -> Vec<u8> 
     let shard_size = tuple.shard_size as usize;
     let row_len = CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + shard_size;
     let kept_rows = tuple.data_shard_count as usize + parity_shard_count as usize;
-    let mut header = CriticalMetadataRecoveryHeader::parse(
-        &volume[cmra_offset..cmra_offset + CRITICAL_METADATA_RECOVERY_HEADER_LEN],
-    )
-    .unwrap();
+    let mut header = CriticalMetadataRecoveryHeader::parse(&volume[cmra_offset..cmra_offset + CRITICAL_METADATA_RECOVERY_HEADER_LEN]).unwrap();
     header.parity_shard_count = parity_shard_count;
 
     let mut cmra = Vec::with_capacity(CRITICAL_METADATA_RECOVERY_HEADER_LEN + kept_rows * row_len);
@@ -8288,11 +6790,7 @@ fn rewrite_root_auth_footer_revision_bytes(bytes: &mut [u8], revision: u16) {
     bytes[crc_offset..crc_offset + 4].copy_from_slice(&crc.to_le_bytes());
 }
 
-fn rewrite_cmra_image(
-    volume: &mut [u8],
-    mode: CmraRecoveryMode,
-    mutate: impl FnOnce(&mut CriticalMetadataImage),
-) {
+fn rewrite_cmra_image(volume: &mut [u8], mode: CmraRecoveryMode, mutate: impl FnOnce(&mut CriticalMetadataImage)) {
     let final_offset = volume.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
     let locator = final_recovery_locator(volume);
     let tuple = CmraDecoderTuple::from(locator);
@@ -8374,11 +6872,7 @@ fn rewrite_cmra_image(
     rewrite_locator_image_sha(volume, mirror_offset, image_sha256);
 }
 
-fn rewrite_cmra_image_variable_len(
-    volume: &[u8],
-    mode: CmraRecoveryMode,
-    mutate: impl FnOnce(&mut CriticalMetadataImage),
-) -> Vec<u8> {
+fn rewrite_cmra_image_variable_len(volume: &[u8], mode: CmraRecoveryMode, mutate: impl FnOnce(&mut CriticalMetadataImage)) -> Vec<u8> {
     let locator = final_recovery_locator(volume);
     let tuple = CmraDecoderTuple::from(locator);
     let recovered = recover_cmra(volume, locator.cmra_offset, Some(tuple), mode).unwrap();
@@ -8486,79 +6980,40 @@ fn rewrite_cmra_image_variable_len(
     out
 }
 
-fn rewrite_recovery_locator(
-    volume: &mut [u8],
-    offset: usize,
-    mutate: impl FnOnce(&mut CriticalRecoveryLocator),
-) {
-    let mut locator =
-        CriticalRecoveryLocator::parse(&volume[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN])
-            .unwrap();
+fn rewrite_recovery_locator(volume: &mut [u8], offset: usize, mutate: impl FnOnce(&mut CriticalRecoveryLocator)) {
+    let mut locator = CriticalRecoveryLocator::parse(&volume[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN]).unwrap();
     mutate(&mut locator);
     volume[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN].copy_from_slice(&locator.to_bytes());
 }
 
 fn refresh_critical_image_region_digests(image: &mut CriticalMetadataImage) {
-    image.volume_header_sha256 = sha256_bytes(
-        &image
-            .regions
-            .iter()
-            .find(|region| region.region_type == 1)
-            .unwrap()
-            .bytes,
-    );
-    image.crypto_header_sha256 = sha256_bytes(
-        &image
-            .regions
-            .iter()
-            .find(|region| region.region_type == 2)
-            .unwrap()
-            .bytes,
-    );
+    image.volume_header_sha256 = sha256_bytes(&image.regions.iter().find(|region| region.region_type == 1).unwrap().bytes);
+    image.crypto_header_sha256 = sha256_bytes(&image.regions.iter().find(|region| region.region_type == 2).unwrap().bytes);
     image.key_wrap_table_sha256 = image
         .regions
         .iter()
         .find(|region| region.region_type == 6)
         .map(|region| sha256_bytes(&region.bytes))
         .unwrap_or([0u8; 32]);
-    image.manifest_footer_sha256 = sha256_bytes(
-        &image
-            .regions
-            .iter()
-            .find(|region| region.region_type == 3)
-            .unwrap()
-            .bytes,
-    );
+    image.manifest_footer_sha256 = sha256_bytes(&image.regions.iter().find(|region| region.region_type == 3).unwrap().bytes);
     image.root_auth_footer_sha256 = image
         .regions
         .iter()
         .find(|region| region.region_type == 4)
         .map(|region| sha256_bytes(&region.bytes))
         .unwrap_or([0u8; 32]);
-    image.volume_trailer_sha256 = sha256_bytes(
-        &image
-            .regions
-            .iter()
-            .find(|region| region.region_type == 5)
-            .unwrap()
-            .bytes,
-    );
+    image.volume_trailer_sha256 = sha256_bytes(&image.regions.iter().find(|region| region.region_type == 5).unwrap().bytes);
 }
 
 fn rewrite_locator_image_sha(volume: &mut [u8], offset: usize, image_sha256: [u8; 32]) {
-    let mut locator =
-        CriticalRecoveryLocator::parse(&volume[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN])
-            .unwrap();
+    let mut locator = CriticalRecoveryLocator::parse(&volume[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN]).unwrap();
     locator.cmra_image_sha256 = image_sha256;
     volume[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN].copy_from_slice(&locator.to_bytes());
 }
 
 fn corrupt_v45_terminal_recovery(volume: &mut [u8]) {
     let final_offset = volume.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-    let final_locator = CriticalRecoveryLocator::parse(
-        &volume[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN],
-    )
-    .unwrap();
+    let final_locator = CriticalRecoveryLocator::parse(&volume[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN]).unwrap();
     let mirror_offset = final_offset - CRITICAL_RECOVERY_LOCATOR_LEN;
     volume[final_locator.cmra_offset as usize] ^= 0x55;
     volume[mirror_offset] ^= 0x55;
@@ -8568,27 +7023,15 @@ fn corrupt_v45_terminal_recovery(volume: &mut [u8]) {
 fn mutate_first_block_record(volume: &mut [u8], mutate: impl FnOnce(&mut BlockRecord)) {
     let (record_offset, record_len) = first_block_record(volume);
     let block_size = record_len - BLOCK_RECORD_FRAMING_LEN;
-    let mut record = BlockRecord::parse(
-        &volume[record_offset..record_offset + record_len],
-        block_size,
-    )
-    .unwrap();
+    let mut record = BlockRecord::parse(&volume[record_offset..record_offset + record_len], block_size).unwrap();
     mutate(&mut record);
     volume[record_offset..record_offset + record_len].copy_from_slice(&record.to_bytes());
 }
 
-fn mutate_block_record_at_slot(
-    volume: &mut [u8],
-    slot: usize,
-    mutate: impl FnOnce(&mut BlockRecord),
-) {
+fn mutate_block_record_at_slot(volume: &mut [u8], slot: usize, mutate: impl FnOnce(&mut BlockRecord)) {
     let (record_offset, record_len) = block_record_at_slot(volume, slot);
     let block_size = record_len - BLOCK_RECORD_FRAMING_LEN;
-    let mut record = BlockRecord::parse(
-        &volume[record_offset..record_offset + record_len],
-        block_size,
-    )
-    .unwrap();
+    let mut record = BlockRecord::parse(&volume[record_offset..record_offset + record_len], block_size).unwrap();
     mutate(&mut record);
     volume[record_offset..record_offset + record_len].copy_from_slice(&record.to_bytes());
 }
@@ -8601,11 +7044,7 @@ fn block_record_at_slot(volume: &[u8], slot: usize) -> (usize, usize) {
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&volume[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let record_len = crypto_header.fixed.block_size as usize + BLOCK_RECORD_FRAMING_LEN;
     let record_offset = crypto_end + slot * record_len;
     assert!(volume.len() >= record_offset + record_len);
@@ -8640,15 +7079,11 @@ fn first_payload_data_run_slots(volume: &[u8]) -> Vec<usize> {
 }
 
 fn envelope_indices_for_path(opened: &OpenedArchive, path: &str) -> BTreeSet<u64> {
-    envelope_entries_for_path(opened, path)
-        .into_iter()
-        .map(|entry| entry.envelope_index)
-        .collect()
+    envelope_entries_for_path(opened, path).into_iter().map(|entry| entry.envelope_index).collect()
 }
 
 fn envelope_entries_for_path(opened: &OpenedArchive, path: &str) -> Vec<EnvelopeEntry> {
-    let normalized =
-        normalize_lookup_file_path(path, opened.crypto_header.max_path_length).unwrap();
+    let normalized = normalize_lookup_file_path(path, opened.crypto_header.max_path_length).unwrap();
     let located = opened.locate_index_file(&normalized).unwrap().unwrap();
     let file = &located.shard.files[located.file_index];
     frame_range_for_file(&located.shard, file)
@@ -8670,11 +7105,7 @@ fn block_record_slots(volume: &[u8]) -> Vec<(usize, usize, BlockRecord)> {
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&volume[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let record_len = crypto_header.fixed.block_size as usize + BLOCK_RECORD_FRAMING_LEN;
     let manifest_offset = terminal_material_offset(volume);
     assert_eq!((manifest_offset - crypto_end) % record_len, 0);
@@ -8682,33 +7113,20 @@ fn block_record_slots(volume: &[u8]) -> Vec<(usize, usize, BlockRecord)> {
     (0..record_count)
         .map(|slot| {
             let offset = crypto_end + slot * record_len;
-            let record = BlockRecord::parse(
-                &volume[offset..offset + record_len],
-                record_len - BLOCK_RECORD_FRAMING_LEN,
-            )
-            .unwrap();
+            let record = BlockRecord::parse(&volume[offset..offset + record_len], record_len - BLOCK_RECORD_FRAMING_LEN).unwrap();
             (offset, record_len, record)
         })
         .collect()
 }
 
-fn rewrite_manifest_footer(
-    volume: &mut [u8],
-    master_key: &MasterKey,
-    mutate: impl FnOnce(&mut ManifestFooter),
-) {
+fn rewrite_manifest_footer(volume: &mut [u8], master_key: &MasterKey, mutate: impl FnOnce(&mut ManifestFooter)) {
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let offset = terminal_material_offset(volume);
     let mut footer = ManifestFooter::parse(&volume[offset..offset + MANIFEST_FOOTER_LEN]).unwrap();
     mutate(&mut footer);
     footer.manifest_hmac = [0u8; 32];
     let mut footer_bytes = footer.to_bytes();
-    let subkeys = Subkeys::derive(
-        master_key,
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(master_key, &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     footer.manifest_hmac = compute_hmac(
         HmacDomain::ManifestFooter,
         &subkeys.mac_key,
@@ -8720,23 +7138,14 @@ fn rewrite_manifest_footer(
     volume[offset..offset + MANIFEST_FOOTER_LEN].copy_from_slice(&footer_bytes);
 }
 
-fn rewrite_volume_trailer(
-    volume: &mut [u8],
-    master_key: &MasterKey,
-    mutate: impl FnOnce(&mut VolumeTrailer),
-) {
+fn rewrite_volume_trailer(volume: &mut [u8], master_key: &MasterKey, mutate: impl FnOnce(&mut VolumeTrailer)) {
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let offset = terminal_material_offset(volume) + MANIFEST_FOOTER_LEN;
     let mut trailer = VolumeTrailer::parse(&volume[offset..offset + VOLUME_TRAILER_LEN]).unwrap();
     mutate(&mut trailer);
     trailer.trailer_hmac = [0u8; 32];
     let mut trailer_bytes = trailer.to_bytes();
-    let subkeys = Subkeys::derive(
-        master_key,
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(master_key, &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     trailer.trailer_hmac = compute_hmac(
         HmacDomain::VolumeTrailer,
         &subkeys.mac_key,
@@ -8748,22 +7157,13 @@ fn rewrite_volume_trailer(
     volume[offset..offset + VOLUME_TRAILER_LEN].copy_from_slice(&trailer_bytes);
 }
 
-fn rewrite_sidecar_header(
-    sidecar: &mut [u8],
-    master_key: &MasterKey,
-    mutate: impl FnOnce(&mut BootstrapSidecarHeader),
-) {
-    let mut header =
-        BootstrapSidecarHeader::parse(&sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
+fn rewrite_sidecar_header(sidecar: &mut [u8], master_key: &MasterKey, mutate: impl FnOnce(&mut BootstrapSidecarHeader)) {
+    let mut header = BootstrapSidecarHeader::parse(&sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     mutate(&mut header);
     write_signed_sidecar_header(sidecar, master_key, &mut header);
 }
 
-fn write_signed_sidecar_header(
-    sidecar: &mut [u8],
-    master_key: &MasterKey,
-    header: &mut BootstrapSidecarHeader,
-) {
+fn write_signed_sidecar_header(sidecar: &mut [u8], master_key: &MasterKey, header: &mut BootstrapSidecarHeader) {
     header.sidecar_hmac = [0u8; 32];
     let mut header_bytes = header.to_bytes();
     let subkeys = Subkeys::derive(master_key, &header.archive_uuid, &header.session_id).unwrap();
@@ -8778,15 +7178,8 @@ fn write_signed_sidecar_header(
     sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN].copy_from_slice(&header_bytes);
 }
 
-fn sparse_bootstrap_sidecar(
-    source: &[u8],
-    master_key: &MasterKey,
-    include_manifest: bool,
-    include_index_root: bool,
-    include_dictionary: bool,
-) -> Vec<u8> {
-    let source_header =
-        BootstrapSidecarHeader::parse(&source[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
+fn sparse_bootstrap_sidecar(source: &[u8], master_key: &MasterKey, include_manifest: bool, include_index_root: bool, include_dictionary: bool) -> Vec<u8> {
+    let source_header = BootstrapSidecarHeader::parse(&source[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     let mut sidecar = vec![0u8; BOOTSTRAP_SIDECAR_HEADER_LEN];
     let mut header = BootstrapSidecarHeader {
         archive_uuid: source_header.archive_uuid,
@@ -8843,12 +7236,7 @@ fn sparse_bootstrap_sidecar(
     sidecar
 }
 
-fn append_sidecar_section(
-    source: &[u8],
-    sidecar: &mut Vec<u8>,
-    source_offset: u64,
-    length: u64,
-) -> (u64, u64) {
+fn append_sidecar_section(source: &[u8], sidecar: &mut Vec<u8>, source_offset: u64, length: u64) -> (u64, u64) {
     let source_offset = source_offset as usize;
     let length = length as usize;
     let offset = sidecar.len() as u64;
@@ -8856,11 +7244,7 @@ fn append_sidecar_section(
     (offset, length as u64)
 }
 
-fn mutate_sidecar_manifest(
-    sidecar: &mut [u8],
-    master_key: &MasterKey,
-    mutate: impl FnOnce(&mut ManifestFooter),
-) {
+fn mutate_sidecar_manifest(sidecar: &mut [u8], master_key: &MasterKey, mutate: impl FnOnce(&mut ManifestFooter)) {
     let header = BootstrapSidecarHeader::parse(&sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     let offset = header.manifest_footer_offset as usize;
     let mut footer = ManifestFooter::parse(&sidecar[offset..offset + MANIFEST_FOOTER_LEN]).unwrap();
@@ -8879,11 +7263,7 @@ fn mutate_sidecar_manifest(
     sidecar[offset..offset + MANIFEST_FOOTER_LEN].copy_from_slice(&footer_bytes);
 }
 
-fn mutate_sidecar_index_record(
-    sidecar: &mut [u8],
-    record_index: usize,
-    mutate: impl FnOnce(&mut BlockRecord),
-) {
+fn mutate_sidecar_index_record(sidecar: &mut [u8], record_index: usize, mutate: impl FnOnce(&mut BlockRecord)) {
     let header = BootstrapSidecarHeader::parse(&sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     let record_len = sidecar_record_len(sidecar);
     let offset = header.index_root_records_offset as usize + record_index * record_len;
@@ -8893,11 +7273,7 @@ fn mutate_sidecar_index_record(
     sidecar[offset..offset + record_len].copy_from_slice(&record.to_bytes());
 }
 
-fn mutate_sidecar_dictionary_record(
-    sidecar: &mut [u8],
-    record_index: usize,
-    mutate: impl FnOnce(&mut BlockRecord),
-) {
+fn mutate_sidecar_dictionary_record(sidecar: &mut [u8], record_index: usize, mutate: impl FnOnce(&mut BlockRecord)) {
     let header = BootstrapSidecarHeader::parse(&sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     let record_len = sidecar_record_len(sidecar);
     let offset = header.dictionary_records_offset as usize + record_index * record_len;
@@ -8920,11 +7296,8 @@ fn swap_sidecar_index_records(sidecar: &mut [u8], left: usize, right: usize) {
 fn sidecar_record_len(sidecar: &[u8]) -> usize {
     let header = BootstrapSidecarHeader::parse(&sidecar[..BOOTSTRAP_SIDECAR_HEADER_LEN]).unwrap();
     let footer_offset = header.manifest_footer_offset as usize;
-    let footer =
-        ManifestFooter::parse(&sidecar[footer_offset..footer_offset + MANIFEST_FOOTER_LEN])
-            .unwrap();
-    let index_record_count =
-        footer.index_root_data_block_count as usize + footer.index_root_parity_block_count as usize;
+    let footer = ManifestFooter::parse(&sidecar[footer_offset..footer_offset + MANIFEST_FOOTER_LEN]).unwrap();
+    let index_record_count = footer.index_root_data_block_count as usize + footer.index_root_parity_block_count as usize;
     header.index_root_records_length as usize / index_record_count
 }
 
@@ -8934,11 +7307,7 @@ fn corrupt_object_extent_records(volume: &mut [u8], extent: ObjectExtent) {
     assert_eq!(volume_header.stripe_width, 1);
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&volume[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
     let record_len = crypto_header.fixed.block_size as usize + BLOCK_RECORD_FRAMING_LEN;
     let record_count = extent.data_block_count as u64 + extent.parity_block_count as u64;
     for offset in 0..record_count {
@@ -8952,18 +7321,8 @@ fn terminal_material_offset(volume: &[u8]) -> usize {
     let volume_header = VolumeHeader::parse(&volume[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_start = volume_header.crypto_header_offset as usize;
     let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
-    let crypto_header = CryptoHeader::parse(
-        &volume[crypto_start..crypto_end],
-        volume_header.crypto_header_length,
-    )
-    .unwrap();
-    let (_, offset, _) = parse_stream_block_prefix(
-        volume,
-        crypto_end,
-        crypto_header.fixed.block_size as usize,
-        &volume_header,
-    )
-    .unwrap();
+    let crypto_header = CryptoHeader::parse(&volume[crypto_start..crypto_end], volume_header.crypto_header_length).unwrap();
+    let (_, offset, _) = parse_stream_block_prefix(volume, crypto_end, crypto_header.fixed.block_size as usize, &volume_header).unwrap();
     offset
 }
 
@@ -8985,12 +7344,7 @@ struct TestFileMeta {
 fn multi_envelope_reader_fixture() -> (OpenedArchive, u64) {
     let volume_header = test_volume_header();
     let crypto_header = test_crypto_header();
-    let subkeys = Subkeys::derive(
-        &master_key(),
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )
-    .unwrap();
+    let subkeys = Subkeys::derive(&master_key(), &volume_header.archive_uuid, &volume_header.session_id).unwrap();
     let mut next_block_index = 0u64;
     let mut blocks = BTreeMap::new();
 
@@ -9086,8 +7440,7 @@ fn multi_envelope_reader_fixture() -> (OpenedArchive, u64) {
         },
     ];
 
-    let (index_shard_plaintext, first_path_hash, last_path_hash) =
-        build_test_index_shard(&files, &frames, &envelopes);
+    let (index_shard_plaintext, first_path_hash, last_path_hash) = build_test_index_shard(&files, &frames, &envelopes);
     let index_shard = encrypt_test_object(
         &compress_zstd_frame(&index_shard_plaintext, 1).unwrap(),
         &subkeys.index_shard_key,
@@ -9116,8 +7469,7 @@ fn multi_envelope_reader_fixture() -> (OpenedArchive, u64) {
     root_header.frame_count = frames.len() as u64;
     root_header.envelope_count = envelopes.len() as u64;
     root_header.file_count = files.len() as u64;
-    root_header.payload_block_count = healthy_payload.extent.data_block_count as u64
-        + broken_payload.extent.data_block_count as u64;
+    root_header.payload_block_count = healthy_payload.extent.data_block_count as u64 + broken_payload.extent.data_block_count as u64;
     root_header.tar_total_size = tar_stream.len() as u64;
     root_header.content_sha256 = sha256_bytes(&tar_stream);
     let index_root = IndexRoot {
@@ -9191,13 +7543,7 @@ fn replace_first_index_shard(opened: &mut OpenedArchive, mutate: impl FnOnce(&mu
     let mut shard = opened.load_index_shard(&locating).unwrap();
     mutate(&mut shard);
     let plaintext = shard.to_bytes();
-    let mut next_block_index = opened
-        .blocks
-        .keys()
-        .last()
-        .copied()
-        .map(|index| index + 1)
-        .unwrap_or(0);
+    let mut next_block_index = opened.blocks.keys().last().copied().map(|index| index + 1).unwrap_or(0);
     let replacement = encrypt_test_object(
         &compress_zstd_frame(&plaintext, 1).unwrap(),
         &opened.subkeys.index_shard_key,
@@ -9223,10 +7569,7 @@ fn replace_first_index_shard(opened: &mut OpenedArchive, mutate: impl FnOnce(&mu
     };
 }
 
-fn rewrite_as_single_healthy_file(
-    opened: &mut OpenedArchive,
-    mutate: impl FnOnce(&mut FileEntry, &mut Vec<u8>),
-) {
+fn rewrite_as_single_healthy_file(opened: &mut OpenedArchive, mutate: impl FnOnce(&mut FileEntry, &mut Vec<u8>)) {
     let healthy_path = b"healthy.txt";
     let healthy_payload = b"healthy payload\n";
     let healthy_member = test_member(healthy_path, healthy_payload);
@@ -9235,18 +7578,8 @@ fn rewrite_as_single_healthy_file(
             .find(|idx| shard.file_path(*idx) == Some(healthy_path.as_slice()))
             .unwrap();
         let mut file = shard.files[file_index].clone();
-        let frame = shard
-            .frames
-            .iter()
-            .find(|entry| entry.frame_index == 0)
-            .unwrap()
-            .clone();
-        let envelope = shard
-            .envelopes
-            .iter()
-            .find(|entry| entry.envelope_index == 0)
-            .unwrap()
-            .clone();
+        let frame = shard.frames.iter().find(|entry| entry.frame_index == 0).unwrap().clone();
+        let envelope = shard.envelopes.iter().find(|entry| entry.envelope_index == 0).unwrap().clone();
         let mut path = healthy_path.to_vec();
 
         file.path_offset = 0;
@@ -9352,11 +7685,7 @@ fn encrypt_test_object(
         .map(|(index, payload)| BlockRecord {
             block_index: first_block_index + index as u64,
             kind: data_kind,
-            flags: if index + 1 == data_block_count {
-                0x01
-            } else {
-                0
-            },
+            flags: if index + 1 == data_block_count { 0x01 } else { 0 },
             payload: payload.to_vec(),
             record_crc32c: 0,
         })
@@ -9494,22 +7823,10 @@ fn corrupt_payload_record(blocks: &mut BTreeMap<u64, BlockRecord>, block_index: 
     record.payload[0] ^= 0x55;
 }
 
-fn build_test_index_shard(
-    files: &[TestFileMeta],
-    frames: &[FrameEntry],
-    envelopes: &[EnvelopeEntry],
-) -> (Vec<u8>, [u8; 8], [u8; 8]) {
-    let mut sorted = files
-        .iter()
-        .map(|file| (hash_prefix(&file.path), file))
-        .collect::<Vec<_>>();
-    sorted.sort_by(|left, right| {
-        (left.0, left.1.path.as_slice(), left.1.tar_stream_offset).cmp(&(
-            right.0,
-            right.1.path.as_slice(),
-            right.1.tar_stream_offset,
-        ))
-    });
+fn build_test_index_shard(files: &[TestFileMeta], frames: &[FrameEntry], envelopes: &[EnvelopeEntry]) -> (Vec<u8>, [u8; 8], [u8; 8]) {
+    let mut sorted = files.iter().map(|file| (hash_prefix(&file.path), file)).collect::<Vec<_>>();
+    sorted
+        .sort_by(|left, right| (left.0, left.1.path.as_slice(), left.1.tar_stream_offset).cmp(&(right.0, right.1.path.as_slice(), right.1.tar_stream_offset)));
 
     let mut string_pool = Vec::new();
     let mut file_entries = Vec::with_capacity(sorted.len());
@@ -9557,9 +7874,7 @@ fn build_test_index_shard(
         envelope_count: envelopes.len() as u32,
         file_table_offset: INDEX_SHARD_HEADER_LEN as u32,
         frame_table_offset: (INDEX_SHARD_HEADER_LEN + file_entries.len() * FILE_ENTRY_LEN) as u32,
-        envelope_table_offset: (INDEX_SHARD_HEADER_LEN
-            + file_entries.len() * FILE_ENTRY_LEN
-            + frames.len() * FRAME_ENTRY_LEN) as u32,
+        envelope_table_offset: (INDEX_SHARD_HEADER_LEN + file_entries.len() * FILE_ENTRY_LEN + frames.len() * FRAME_ENTRY_LEN) as u32,
         string_pool_offset: (INDEX_SHARD_HEADER_LEN
             + file_entries.len() * FILE_ENTRY_LEN
             + frames.len() * FRAME_ENTRY_LEN
@@ -9617,9 +7932,7 @@ fn opens_lists_and_verifies_archive_with_pax_metadata_and_symlink_target() {
             let mut primary_pax_records = std::collections::BTreeMap::default();
             primary_pax_records.insert(
                 "LIBARCHIVE.creationtime".into(),
-                ArchiveTimestamp::new(self.created_sec as i64, self.created_nsec)
-                    .canonical_pax_value()
-                    .unwrap(),
+                ArchiveTimestamp::new(self.created_sec as i64, self.created_nsec).canonical_pax_value().unwrap(),
             );
             primary_pax_records.insert(
                 "atime".into(),
@@ -9642,11 +7955,7 @@ fn opens_lists_and_verifies_archive_with_pax_metadata_and_symlink_target() {
                 created: None,
                 accessed: None,
                 native: NativeFileMetadata {
-                    required_profiles: vec![
-                        "macos-backup-v1".into(),
-                        "portable-v1".into(),
-                        "posix-backup-v1".into(),
-                    ],
+                    required_profiles: vec!["macos-backup-v1".into(), "portable-v1".into(), "posix-backup-v1".into()],
                     primary_pax_records,
                     auxiliary_records: Vec::new(),
                     ..Default::default()
@@ -9689,26 +7998,15 @@ fn opens_lists_and_verifies_archive_with_pax_metadata_and_symlink_target() {
     assert_eq!(entry.path, "links/sym1");
     assert_eq!(entry.kind, TarEntryKind::Symlink);
     assert_eq!(entry.link_target, Some("target.txt".to_string()));
-    assert_eq!(
-        entry.created,
-        Some(ArchiveTimestamp::new(1_700_000_100, 500_000_000))
-    );
-    assert_eq!(
-        entry.accessed,
-        Some(ArchiveTimestamp::new(1_700_000_200, 250_000_000))
-    );
+    assert_eq!(entry.created, Some(ArchiveTimestamp::new(1_700_000_100, 500_000_000)));
+    assert_eq!(entry.accessed, Some(ArchiveTimestamp::new(1_700_000_200, 250_000_000)));
     assert_eq!(entry.attributes, Some(0x05));
     assert_eq!(entry.uid, Some(1001));
     assert_eq!(entry.gid, Some(1002));
     assert_eq!(entry.uname, Some("alice".to_string()));
     assert_eq!(entry.gname, Some("devs".to_string()));
 
-    let streamed_report = list_non_seekable_stream(
-        std::io::Cursor::new(archive_bytes),
-        &master_key(),
-        NonSeekableReaderOptions::default(),
-    )
-    .unwrap();
+    let streamed_report = list_non_seekable_stream(std::io::Cursor::new(archive_bytes), &master_key(), NonSeekableReaderOptions::default()).unwrap();
     assert_eq!(streamed_report.entries, entries);
 }
 
@@ -9761,9 +8059,7 @@ fn extraction_options_allow_absolute_symlinks_toggle() {
         ..Default::default()
     };
     assert_eq!(
-        opened
-            .extract_indexed_files_to(tmp.path(), options_disallowed, 1)
-            .unwrap_err(),
+        opened.extract_indexed_files_to(tmp.path(), options_disallowed, 1).unwrap_err(),
         crate::format::FormatError::UnsafeArchivePath
     );
 
@@ -9786,12 +8082,7 @@ fn test_member(path: &[u8], data: &[u8]) -> Vec<u8> {
     let records = crate::entry_metadata::portable_primary_pax(path, 0o644, "other", false).unwrap();
     let pax = crate::entry_metadata::encode_canonical_pax(&records).unwrap();
     let mut out = Vec::new();
-    out.extend_from_slice(&test_tar_header(
-        b"TZAP-PAX/PRIMARY",
-        pax.len() as u64,
-        0,
-        b'x',
-    ));
+    out.extend_from_slice(&test_tar_header(b"TZAP-PAX/PRIMARY", pax.len() as u64, 0, b'x'));
     out.extend_from_slice(&pax);
     out.resize(out.len() + padding_to_512(pax.len()), 0);
     out.extend_from_slice(&test_tar_header(path, data.len() as u64, 0o644, b'0'));
@@ -9876,11 +8167,7 @@ fn list_index_entries_and_lookup_index_entry_header_metadata_coverage() {
             ArchiveTimestamp::new(1_700_000_000, 100_000_000)
         }
         fn portable_metadata(&self) -> PortableFileMetadata {
-            let posix_owner = if self.uid.is_some()
-                || self.gid.is_some()
-                || self.uname.is_some()
-                || self.gname.is_some()
-            {
+            let posix_owner = if self.uid.is_some() || self.gid.is_some() || self.uname.is_some() || self.gname.is_some() {
                 Some(PortablePosixOwner {
                     uid: self.uid.unwrap_or(u64::MAX),
                     gid: self.gid.unwrap_or(u64::MAX),
@@ -9947,30 +8234,18 @@ fn list_index_entries_and_lookup_index_entry_header_metadata_coverage() {
     let index_entries = opened.list_index_entries().unwrap();
     assert_eq!(index_entries.len(), 2);
 
-    let e1 = index_entries
-        .iter()
-        .find(|e| e.path == "symlink.txt")
-        .unwrap();
+    let e1 = index_entries.iter().find(|e| e.path == "symlink.txt").unwrap();
     assert_eq!(e1.kind, TarEntryKind::Symlink);
     assert_eq!(e1.link_target, Some("target.txt".to_string()));
-    assert_eq!(
-        e1.created,
-        Some(ArchiveTimestamp::new(1_700_000_100, 200_000_000))
-    );
-    assert_eq!(
-        e1.accessed,
-        Some(ArchiveTimestamp::new(1_700_000_300, 400_000_000))
-    );
+    assert_eq!(e1.created, Some(ArchiveTimestamp::new(1_700_000_100, 200_000_000)));
+    assert_eq!(e1.accessed, Some(ArchiveTimestamp::new(1_700_000_300, 400_000_000)));
     assert_eq!(e1.attributes, Some(0x05));
     assert_eq!(e1.uid, Some(1001));
     assert_eq!(e1.gid, Some(1002));
     assert_eq!(e1.uname, Some("alice".to_string()));
     assert_eq!(e1.gname, Some("devs".to_string()));
 
-    let e2 = index_entries
-        .iter()
-        .find(|e| e.path == "plain.txt")
-        .unwrap();
+    let e2 = index_entries.iter().find(|e| e.path == "plain.txt").unwrap();
     assert_eq!(e2.kind, TarEntryKind::Regular);
     assert_eq!(e2.link_target, None);
     assert_eq!(e2.created, None);
@@ -10054,10 +8329,7 @@ fn list_directory_contents_functional_verification() {
     let docs_contents = opened.list_directory_contents("docs").unwrap();
     assert_eq!(docs_contents.len(), 2);
 
-    let file1 = docs_contents
-        .iter()
-        .find(|e| e.path == "docs/file1.txt")
-        .unwrap();
+    let file1 = docs_contents.iter().find(|e| e.path == "docs/file1.txt").unwrap();
     assert_eq!(file1.name, "file1.txt");
     assert_eq!(file1.kind, TarEntryKind::Regular);
 

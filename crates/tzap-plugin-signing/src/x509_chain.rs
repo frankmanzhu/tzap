@@ -53,9 +53,7 @@ impl fmt::Display for X509RootAuthError {
         match self {
             Self::Invalid(message) => formatter.write_str(message),
             Self::UnsupportedIdentity => formatter.write_str("unsupported signer identity type"),
-            Self::MissingTrustPolicy => {
-                formatter.write_str("X.509 verification requires trusted roots")
-            }
+            Self::MissingTrustPolicy => formatter.write_str("X.509 verification requires trusted roots"),
             Self::UntrustedChain(message) => formatter.write_str(message),
             Self::Crypto(err) => write!(formatter, "{err}"),
             Self::Chain(message) => formatter.write_str(message),
@@ -117,12 +115,7 @@ impl X509RootAuthSigner {
     ) -> Result<Self, X509RootAuthError> {
         let leaf_certificate_der = certificate_der_from_pem_or_der(leaf_certificate_bytes)?;
         let private_key = private_key_from_pem_or_der(private_key_bytes)?;
-        Self::new(
-            leaf_certificate_der,
-            private_key,
-            chain_certificate_der,
-            signed_at_unix_seconds,
-        )
+        Self::new(leaf_certificate_der, private_key, chain_certificate_der, signed_at_unix_seconds)
     }
 
     pub fn from_pem_or_der_with_signature_scheme(
@@ -149,13 +142,7 @@ impl X509RootAuthSigner {
         chain_certificate_der: Vec<Vec<u8>>,
         signed_at_unix_seconds: i64,
     ) -> Result<Self, X509RootAuthError> {
-        Self::new_with_signature_scheme(
-            leaf_certificate_der,
-            private_key,
-            chain_certificate_der,
-            signed_at_unix_seconds,
-            None,
-        )
+        Self::new_with_signature_scheme(leaf_certificate_der, private_key, chain_certificate_der, signed_at_unix_seconds, None)
     }
 
     pub fn new_with_signature_scheme(
@@ -169,14 +156,10 @@ impl X509RootAuthSigner {
         let leaf_certificate_der = leaf_certificate.to_der()?;
         let leaf_public_key = leaf_certificate.public_key()?;
         if !leaf_public_key.public_eq(&private_key) {
-            return Err(X509RootAuthError::Invalid(
-                "certificate public key does not match private key",
-            ));
+            return Err(X509RootAuthError::Invalid("certificate public key does not match private key"));
         }
         if matches!(private_key.id(), Id::ED25519 | Id::ED448) {
-            return Err(X509RootAuthError::Invalid(
-                "EdDSA X.509 keys are not supported by this RootAuth profile",
-            ));
+            return Err(X509RootAuthError::Invalid("EdDSA X.509 keys are not supported by this RootAuth profile"));
         }
         let sig_scheme = match signature_scheme {
             Some(scheme) => {
@@ -217,10 +200,7 @@ impl X509RootAuthSigner {
         })
     }
 
-    pub fn authenticator_value_for_request(
-        &self,
-        request: &RootAuthSigningRequest,
-    ) -> Result<Vec<u8>, X509RootAuthError> {
+    pub fn authenticator_value_for_request(&self, request: &RootAuthSigningRequest) -> Result<Vec<u8>, X509RootAuthError> {
         let chain_digest = chain_digest(&self.chain_certificate_der)?;
         let signing_input = signing_input_for_root_auth_spec_id(
             &request.root_auth_spec_id,
@@ -232,15 +212,9 @@ impl X509RootAuthSigner {
         );
         let mut signer = signer_for_scheme(self.sig_scheme, &self.private_key)?;
         signer.update(&signing_input)?;
-        let signature = normalize_signature_for_scheme(
-            self.sig_scheme,
-            &self.private_key,
-            signer.sign_to_vec()?,
-        )?;
+        let signature = normalize_signature_for_scheme(self.sig_scheme, &self.private_key, signer.sign_to_vec()?)?;
         if signature.len() > self.signature_capacity {
-            return Err(X509RootAuthError::Invalid(
-                "signature exceeded reserved authenticator capacity",
-            ));
+            return Err(X509RootAuthError::Invalid("signature exceeded reserved authenticator capacity"));
         }
 
         let mut out = Vec::with_capacity(self.authenticator_value_length()? as usize);
@@ -250,18 +224,12 @@ impl X509RootAuthSigner {
         out.extend_from_slice(&self.signed_at_unix_seconds.to_le_bytes());
         out.extend_from_slice(&chain_digest);
         out.extend_from_slice(&u32_len(signature.len(), "signature length")?.to_le_bytes());
-        out.extend_from_slice(
-            &u32_len(self.signature_capacity, "signature capacity")?.to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &u32_len(self.chain_certificate_der.len(), "chain count")?.to_le_bytes(),
-        );
+        out.extend_from_slice(&u32_len(self.signature_capacity, "signature capacity")?.to_le_bytes());
+        out.extend_from_slice(&u32_len(self.chain_certificate_der.len(), "chain count")?.to_le_bytes());
         out.extend_from_slice(&signature);
         out.resize(out.len() + (self.signature_capacity - signature.len()), 0);
         for cert_der in &self.chain_certificate_der {
-            out.extend_from_slice(
-                &u32_len(cert_der.len(), "chain certificate length")?.to_le_bytes(),
-            );
+            out.extend_from_slice(&u32_len(cert_der.len(), "chain certificate length")?.to_le_bytes());
             out.extend_from_slice(cert_der);
         }
         Ok(out)
@@ -292,14 +260,7 @@ pub fn signing_input(
     signed_at_unix_seconds: i64,
     chain_digest: &[u8; SHA256_LEN],
 ) -> [u8; 64] {
-    signing_input_for_root_auth_spec_id(
-        &ROOT_AUTH_SPEC_ID,
-        archive_uuid,
-        session_id,
-        archive_root,
-        signed_at_unix_seconds,
-        chain_digest,
-    )
+    signing_input_for_root_auth_spec_id(&ROOT_AUTH_SPEC_ID, archive_uuid, session_id, archive_root, signed_at_unix_seconds, chain_digest)
 }
 
 pub fn signing_input_for_root_auth_spec_id(
@@ -336,17 +297,12 @@ pub fn certificates_der_from_pem_or_der(bytes: &[u8]) -> Result<Vec<Vec<u8>>, X5
         if certs.is_empty() {
             return Err(X509RootAuthError::Invalid("certificate PEM file is empty"));
         }
-        return certs
-            .into_iter()
-            .map(|cert| cert.to_der().map_err(Into::into))
-            .collect();
+        return certs.into_iter().map(|cert| cert.to_der().map_err(Into::into)).collect();
     }
     Ok(vec![X509::from_der(bytes)?.to_der()?])
 }
 
-fn normalize_certificate_der_chain(
-    chain_certificate_der: Vec<Vec<u8>>,
-) -> Result<Vec<Vec<u8>>, X509RootAuthError> {
+fn normalize_certificate_der_chain(chain_certificate_der: Vec<Vec<u8>>) -> Result<Vec<Vec<u8>>, X509RootAuthError> {
     chain_certificate_der
         .into_iter()
         .map(|cert_der| Ok(X509::from_der(&cert_der)?.to_der()?))
@@ -367,13 +323,10 @@ pub fn verify_root_auth_footer(
         return Err(X509RootAuthError::UnsupportedIdentity);
     }
 
-    let leaf_certificate = X509::from_der(&footer.signer_identity_bytes)
-        .map_err(|_| X509RootAuthError::Invalid("invalid X.509 signer identity"))?;
+    let leaf_certificate = X509::from_der(&footer.signer_identity_bytes).map_err(|_| X509RootAuthError::Invalid("invalid X.509 signer identity"))?;
     let parsed = parse_authenticator_value(&footer.authenticator_value)?;
-    let root_auth_spec_id =
-        root_auth_spec_id_for_revision(footer.format_version, footer.volume_format_rev).map_err(
-            |_| X509RootAuthError::Invalid("unsupported RootAuthFooter root_auth_spec_id"),
-        )?;
+    let root_auth_spec_id = root_auth_spec_id_for_revision(footer.format_version, footer.volume_format_rev)
+        .map_err(|_| X509RootAuthError::Invalid("unsupported RootAuthFooter root_auth_spec_id"))?;
     let signing_input = signing_input_for_root_auth_spec_id(
         &root_auth_spec_id,
         &footer.archive_uuid,
@@ -389,9 +342,7 @@ pub fn verify_root_auth_footer(
     let mut verifier = verifier_for_scheme(parsed.sig_scheme, &leaf_public_key)?;
     verifier.update(&signing_input)?;
     if !verifier.verify(&parsed.signature)? {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 RootAuth signature failed",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 RootAuth signature failed"));
     }
     validate_leaf_key_usage(&footer.signer_identity_bytes)?;
     if trusted_roots_der.is_empty() && !use_system_roots {
@@ -415,11 +366,7 @@ pub fn verify_root_auth_footer(
         signed_at_unix_seconds: parsed.signed_at_unix_seconds,
         signature_scheme: signature_scheme_name(parsed.sig_scheme),
         chain_validation_time_unix_seconds,
-        trust_store_policy: trust_store_policy_label(
-            trusted_roots_der,
-            use_system_roots,
-            include_official_tzap_root,
-        ),
+        trust_store_policy: trust_store_policy_label(trusted_roots_der, use_system_roots, include_official_tzap_root),
         x509_time_policy: "verifier_current_time",
         chain_time_basis: "verifier_current_time",
         trusted_timestamp: false,
@@ -428,40 +375,24 @@ pub fn verify_root_auth_footer(
         eku_policy: "none",
         subject: name_to_string(leaf_certificate.subject_name()),
         issuer: name_to_string(leaf_certificate.issuer_name()),
-        serial_number_hex: leaf_certificate
-            .serial_number()
-            .to_bn()?
-            .to_hex_str()?
-            .to_string(),
+        serial_number_hex: leaf_certificate.serial_number().to_bn()?.to_hex_str()?.to_string(),
         certificate_sha256,
         verified_chain_subjects,
         trust_anchor_subject,
     })
 }
 
-fn validate_rsa_spki_signature_scheme(
-    sig_scheme: u16,
-    leaf_certificate_bytes: &[u8],
-) -> Result<(), X509RootAuthError> {
-    let (remaining, certificate) =
-        x509_parser::certificate::X509Certificate::from_der(leaf_certificate_bytes)
-            .map_err(|_| X509RootAuthError::Invalid("failed to parse leaf certificate"))?;
+fn validate_rsa_spki_signature_scheme(sig_scheme: u16, leaf_certificate_bytes: &[u8]) -> Result<(), X509RootAuthError> {
+    let (remaining, certificate) = x509_parser::certificate::X509Certificate::from_der(leaf_certificate_bytes)
+        .map_err(|_| X509RootAuthError::Invalid("failed to parse leaf certificate"))?;
     if !remaining.is_empty() {
-        return Err(X509RootAuthError::Invalid(
-            "leaf certificate has trailing data",
-        ));
+        return Err(X509RootAuthError::Invalid("leaf certificate has trailing data"));
     }
 
-    validate_rsa_spki_algorithm_for_scheme(
-        sig_scheme,
-        &certificate.tbs_certificate.subject_pki.algorithm,
-    )
+    validate_rsa_spki_algorithm_for_scheme(sig_scheme, &certificate.tbs_certificate.subject_pki.algorithm)
 }
 
-fn validate_rsa_spki_algorithm_for_scheme(
-    sig_scheme: u16,
-    spki_algorithm: &AlgorithmIdentifier<'_>,
-) -> Result<(), X509RootAuthError> {
+fn validate_rsa_spki_algorithm_for_scheme(sig_scheme: u16, spki_algorithm: &AlgorithmIdentifier<'_>) -> Result<(), X509RootAuthError> {
     let spki_oid = spki_algorithm.algorithm.to_id_string();
     match sig_scheme {
         SIG_SCHEME_RSA_PKCS1_SHA256 if spki_oid != OID_RSA_ENCRYPTION => {
@@ -474,21 +405,13 @@ fn validate_rsa_spki_algorithm_for_scheme(
                 return Ok(());
             }
             if spki_oid != OID_RSASSA_PSS {
-                return Err(X509RootAuthError::Invalid(
-                    "rsa-pss-sha256 requires RSA SubjectPublicKeyInfo",
-                ));
+                return Err(X509RootAuthError::Invalid("rsa-pss-sha256 requires RSA SubjectPublicKeyInfo"));
             }
 
-            let signature_algorithm =
-                SignatureAlgorithm::try_from(spki_algorithm).map_err(|_| {
-                    X509RootAuthError::Invalid(
-                        "unsupported leaf SubjectPublicKeyInfo RSA-PSS parameters",
-                    )
-                })?;
+            let signature_algorithm = SignatureAlgorithm::try_from(spki_algorithm)
+                .map_err(|_| X509RootAuthError::Invalid("unsupported leaf SubjectPublicKeyInfo RSA-PSS parameters"))?;
             let SignatureAlgorithm::RSASSA_PSS(params) = signature_algorithm else {
-                return Err(X509RootAuthError::Invalid(
-                    "rsa-pss-sha256 requires RSA-PSS SubjectPublicKeyInfo parameters",
-                ));
+                return Err(X509RootAuthError::Invalid("rsa-pss-sha256 requires RSA-PSS SubjectPublicKeyInfo parameters"));
             };
             validate_rsa_pss_params(params.as_ref())?;
         }
@@ -501,39 +424,27 @@ fn validate_rsa_spki_algorithm_for_scheme(
 fn validate_rsa_pss_params(params: &RsaSsaPssParams<'_>) -> Result<(), X509RootAuthError> {
     let hash_algorithm = params.hash_algorithm_oid();
     if hash_algorithm.to_id_string() != OID_SHA256 {
-        return Err(X509RootAuthError::Invalid(
-            "leaf RSA-PSS SubjectPublicKeyInfo must use SHA-256",
-        ));
+        return Err(X509RootAuthError::Invalid("leaf RSA-PSS SubjectPublicKeyInfo must use SHA-256"));
     }
 
-    let mask_generation = params.mask_gen_algorithm().map_err(|_| {
-        X509RootAuthError::Invalid(
-            "leaf RSA-PSS SubjectPublicKeyInfo is missing mask generation parameters",
-        )
-    })?;
+    let mask_generation = params
+        .mask_gen_algorithm()
+        .map_err(|_| X509RootAuthError::Invalid("leaf RSA-PSS SubjectPublicKeyInfo is missing mask generation parameters"))?;
     if mask_generation.mgf.to_id_string() != OID_MGF1 {
-        return Err(X509RootAuthError::Invalid(
-            "leaf RSA-PSS SubjectPublicKeyInfo must use MGF1",
-        ));
+        return Err(X509RootAuthError::Invalid("leaf RSA-PSS SubjectPublicKeyInfo must use MGF1"));
     }
     if mask_generation.hash.to_id_string() != OID_SHA256 {
-        return Err(X509RootAuthError::Invalid(
-            "leaf RSA-PSS SubjectPublicKeyInfo must use SHA-256 as MGF1 digest",
-        ));
+        return Err(X509RootAuthError::Invalid("leaf RSA-PSS SubjectPublicKeyInfo must use SHA-256 as MGF1 digest"));
     }
 
     let salt_length = params.salt_length();
     if salt_length != 32 {
-        return Err(X509RootAuthError::Invalid(
-            "leaf RSA-PSS SubjectPublicKeyInfo must use saltLength=32",
-        ));
+        return Err(X509RootAuthError::Invalid("leaf RSA-PSS SubjectPublicKeyInfo must use saltLength=32"));
     }
 
     let trailer = params.trailer_field();
     if trailer != 1 {
-        return Err(X509RootAuthError::Invalid(
-            "leaf RSA-PSS SubjectPublicKeyInfo must use trailerField=1",
-        ));
+        return Err(X509RootAuthError::Invalid("leaf RSA-PSS SubjectPublicKeyInfo must use trailerField=1"));
     }
 
     Ok(())
@@ -555,9 +466,7 @@ fn private_key_from_pem_or_der(bytes: &[u8]) -> Result<PKey<Private>, X509RootAu
     Ok(PKey::private_key_from_der(bytes)?)
 }
 
-fn signature_scheme_for_private_key(
-    private_key: &PKeyRef<Private>,
-) -> Result<u16, X509RootAuthError> {
+fn signature_scheme_for_private_key(private_key: &PKeyRef<Private>) -> Result<u16, X509RootAuthError> {
     match private_key.id() {
         Id::RSA => Ok(SIG_SCHEME_RSA_PKCS1_SHA256),
         Id::RSA_PSS => Err(X509RootAuthError::Invalid(
@@ -567,9 +476,7 @@ fn signature_scheme_for_private_key(
             validate_allowed_ec_curve(private_key)?;
             Ok(SIG_SCHEME_ECDSA_SHA256_DER)
         }
-        _ => Err(X509RootAuthError::Invalid(
-            "unsupported X.509 signature key type",
-        )),
+        _ => Err(X509RootAuthError::Invalid("unsupported X.509 signature key type")),
     }
 }
 
@@ -582,16 +489,8 @@ fn signature_scheme_name(sig_scheme: u16) -> &'static str {
     }
 }
 
-fn trust_store_policy_label(
-    trusted_roots_der: &[Vec<u8>],
-    use_system_roots: bool,
-    include_official_tzap_root: bool,
-) -> &'static str {
-    match (
-        trusted_roots_der.is_empty(),
-        use_system_roots,
-        include_official_tzap_root,
-    ) {
+fn trust_store_policy_label(trusted_roots_der: &[Vec<u8>], use_system_roots: bool, include_official_tzap_root: bool) -> &'static str {
+    match (trusted_roots_der.is_empty(), use_system_roots, include_official_tzap_root) {
         (false, false, true) => "official_tzap_root_plus_caller_roots",
         (false, true, true) => "official_tzap_root_plus_caller_roots_plus_openssl_default_roots",
         (true, false, true) => "official_tzap_root",
@@ -603,17 +502,11 @@ fn trust_store_policy_label(
     }
 }
 
-fn validate_private_key_matches_scheme(
-    sig_scheme: u16,
-    private_key: &PKeyRef<Private>,
-) -> Result<(), X509RootAuthError> {
+fn validate_private_key_matches_scheme(sig_scheme: u16, private_key: &PKeyRef<Private>) -> Result<(), X509RootAuthError> {
     validate_public_key_matches_scheme(sig_scheme, private_key)
 }
 
-fn signer_for_scheme<'a>(
-    sig_scheme: u16,
-    private_key: &'a PKeyRef<Private>,
-) -> Result<Signer<'a>, X509RootAuthError> {
+fn signer_for_scheme<'a>(sig_scheme: u16, private_key: &'a PKeyRef<Private>) -> Result<Signer<'a>, X509RootAuthError> {
     let mut signer = Signer::new(MessageDigest::sha256(), private_key)?;
     match sig_scheme {
         SIG_SCHEME_RSA_PKCS1_SHA256 => {
@@ -626,18 +519,13 @@ fn signer_for_scheme<'a>(
         }
         SIG_SCHEME_ECDSA_SHA256_DER => {}
         _ => {
-            return Err(X509RootAuthError::Invalid(
-                "unsupported X.509 signature scheme",
-            ));
+            return Err(X509RootAuthError::Invalid("unsupported X.509 signature scheme"));
         }
     }
     Ok(signer)
 }
 
-fn verifier_for_scheme<'a, T>(
-    sig_scheme: u16,
-    public_key: &'a PKeyRef<T>,
-) -> Result<Verifier<'a>, X509RootAuthError>
+fn verifier_for_scheme<'a, T>(sig_scheme: u16, public_key: &'a PKeyRef<T>) -> Result<Verifier<'a>, X509RootAuthError>
 where
     T: HasPublic,
 {
@@ -653,61 +541,45 @@ where
         }
         SIG_SCHEME_ECDSA_SHA256_DER => {}
         _ => {
-            return Err(X509RootAuthError::Invalid(
-                "unsupported X.509 signature scheme",
-            ));
+            return Err(X509RootAuthError::Invalid("unsupported X.509 signature scheme"));
         }
     }
     Ok(verifier)
 }
 
-fn validate_public_key_matches_scheme<T>(
-    sig_scheme: u16,
-    public_key: &PKeyRef<T>,
-) -> Result<(), X509RootAuthError>
+fn validate_public_key_matches_scheme<T>(sig_scheme: u16, public_key: &PKeyRef<T>) -> Result<(), X509RootAuthError>
 where
     T: HasParams,
 {
     match sig_scheme {
         SIG_SCHEME_RSA_PKCS1_SHA256 => {
             if public_key.id() != Id::RSA {
-                return Err(X509RootAuthError::Invalid(
-                    "X.509 signature scheme/key mismatch",
-                ));
+                return Err(X509RootAuthError::Invalid("X.509 signature scheme/key mismatch"));
             }
         }
         SIG_SCHEME_ECDSA_SHA256_DER => {
             if public_key.id() != Id::EC {
-                return Err(X509RootAuthError::Invalid(
-                    "X.509 signature scheme/key mismatch",
-                ));
+                return Err(X509RootAuthError::Invalid("X.509 signature scheme/key mismatch"));
             }
             validate_allowed_ec_curve(public_key)?;
         }
         SIG_SCHEME_RSA_PSS_SHA256 => {
             if !matches!(public_key.id(), Id::RSA | Id::RSA_PSS) {
-                return Err(X509RootAuthError::Invalid(
-                    "X.509 signature scheme/key mismatch",
-                ));
+                return Err(X509RootAuthError::Invalid("X.509 signature scheme/key mismatch"));
             }
         }
         _ => {
-            return Err(X509RootAuthError::Invalid(
-                "unsupported X.509 signature scheme",
-            ));
+            return Err(X509RootAuthError::Invalid("unsupported X.509 signature scheme"));
         }
     }
     Ok(())
 }
 
 fn validate_leaf_key_usage(leaf_certificate_der: &[u8]) -> Result<(), X509RootAuthError> {
-    let (remaining, parsed_certificate) =
-        x509_parser::certificate::X509Certificate::from_der(leaf_certificate_der)
-            .map_err(|_| X509RootAuthError::Invalid("failed to parse leaf certificate KeyUsage"))?;
+    let (remaining, parsed_certificate) = x509_parser::certificate::X509Certificate::from_der(leaf_certificate_der)
+        .map_err(|_| X509RootAuthError::Invalid("failed to parse leaf certificate KeyUsage"))?;
     if !remaining.is_empty() {
-        return Err(X509RootAuthError::Invalid(
-            "leaf certificate DER has trailing bytes",
-        ));
+        return Err(X509RootAuthError::Invalid("leaf certificate DER has trailing bytes"));
     }
     let Some(key_usage) = parsed_certificate
         .key_usage()
@@ -718,44 +590,30 @@ fn validate_leaf_key_usage(leaf_certificate_der: &[u8]) -> Result<(), X509RootAu
     if key_usage.value.digital_signature() || key_usage.value.non_repudiation() {
         return Ok(());
     }
-    Err(X509RootAuthError::Invalid(
-        "leaf certificate KeyUsage does not allow archive signing",
-    ))
+    Err(X509RootAuthError::Invalid("leaf certificate KeyUsage does not allow archive signing"))
 }
 
-fn validate_signature_for_scheme<T>(
-    sig_scheme: u16,
-    public_key: &PKeyRef<T>,
-    signature: &[u8],
-) -> Result<(), X509RootAuthError>
+fn validate_signature_for_scheme<T>(sig_scheme: u16, public_key: &PKeyRef<T>, signature: &[u8]) -> Result<(), X509RootAuthError>
 where
     T: HasParams,
 {
     match sig_scheme {
         SIG_SCHEME_RSA_PKCS1_SHA256 | SIG_SCHEME_RSA_PSS_SHA256 => {
             if signature.len() != public_key.size() {
-                return Err(X509RootAuthError::Invalid(
-                    "X.509 RSA signature length does not match modulus",
-                ));
+                return Err(X509RootAuthError::Invalid("X.509 RSA signature length does not match modulus"));
             }
         }
         SIG_SCHEME_ECDSA_SHA256_DER => {
             validate_ecdsa_der_low_s(public_key, signature)?;
         }
         _ => {
-            return Err(X509RootAuthError::Invalid(
-                "unsupported X.509 signature scheme",
-            ));
+            return Err(X509RootAuthError::Invalid("unsupported X.509 signature scheme"));
         }
     }
     Ok(())
 }
 
-fn normalize_signature_for_scheme(
-    sig_scheme: u16,
-    private_key: &PKeyRef<Private>,
-    signature: Vec<u8>,
-) -> Result<Vec<u8>, X509RootAuthError> {
+fn normalize_signature_for_scheme(sig_scheme: u16, private_key: &PKeyRef<Private>, signature: Vec<u8>) -> Result<Vec<u8>, X509RootAuthError> {
     if sig_scheme != SIG_SCHEME_ECDSA_SHA256_DER {
         return Ok(signature);
     }
@@ -770,46 +628,29 @@ fn normalize_signature_for_scheme(
     Ok(normalized.to_der()?)
 }
 
-fn validate_ecdsa_der_low_s<T>(
-    public_key: &PKeyRef<T>,
-    signature: &[u8],
-) -> Result<(), X509RootAuthError>
+fn validate_ecdsa_der_low_s<T>(public_key: &PKeyRef<T>, signature: &[u8]) -> Result<(), X509RootAuthError>
 where
     T: HasParams,
 {
-    let sig = EcdsaSig::from_der(signature)
-        .map_err(|_| X509RootAuthError::Invalid("X.509 ECDSA signature is not valid DER"))?;
+    let sig = EcdsaSig::from_der(signature).map_err(|_| X509RootAuthError::Invalid("X.509 ECDSA signature is not valid DER"))?;
     let canonical = sig
         .to_der()
         .map_err(|_| X509RootAuthError::Invalid("X.509 ECDSA signature is not canonical DER"))?;
     if canonical != signature {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 ECDSA signature is not canonical DER",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 ECDSA signature is not canonical DER"));
     }
     let (zero, order, half_order) = ec_curve_order(public_key)?;
     validate_positive_scalar(sig.r(), &zero, &order)?;
     validate_positive_scalar(sig.s(), &zero, &order)?;
     if sig.s().ucmp(&half_order) == Ordering::Greater {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 ECDSA signature is high-S",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 ECDSA signature is high-S"));
     }
     Ok(())
 }
 
-fn validate_positive_scalar(
-    value: &BigNumRef,
-    zero: &BigNumRef,
-    order: &BigNumRef,
-) -> Result<(), X509RootAuthError> {
-    if value.is_negative()
-        || value.ucmp(zero) != Ordering::Greater
-        || value.ucmp(order) != Ordering::Less
-    {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 ECDSA signature scalar is out of range",
-        ));
+fn validate_positive_scalar(value: &BigNumRef, zero: &BigNumRef, order: &BigNumRef) -> Result<(), X509RootAuthError> {
+    if value.is_negative() || value.ucmp(zero) != Ordering::Greater || value.ucmp(order) != Ordering::Less {
+        return Err(X509RootAuthError::Invalid("X.509 ECDSA signature scalar is out of range"));
     }
     Ok(())
 }
@@ -822,13 +663,8 @@ where
         .ec_key()?
         .group()
         .curve_name()
-        .ok_or(X509RootAuthError::Invalid(
-            "X.509 ECDSA key must use a named curve",
-        ))?;
-    if !matches!(
-        curve,
-        Nid::X9_62_PRIME256V1 | Nid::SECP384R1 | Nid::SECP521R1
-    ) {
+        .ok_or(X509RootAuthError::Invalid("X.509 ECDSA key must use a named curve"))?;
+    if !matches!(curve, Nid::X9_62_PRIME256V1 | Nid::SECP384R1 | Nid::SECP521R1) {
         return Err(X509RootAuthError::Invalid("unsupported X.509 ECDSA curve"));
     }
     Ok(())
@@ -850,28 +686,20 @@ where
 
 fn parse_authenticator_value(value: &[u8]) -> Result<ParsedAuthenticator, X509RootAuthError> {
     if value.len() < AUTHENTICATOR_FIXED_LEN {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 authenticator is too short",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 authenticator is too short"));
     }
     if &value[0..4] != MAGIC {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 authenticator magic mismatch",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 authenticator magic mismatch"));
     }
     if read_u16(value, 4)? != VERSION {
-        return Err(X509RootAuthError::Invalid(
-            "unsupported X.509 authenticator version",
-        ));
+        return Err(X509RootAuthError::Invalid("unsupported X.509 authenticator version"));
     }
     let sig_scheme = read_u16(value, 6)?;
     if !matches!(
         sig_scheme,
         SIG_SCHEME_RSA_PKCS1_SHA256 | SIG_SCHEME_ECDSA_SHA256_DER | SIG_SCHEME_RSA_PSS_SHA256
     ) {
-        return Err(X509RootAuthError::Invalid(
-            "unsupported X.509 signature scheme",
-        ));
+        return Err(X509RootAuthError::Invalid("unsupported X.509 signature scheme"));
     }
     let signed_at_unix_seconds = read_i64(value, 8)?;
     let mut parsed_chain_digest = [0u8; SHA256_LEN];
@@ -880,74 +708,50 @@ fn parse_authenticator_value(value: &[u8]) -> Result<ParsedAuthenticator, X509Ro
     let signature_capacity = read_u32(value, 52)? as usize;
     let chain_count = read_u32(value, 56)? as usize;
     if signature_len == 0 {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 signature length must be nonzero",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 signature length must be nonzero"));
     }
     if signature_len > signature_capacity {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 signature length exceeds capacity",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 signature length exceeds capacity"));
     }
     let mut offset = AUTHENTICATOR_FIXED_LEN
         .checked_add(signature_capacity)
-        .ok_or(X509RootAuthError::Invalid(
-            "X.509 authenticator length overflow",
-        ))?;
+        .ok_or(X509RootAuthError::Invalid("X.509 authenticator length overflow"))?;
     if value.len() < offset {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 authenticator signature is truncated",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 authenticator signature is truncated"));
     }
     if chain_count > value.len().saturating_sub(offset) / 4 {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 authenticator chain count exceeds payload",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 authenticator chain count exceeds payload"));
     }
     let signature_start = AUTHENTICATOR_FIXED_LEN;
     let signature_end = signature_start + signature_len;
     if value[signature_end..offset].iter().any(|byte| *byte != 0) {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 authenticator signature padding is non-zero",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 authenticator signature padding is non-zero"));
     }
     let signature = value[signature_start..signature_end].to_vec();
     let mut chain_certificate_der = Vec::new();
     for _ in 0..chain_count {
         let cert_len = read_u32(value, offset)? as usize;
-        offset = offset.checked_add(4).ok_or(X509RootAuthError::Invalid(
-            "X.509 authenticator length overflow",
-        ))?;
+        offset = offset.checked_add(4).ok_or(X509RootAuthError::Invalid("X.509 authenticator length overflow"))?;
         let cert_end = offset
             .checked_add(cert_len)
-            .ok_or(X509RootAuthError::Invalid(
-                "X.509 authenticator length overflow",
-            ))?;
+            .ok_or(X509RootAuthError::Invalid("X.509 authenticator length overflow"))?;
         if cert_end > value.len() {
-            return Err(X509RootAuthError::Invalid(
-                "X.509 authenticator certificate chain is truncated",
-            ));
+            return Err(X509RootAuthError::Invalid("X.509 authenticator certificate chain is truncated"));
         }
         let cert_der = value[offset..cert_end].to_vec();
-        let (remaining, _) = x509_parser::certificate::X509Certificate::from_der(&cert_der)
-            .map_err(|_| X509RootAuthError::Invalid("invalid X.509 chain certificate"))?;
+        let (remaining, _) =
+            x509_parser::certificate::X509Certificate::from_der(&cert_der).map_err(|_| X509RootAuthError::Invalid("invalid X.509 chain certificate"))?;
         if !remaining.is_empty() {
-            return Err(X509RootAuthError::Invalid(
-                "X.509 chain certificate DER has trailing bytes",
-            ));
+            return Err(X509RootAuthError::Invalid("X.509 chain certificate DER has trailing bytes"));
         }
         chain_certificate_der.push(cert_der);
         offset = cert_end;
     }
     if offset != value.len() {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 authenticator has trailing bytes",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 authenticator has trailing bytes"));
     }
     if chain_digest(&chain_certificate_der)? != parsed_chain_digest {
-        return Err(X509RootAuthError::Invalid(
-            "X.509 authenticator chain digest mismatch",
-        ));
+        return Err(X509RootAuthError::Invalid("X.509 authenticator chain digest mismatch"));
     }
     Ok(ParsedAuthenticator {
         sig_scheme,
@@ -988,10 +792,7 @@ fn verify_certificate_chain(
         let ok = ctx.verify_cert()?;
         if ok {
             if let Some(chain) = ctx.chain() {
-                subjects = chain
-                    .iter()
-                    .map(|cert| name_to_string(cert.subject_name()))
-                    .collect();
+                subjects = chain.iter().map(|cert| name_to_string(cert.subject_name())).collect();
             }
         } else {
             verify_error = Some(format!("{} at depth {}", ctx.error(), ctx.error_depth()));
@@ -1013,8 +814,7 @@ fn current_unix_seconds() -> Result<i64, X509RootAuthError> {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| X509RootAuthError::Invalid("system clock is before Unix epoch"))?;
-    i64::try_from(duration.as_secs())
-        .map_err(|_| X509RootAuthError::Invalid("system clock exceeds i64 Unix seconds"))
+    i64::try_from(duration.as_secs()).map_err(|_| X509RootAuthError::Invalid("system clock exceeds i64 Unix seconds"))
 }
 
 fn chain_digest(chain_certificate_der: &[Vec<u8>]) -> Result<[u8; SHA256_LEN], X509RootAuthError> {
@@ -1031,25 +831,16 @@ fn chain_digest(chain_certificate_der: &[Vec<u8>]) -> Result<[u8; SHA256_LEN], X
     Ok(out)
 }
 
-fn authenticator_value_len(
-    signature_capacity: usize,
-    chain_certificate_der: &[Vec<u8>],
-) -> Result<u32, X509RootAuthError> {
-    let chain_len = chain_certificate_der
-        .iter()
-        .try_fold(0usize, |acc, cert_der| {
-            acc.checked_add(4)
-                .and_then(|value| value.checked_add(cert_der.len()))
-                .ok_or(X509RootAuthError::Invalid(
-                    "X.509 authenticator length overflow",
-                ))
-        })?;
+fn authenticator_value_len(signature_capacity: usize, chain_certificate_der: &[Vec<u8>]) -> Result<u32, X509RootAuthError> {
+    let chain_len = chain_certificate_der.iter().try_fold(0usize, |acc, cert_der| {
+        acc.checked_add(4)
+            .and_then(|value| value.checked_add(cert_der.len()))
+            .ok_or(X509RootAuthError::Invalid("X.509 authenticator length overflow"))
+    })?;
     let total = AUTHENTICATOR_FIXED_LEN
         .checked_add(signature_capacity)
         .and_then(|value| value.checked_add(chain_len))
-        .ok_or(X509RootAuthError::Invalid(
-            "X.509 authenticator length overflow",
-        ))?;
+        .ok_or(X509RootAuthError::Invalid("X.509 authenticator length overflow"))?;
     u32_len(total, "authenticator value length")
 }
 
@@ -1057,10 +848,7 @@ fn name_to_string(name: &X509NameRef) -> String {
     let mut parts = Vec::new();
     for entry in name.entries() {
         let key = entry.object().nid().short_name().unwrap_or("OID");
-        let value = entry
-            .data()
-            .to_string()
-            .unwrap_or_else(|_| encode_hex(entry.data().as_slice()));
+        let value = entry.data().to_string().unwrap_or_else(|_| encode_hex(entry.data().as_slice()));
         parts.push(format!("{key}={value}"));
     }
     parts.join(", ")
@@ -1069,27 +857,21 @@ fn name_to_string(name: &X509NameRef) -> String {
 fn read_u16(value: &[u8], offset: usize) -> Result<u16, X509RootAuthError> {
     let bytes = value
         .get(offset..offset + 2)
-        .ok_or(X509RootAuthError::Invalid(
-            "X.509 authenticator is truncated",
-        ))?;
+        .ok_or(X509RootAuthError::Invalid("X.509 authenticator is truncated"))?;
     Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
 }
 
 fn read_u32(value: &[u8], offset: usize) -> Result<u32, X509RootAuthError> {
     let bytes = value
         .get(offset..offset + 4)
-        .ok_or(X509RootAuthError::Invalid(
-            "X.509 authenticator is truncated",
-        ))?;
+        .ok_or(X509RootAuthError::Invalid("X.509 authenticator is truncated"))?;
     Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 
 fn read_i64(value: &[u8], offset: usize) -> Result<i64, X509RootAuthError> {
     let bytes = value
         .get(offset..offset + 8)
-        .ok_or(X509RootAuthError::Invalid(
-            "X.509 authenticator is truncated",
-        ))?;
+        .ok_or(X509RootAuthError::Invalid("X.509 authenticator is truncated"))?;
     Ok(i64::from_le_bytes([
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
     ]))
@@ -1100,9 +882,7 @@ fn u32_len(len: usize, field: &'static str) -> Result<u32, X509RootAuthError> {
         "signature length" => X509RootAuthError::Invalid("X.509 signature length overflow"),
         "signature capacity" => X509RootAuthError::Invalid("X.509 signature capacity overflow"),
         "chain count" => X509RootAuthError::Invalid("X.509 chain count overflow"),
-        "chain certificate length" => {
-            X509RootAuthError::Invalid("X.509 chain certificate length overflow")
-        }
+        "chain certificate length" => X509RootAuthError::Invalid("X.509 chain certificate length overflow"),
         _ => X509RootAuthError::Invalid("X.509 authenticator length overflow"),
     })
 }
@@ -1128,17 +908,9 @@ mod tests {
     use openssl::x509::extension::{BasicConstraints, KeyUsage};
     use openssl::x509::{X509NameBuilder, X509Ref};
     use std::time::{SystemTime, UNIX_EPOCH};
-    use tzap_core::format::{
-        FORMAT_VERSION, ROOT_AUTH_SPEC_ID, ROOT_AUTH_SPEC_ID_V45, VOLUME_FORMAT_REV,
-        VOLUME_FORMAT_REV_45,
-    };
+    use tzap_core::format::{FORMAT_VERSION, ROOT_AUTH_SPEC_ID, ROOT_AUTH_SPEC_ID_V45, VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45};
 
-    fn signed_footer_for_request(
-        signer: &X509RootAuthSigner,
-        leaf_cert: &X509,
-        request: &RootAuthSigningRequest,
-        volume_format_rev: u16,
-    ) -> RootAuthFooterV1 {
+    fn signed_footer_for_request(signer: &X509RootAuthSigner, leaf_cert: &X509, request: &RootAuthSigningRequest, volume_format_rev: u16) -> RootAuthFooterV1 {
         RootAuthFooterV1 {
             archive_uuid: request.archive_uuid,
             session_id: request.session_id,
@@ -1162,15 +934,9 @@ mod tests {
     #[test]
     fn x509_authenticator_round_trips_with_trusted_root() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
         let signed_at = now_unix_seconds();
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at)
-                .unwrap();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
@@ -1197,14 +963,7 @@ mod tests {
             footer_crc32c: 0,
         };
 
-        let report = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap();
+        let report = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap();
 
         assert_eq!(report.signed_at_unix_seconds, signed_at);
         assert_eq!(report.signature_scheme, "rsa-pkcs1-sha256");
@@ -1216,45 +975,17 @@ mod tests {
         assert!(report.chain_validation_time_unix_seconds >= signed_at - 5);
         assert!(report.subject.contains("CN=Acme Release Signing"));
         assert!(report.issuer.contains("CN=Acme Test Root CA"));
-        assert_eq!(
-            report.trust_anchor_subject.as_deref(),
-            Some("CN=Acme Test Root CA")
-        );
+        assert_eq!(report.trust_anchor_subject.as_deref(), Some("CN=Acme Test Root CA"));
 
-        let combined_report = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            true,
-            false,
-        )
-        .unwrap();
-        assert_eq!(
-            combined_report.trust_store_policy,
-            "caller_roots_plus_openssl_default_roots"
-        );
+        let combined_report = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], true, false).unwrap();
+        assert_eq!(combined_report.trust_store_policy, "caller_roots_plus_openssl_default_roots");
 
-        let official_report = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            true,
-        )
-        .unwrap();
-        assert_eq!(
-            official_report.trust_store_policy,
-            "official_tzap_root_plus_caller_roots"
-        );
+        let official_report = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, true).unwrap();
+        assert_eq!(official_report.trust_store_policy, "official_tzap_root_plus_caller_roots");
     }
 
-    fn verify_error_message(
-        footer: &RootAuthFooterV1,
-        archive_root: &[u8; 32],
-        trusted_roots_der: &[Vec<u8>],
-    ) -> String {
-        let err = verify_root_auth_footer(footer, archive_root, trusted_roots_der, false, false)
-            .unwrap_err();
+    fn verify_error_message(footer: &RootAuthFooterV1, archive_root: &[u8; 32], trusted_roots_der: &[Vec<u8>]) -> String {
+        let err = verify_root_auth_footer(footer, archive_root, trusted_roots_der, false, false).unwrap_err();
         match err {
             X509RootAuthError::Invalid(message) => message.to_string(),
             X509RootAuthError::UntrustedChain(message) => message,
@@ -1266,13 +997,8 @@ mod tests {
     fn authenticator_negative_vectors_all_rejected() {
         // §14.4 strict negative vectors on a valid signed footer.
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
@@ -1288,14 +1014,10 @@ mod tests {
         // Flipped archive_root: footer signed for root A, verified with root B.
         let mut wrong_root = request.archive_root;
         wrong_root[0] ^= 0x01;
-        assert_eq!(
-            verify_error_message(&footer, &wrong_root, &roots),
-            "X.509 RootAuth signature failed"
-        );
+        assert_eq!(verify_error_message(&footer, &wrong_root, &roots), "X.509 RootAuth signature failed");
 
         // Wrong cert key: identity cert does not hold the signing key.
-        let (other_cert, _) =
-            test_leaf_cert("Other Signing", root_cert.as_ref(), root_key.as_ref());
+        let (other_cert, _) = test_leaf_cert("Other Signing", root_cert.as_ref(), root_key.as_ref());
         let mut wrong_key_footer = footer.clone();
         wrong_key_footer.signer_identity_bytes = other_cert.to_der().unwrap();
         assert_eq!(
@@ -1306,17 +1028,9 @@ mod tests {
         // Non-zero signature padding byte: ECDSA DER signatures are shorter than
         // the reserved capacity, leaving a padding region between signature end
         // and the chain section.
-        let (ec_leaf_cert, ec_leaf_key) = test_ec_leaf_cert(
-            "Acme EC Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-            Nid::X9_62_PRIME256V1,
-        );
-        let ec_signer =
-            X509RootAuthSigner::new(ec_leaf_cert.to_der().unwrap(), ec_leaf_key, Vec::new(), 1)
-                .unwrap();
-        let ec_footer =
-            signed_footer_for_request(&ec_signer, &ec_leaf_cert, &request, VOLUME_FORMAT_REV);
+        let (ec_leaf_cert, ec_leaf_key) = test_ec_leaf_cert("Acme EC Release Signing", root_cert.as_ref(), root_key.as_ref(), Nid::X9_62_PRIME256V1);
+        let ec_signer = X509RootAuthSigner::new(ec_leaf_cert.to_der().unwrap(), ec_leaf_key, Vec::new(), 1).unwrap();
+        let ec_footer = signed_footer_for_request(&ec_signer, &ec_leaf_cert, &request, VOLUME_FORMAT_REV);
         let signature_len = read_u32(&ec_footer.authenticator_value, 48).unwrap() as usize;
         let signature_capacity = read_u32(&ec_footer.authenticator_value, 52).unwrap() as usize;
         assert!(signature_capacity > signature_len);
@@ -1349,30 +1063,19 @@ mod tests {
         // §14.8: declaring an ECDSA scheme while the identity cert holds an RSA
         // key must be rejected as Invalid.
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
             session_id: [2; 16],
             archive_root: [3; 32],
         };
-        let mut footer =
-            signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV);
-        footer.authenticator_value[6..8]
-            .copy_from_slice(&SIG_SCHEME_ECDSA_SHA256_DER.to_le_bytes());
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV);
+        footer.authenticator_value[6..8].copy_from_slice(&SIG_SCHEME_ECDSA_SHA256_DER.to_le_bytes());
         let roots = vec![root_cert.to_der().unwrap()];
-        let err = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false)
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            X509RootAuthError::Invalid("X.509 signature scheme/key mismatch")
-        ));
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false).unwrap_err();
+        assert!(matches!(err, X509RootAuthError::Invalid("X.509 signature scheme/key mismatch")));
     }
 
     #[test]
@@ -1380,13 +1083,8 @@ mod tests {
         // §14.9: chain validation uses the verifier's current time, so a leaf
         // that has already expired fails even when signed_at is in the past.
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_expired_leaf_cert(
-            "Acme Expired Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
+        let (leaf_cert, leaf_key) = test_expired_leaf_cert("Acme Expired Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
@@ -1395,11 +1093,8 @@ mod tests {
         };
         let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV);
         let roots = vec![root_cert.to_der().unwrap()];
-        let err = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false)
-            .unwrap_err();
-        assert!(
-            matches!(err, X509RootAuthError::UntrustedChain(message) if message.contains("certificate has expired"))
-        );
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false).unwrap_err();
+        assert!(matches!(err, X509RootAuthError::UntrustedChain(message) if message.contains("certificate has expired")));
     }
 
     #[test]
@@ -1407,13 +1102,8 @@ mod tests {
         // §14.10: a leaf with no KeyUsage extension at all is accepted, and the
         // report pins the minimal policies.
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert_no_key_usage(
-            "Acme No Usage Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
+        let (leaf_cert, leaf_key) = test_leaf_cert_no_key_usage("Acme No Usage Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
@@ -1422,8 +1112,7 @@ mod tests {
         };
         let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV);
         let roots = vec![root_cert.to_der().unwrap()];
-        let report =
-            verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false).unwrap();
+        let report = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false).unwrap();
         assert_eq!(report.key_usage_policy, "archive_signature_minimal");
         assert_eq!(report.eku_policy, "none");
     }
@@ -1431,31 +1120,18 @@ mod tests {
     #[test]
     fn unsupported_identity_is_distinct_from_invalid() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
             archive_uuid: [1; 16],
             session_id: [2; 16],
             archive_root: [3; 32],
         };
-        let mut footer =
-            signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
         footer.signer_identity_type = 0xFFFF;
 
-        let err = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::UnsupportedIdentity));
     }
@@ -1463,13 +1139,8 @@ mod tests {
     #[test]
     fn missing_trust_policy_is_distinct_after_footer_validation() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
             archive_uuid: [1; 16],
@@ -1478,8 +1149,7 @@ mod tests {
         };
         let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
 
-        let err =
-            verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::MissingTrustPolicy));
     }
@@ -1487,30 +1157,20 @@ mod tests {
     #[test]
     fn zero_signature_length_is_invalid_before_missing_trust_policy() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
             archive_uuid: [1; 16],
             session_id: [2; 16],
             archive_root: [3; 32],
         };
-        let mut footer =
-            signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
-        let signature_capacity =
-            u32::from_le_bytes(footer.authenticator_value[52..56].try_into().unwrap()) as usize;
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let signature_capacity = u32::from_le_bytes(footer.authenticator_value[52..56].try_into().unwrap()) as usize;
         footer.authenticator_value[48..52].copy_from_slice(&0u32.to_le_bytes());
-        footer.authenticator_value
-            [AUTHENTICATOR_FIXED_LEN..AUTHENTICATOR_FIXED_LEN + signature_capacity]
-            .fill(0);
+        footer.authenticator_value[AUTHENTICATOR_FIXED_LEN..AUTHENTICATOR_FIXED_LEN + signature_capacity].fill(0);
 
-        let err =
-            verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::Invalid(_)));
         assert!(err.to_string().contains("signature length"));
@@ -1519,28 +1179,16 @@ mod tests {
     #[test]
     fn malformed_chain_certificate_is_invalid_before_missing_trust_policy() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer = X509RootAuthSigner::new(
-            leaf_cert.to_der().unwrap(),
-            leaf_key,
-            vec![root_cert.to_der().unwrap()],
-            1,
-        )
-        .unwrap();
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, vec![root_cert.to_der().unwrap()], 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
             archive_uuid: [1; 16],
             session_id: [2; 16],
             archive_root: [3; 32],
         };
-        let mut footer =
-            signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
-        let signature_capacity =
-            u32::from_le_bytes(footer.authenticator_value[52..56].try_into().unwrap()) as usize;
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let signature_capacity = u32::from_le_bytes(footer.authenticator_value[52..56].try_into().unwrap()) as usize;
         let cert_len_offset = AUTHENTICATOR_FIXED_LEN + signature_capacity;
         let bad_cert = b"not a DER certificate".to_vec();
         let mut value = footer.authenticator_value[..cert_len_offset].to_vec();
@@ -1550,8 +1198,7 @@ mod tests {
         value[16..48].copy_from_slice(&digest);
         footer.authenticator_value = value;
 
-        let err =
-            verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::Invalid(_)));
         assert!(err.to_string().contains("chain certificate"));
@@ -1560,25 +1207,18 @@ mod tests {
     #[test]
     fn invalid_footer_precedes_missing_trust_policy() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
             archive_uuid: [1; 16],
             session_id: [2; 16],
             archive_root: [3; 32],
         };
-        let mut footer =
-            signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
         footer.authenticator_value[0] ^= 0xFF;
 
-        let err =
-            verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::Invalid(_)));
     }
@@ -1586,15 +1226,9 @@ mod tests {
     #[test]
     fn chain_validation_uses_verifier_current_time_not_signer_claimed_time() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
         let signed_at = now_unix_seconds() + 10 * 365 * 24 * 60 * 60;
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at)
-                .unwrap();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
@@ -1620,14 +1254,7 @@ mod tests {
             footer_crc32c: 0,
         };
 
-        let report = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap();
+        let report = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap();
 
         assert_eq!(report.signed_at_unix_seconds, signed_at);
         assert!(report.chain_validation_time_unix_seconds < signed_at);
@@ -1643,9 +1270,7 @@ mod tests {
             LeafKeyUsage::KeyEnciphermentOnly,
         );
         let signed_at = now_unix_seconds();
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at)
-                .unwrap();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
@@ -1671,40 +1296,18 @@ mod tests {
             footer_crc32c: 0,
         };
 
-        let err = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap_err();
 
         assert!(err.to_string().contains("KeyUsage"));
     }
 
     #[test]
     fn ecdsa_authenticator_round_trips_on_all_registered_curves() {
-        for (curve, label) in [
-            (Nid::X9_62_PRIME256V1, "P-256"),
-            (Nid::SECP384R1, "P-384"),
-            (Nid::SECP521R1, "P-521"),
-        ] {
+        for (curve, label) in [(Nid::X9_62_PRIME256V1, "P-256"), (Nid::SECP384R1, "P-384"), (Nid::SECP521R1, "P-521")] {
             let (root_cert, root_key) = test_ca_cert(&format!("{label} Test Root CA"));
-            let (leaf_cert, leaf_key) = test_ec_leaf_cert(
-                &format!("{label} EC Release Signing"),
-                root_cert.as_ref(),
-                root_key.as_ref(),
-                curve,
-            );
+            let (leaf_cert, leaf_key) = test_ec_leaf_cert(&format!("{label} EC Release Signing"), root_cert.as_ref(), root_key.as_ref(), curve);
             let signed_at = now_unix_seconds();
-            let signer = X509RootAuthSigner::new(
-                leaf_cert.to_der().unwrap(),
-                leaf_key,
-                Vec::new(),
-                signed_at,
-            )
-            .unwrap();
+            let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
             let request = RootAuthSigningRequest {
                 root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
                 archive_uuid: [1; 16],
@@ -1712,10 +1315,7 @@ mod tests {
                 archive_root: [3; 32],
             };
             let value = signer.authenticator_value_for_request(&request).unwrap();
-            assert_eq!(
-                u16::from_le_bytes([value[6], value[7]]),
-                SIG_SCHEME_ECDSA_SHA256_DER
-            );
+            assert_eq!(u16::from_le_bytes([value[6], value[7]]), SIG_SCHEME_ECDSA_SHA256_DER);
             let footer = RootAuthFooterV1 {
                 archive_uuid: request.archive_uuid,
                 session_id: request.session_id,
@@ -1735,51 +1335,29 @@ mod tests {
                 footer_crc32c: 0,
             };
 
-            verify_root_auth_footer(
-                &footer,
-                &request.archive_root,
-                &[root_cert.to_der().unwrap()],
-                false,
-                false,
-            )
-            .unwrap();
+            verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap();
         }
     }
 
     #[test]
     fn ecdsa_verifier_rejects_high_s_signature_variant() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_ec_leaf_cert(
-            "Acme EC Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-            Nid::SECP384R1,
-        );
+        let (leaf_cert, leaf_key) = test_ec_leaf_cert("Acme EC Release Signing", root_cert.as_ref(), root_key.as_ref(), Nid::SECP384R1);
         let signed_at = now_unix_seconds();
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at)
-                .unwrap();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
             archive_uuid: [1; 16],
             session_id: [2; 16],
             archive_root: [3; 32],
         };
-        let mut footer =
-            signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
         let leaf_public_key = leaf_cert.public_key().unwrap();
         let signature = x509_signature_bytes(&footer.authenticator_value);
         let high_s = high_s_ecdsa_signature(signature, &leaf_public_key);
         replace_x509_signature(&mut footer.authenticator_value, &high_s);
 
-        let err = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap_err();
 
         assert!(err.to_string().contains("high-S"));
     }
@@ -1787,16 +1365,9 @@ mod tests {
     #[test]
     fn ecdsa_verifier_rejects_noncanonical_and_trailing_der_signatures() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_ec_leaf_cert(
-            "Acme EC Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-            Nid::SECP384R1,
-        );
+        let (leaf_cert, leaf_key) = test_ec_leaf_cert("Acme EC Release Signing", root_cert.as_ref(), root_key.as_ref(), Nid::SECP384R1);
         let signed_at = now_unix_seconds();
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at)
-                .unwrap();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
             archive_uuid: [1; 16],
@@ -1806,43 +1377,23 @@ mod tests {
         let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
 
         let mut nonminimal_footer = footer.clone();
-        let nonminimal = nonminimal_ecdsa_integer_encoding(x509_signature_bytes(
-            &nonminimal_footer.authenticator_value,
-        ));
+        let nonminimal = nonminimal_ecdsa_integer_encoding(x509_signature_bytes(&nonminimal_footer.authenticator_value));
         replace_x509_signature(&mut nonminimal_footer.authenticator_value, &nonminimal);
-        let err = verify_root_auth_footer(
-            &nonminimal_footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        let err = verify_root_auth_footer(&nonminimal_footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap_err();
         assert!(err.to_string().contains("canonical DER") || err.to_string().contains("valid DER"));
 
         let mut trailing_footer = footer;
         let mut trailing = x509_signature_bytes(&trailing_footer.authenticator_value).to_vec();
         trailing.push(0);
         replace_x509_signature(&mut trailing_footer.authenticator_value, &trailing);
-        let err = verify_root_auth_footer(
-            &trailing_footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        let err = verify_root_auth_footer(&trailing_footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap_err();
         assert!(err.to_string().contains("canonical DER") || err.to_string().contains("valid DER"));
     }
 
     #[test]
     fn signer_honors_explicit_rsa_pss_scheme() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme RSA PSS Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme RSA PSS Release Signing", root_cert.as_ref(), root_key.as_ref());
         let signed_at = now_unix_seconds();
         let signer = X509RootAuthSigner::new_with_signature_scheme(
             leaf_cert.to_der().unwrap(),
@@ -1859,10 +1410,7 @@ mod tests {
             archive_root: [3; 32],
         };
         let value = signer.authenticator_value_for_request(&request).unwrap();
-        assert_eq!(
-            u16::from_le_bytes([value[6], value[7]]),
-            SIG_SCHEME_RSA_PSS_SHA256
-        );
+        assert_eq!(u16::from_le_bytes([value[6], value[7]]), SIG_SCHEME_RSA_PSS_SHA256);
         let footer = RootAuthFooterV1 {
             archive_uuid: request.archive_uuid,
             session_id: request.session_id,
@@ -1882,14 +1430,7 @@ mod tests {
             footer_crc32c: 0,
         };
 
-        let report = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap();
+        let report = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap();
 
         assert_eq!(report.signature_scheme, "rsa-pss-sha256");
     }
@@ -1914,14 +1455,7 @@ mod tests {
         };
         let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
 
-        let report = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[leaf_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap();
+        let report = verify_root_auth_footer(&footer, &request.archive_root, &[leaf_cert.to_der().unwrap()], false, false).unwrap();
 
         assert_eq!(report.signature_scheme, "rsa-pss-sha256");
     }
@@ -1943,22 +1477,11 @@ mod tests {
             session_id: [2; 16],
             archive_root: [3; 32],
         };
-        let mut footer =
-            signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
+        let mut footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV_45);
 
-        footer.authenticator_value[6..8]
-            .copy_from_slice(&SIG_SCHEME_RSA_PKCS1_SHA256.to_le_bytes());
-        let err = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[leaf_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("requires unconstrained rsaEncryption"));
+        footer.authenticator_value[6..8].copy_from_slice(&SIG_SCHEME_RSA_PKCS1_SHA256.to_le_bytes());
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[leaf_cert.to_der().unwrap()], false, false).unwrap_err();
+        assert!(err.to_string().contains("requires unconstrained rsaEncryption"));
 
         footer.authenticator_value[6..8].copy_from_slice(&SIG_SCHEME_RSA_PSS_SHA256.to_le_bytes());
         footer.signer_identity_bytes = replace_nth_subsequence(
@@ -1968,14 +1491,7 @@ mod tests {
             1,
         )
         .unwrap();
-        let err = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[leaf_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[leaf_cert.to_der().unwrap()], false, false).unwrap_err();
         assert!(err.to_string().contains("saltLength=32"));
     }
 
@@ -2006,13 +1522,9 @@ mod tests {
     fn rsa_pkcs1_scheme_rejects_pss_constrained_spki() {
         let pss_algorithm = parse_algorithm_identifier(&RSA_PSS_SHA256_SALT32_ALGORITHM);
 
-        let err =
-            validate_rsa_spki_algorithm_for_scheme(SIG_SCHEME_RSA_PKCS1_SHA256, &pss_algorithm)
-                .unwrap_err();
+        let err = validate_rsa_spki_algorithm_for_scheme(SIG_SCHEME_RSA_PKCS1_SHA256, &pss_algorithm).unwrap_err();
 
-        assert!(err
-            .to_string()
-            .contains("requires unconstrained rsaEncryption"));
+        assert!(err.to_string().contains("requires unconstrained rsaEncryption"));
     }
 
     #[test]
@@ -2033,8 +1545,7 @@ mod tests {
     fn rsa_pss_scheme_rejects_nonstandard_pss_spki_parameters() {
         let pss_algorithm = parse_algorithm_identifier(&RSA_PSS_SHA256_SALT20_ALGORITHM);
 
-        let err = validate_rsa_spki_algorithm_for_scheme(SIG_SCHEME_RSA_PSS_SHA256, &pss_algorithm)
-            .unwrap_err();
+        let err = validate_rsa_spki_algorithm_for_scheme(SIG_SCHEME_RSA_PSS_SHA256, &pss_algorithm).unwrap_err();
 
         assert!(err.to_string().contains("saltLength=32"));
     }
@@ -2042,15 +1553,9 @@ mod tests {
     #[test]
     fn signer_rejects_unsupported_ec_curve() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_ec_leaf_cert(
-            "Acme Unsupported EC Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-            Nid::SECP256K1,
-        );
+        let (leaf_cert, leaf_key) = test_ec_leaf_cert("Acme Unsupported EC Signing", root_cert.as_ref(), root_key.as_ref(), Nid::SECP256K1);
 
-        let err = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1)
-            .unwrap_err();
+        let err = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), 1).unwrap_err();
 
         assert!(err.to_string().contains("unsupported X.509 ECDSA curve"));
     }
@@ -2058,15 +1563,9 @@ mod tests {
     #[test]
     fn v45_footer_uses_core_archive_root_and_rejects_wrong_spec_id() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
         let signed_at = now_unix_seconds();
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at)
-                .unwrap();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID_V45,
             archive_uuid: [1; 16],
@@ -2092,14 +1591,7 @@ mod tests {
             footer_crc32c: 0,
         };
 
-        verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap();
+        verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap();
 
         let mut revision_44_spec_id = [0u8; 24];
         revision_44_spec_id[..20].copy_from_slice(b"tzap-root-auth-v0.44");
@@ -2108,17 +1600,8 @@ mod tests {
             ..request
         };
         let mut wrong_spec_footer = footer;
-        wrong_spec_footer.authenticator_value = signer
-            .authenticator_value_for_request(&wrong_spec_request)
-            .unwrap();
-        let err = verify_root_auth_footer(
-            &wrong_spec_footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        wrong_spec_footer.authenticator_value = signer.authenticator_value_for_request(&wrong_spec_request).unwrap();
+        let err = verify_root_auth_footer(&wrong_spec_footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap_err();
 
         assert!(err.to_string().contains("signature"));
     }
@@ -2127,15 +1610,9 @@ mod tests {
     fn rejects_wrong_trusted_root() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
         let (wrong_root_cert, _) = test_ca_cert("Wrong Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
         let signed_at = now_unix_seconds();
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at)
-                .unwrap();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
@@ -2161,14 +1638,7 @@ mod tests {
             footer_crc32c: 0,
         };
 
-        let err = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[wrong_root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[wrong_root_cert.to_der().unwrap()], false, false).unwrap_err();
 
         assert!(matches!(err, X509RootAuthError::UntrustedChain(_)));
     }
@@ -2176,11 +1646,7 @@ mod tests {
     #[test]
     fn signer_rejects_invalid_chain_certificate_der() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
         let err = X509RootAuthSigner::new(
             leaf_cert.to_der().unwrap(),
             leaf_key,
@@ -2195,15 +1661,9 @@ mod tests {
     #[test]
     fn rejects_impossible_chain_count_without_large_allocation() {
         let (root_cert, root_key) = test_ca_cert("Acme Test Root CA");
-        let (leaf_cert, leaf_key) = test_leaf_cert(
-            "Acme Release Signing",
-            root_cert.as_ref(),
-            root_key.as_ref(),
-        );
+        let (leaf_cert, leaf_key) = test_leaf_cert("Acme Release Signing", root_cert.as_ref(), root_key.as_ref());
         let signed_at = now_unix_seconds();
-        let signer =
-            X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at)
-                .unwrap();
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
         let request = RootAuthSigningRequest {
             root_auth_spec_id: ROOT_AUTH_SPEC_ID,
             archive_uuid: [1; 16],
@@ -2231,34 +1691,21 @@ mod tests {
             footer_crc32c: 0,
         };
 
-        let err = verify_root_auth_footer(
-            &footer,
-            &request.archive_root,
-            &[root_cert.to_der().unwrap()],
-            false,
-            false,
-        )
-        .unwrap_err();
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &[root_cert.to_der().unwrap()], false, false).unwrap_err();
 
         assert!(err.to_string().contains("chain count"));
     }
 
-    const RSA_ENCRYPTION_ALGORITHM: [u8; 15] = [
-        0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01, 0x05, 0x00,
-    ];
+    const RSA_ENCRYPTION_ALGORITHM: [u8; 15] = [0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01, 0x05, 0x00];
     const RSA_PSS_SHA256_SALT32_ALGORITHM: [u8; 67] = [
-        0x30, 0x41, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x0A, 0x30, 0x34,
-        0xA0, 0x0F, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
-        0x05, 0x00, 0xA1, 0x1C, 0x30, 0x1A, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01,
-        0x01, 0x08, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
-        0x05, 0x00, 0xA2, 0x03, 0x02, 0x01, 0x20,
+        0x30, 0x41, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x0A, 0x30, 0x34, 0xA0, 0x0F, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01,
+        0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0xA1, 0x1C, 0x30, 0x1A, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x08, 0x30, 0x0D, 0x06,
+        0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0xA2, 0x03, 0x02, 0x01, 0x20,
     ];
     const RSA_PSS_SHA256_SALT20_ALGORITHM: [u8; 67] = [
-        0x30, 0x41, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x0A, 0x30, 0x34,
-        0xA0, 0x0F, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
-        0x05, 0x00, 0xA1, 0x1C, 0x30, 0x1A, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01,
-        0x01, 0x08, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
-        0x05, 0x00, 0xA2, 0x03, 0x02, 0x01, 0x14,
+        0x30, 0x41, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x0A, 0x30, 0x34, 0xA0, 0x0F, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01,
+        0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0xA1, 0x1C, 0x30, 0x1A, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x08, 0x30, 0x0D, 0x06,
+        0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0xA2, 0x03, 0x02, 0x01, 0x14,
     ];
 
     fn parse_algorithm_identifier(bytes: &[u8]) -> AlgorithmIdentifier<'_> {
@@ -2268,21 +1715,18 @@ mod tests {
     }
 
     fn x509_signature_bytes(authenticator_value: &[u8]) -> &[u8] {
-        let signature_len =
-            u32::from_le_bytes(authenticator_value[48..52].try_into().unwrap()) as usize;
+        let signature_len = u32::from_le_bytes(authenticator_value[48..52].try_into().unwrap()) as usize;
         &authenticator_value[AUTHENTICATOR_FIXED_LEN..AUTHENTICATOR_FIXED_LEN + signature_len]
     }
 
     fn replace_x509_signature(authenticator_value: &mut [u8], signature: &[u8]) {
-        let signature_capacity =
-            u32::from_le_bytes(authenticator_value[52..56].try_into().unwrap()) as usize;
+        let signature_capacity = u32::from_le_bytes(authenticator_value[52..56].try_into().unwrap()) as usize;
         assert!(signature.len() <= signature_capacity);
         authenticator_value[48..52].copy_from_slice(&(signature.len() as u32).to_le_bytes());
         let signature_start = AUTHENTICATOR_FIXED_LEN;
         let signature_end = signature_start + signature_capacity;
         authenticator_value[signature_start..signature_end].fill(0);
-        authenticator_value[signature_start..signature_start + signature.len()]
-            .copy_from_slice(signature);
+        authenticator_value[signature_start..signature_start + signature.len()].copy_from_slice(signature);
     }
 
     fn high_s_ecdsa_signature<T>(signature: &[u8], public_key: &PKeyRef<T>) -> Vec<u8>
@@ -2312,12 +1756,7 @@ mod tests {
         out
     }
 
-    fn replace_nth_subsequence(
-        haystack: &[u8],
-        needle: &[u8],
-        replacement: &[u8],
-        nth_zero_based: usize,
-    ) -> Option<Vec<u8>> {
+    fn replace_nth_subsequence(haystack: &[u8], needle: &[u8], replacement: &[u8], nth_zero_based: usize) -> Option<Vec<u8>> {
         if needle.is_empty() {
             return None;
         }
@@ -2325,8 +1764,7 @@ mod tests {
         for found in 0..=haystack.len().saturating_sub(needle.len()) {
             if &haystack[found..found + needle.len()] == needle {
                 if seen == nth_zero_based {
-                    let mut output =
-                        Vec::with_capacity(haystack.len() - needle.len() + replacement.len());
+                    let mut output = Vec::with_capacity(haystack.len() - needle.len() + replacement.len());
                     output.extend_from_slice(&haystack[..found]);
                     output.extend_from_slice(replacement);
                     output.extend_from_slice(&haystack[found + needle.len()..]);
@@ -2390,10 +1828,7 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
 5giem1/deEviE8uzTJHzIKCWjJy3K08bFaK4Apn8A1mrElj6WCrmdsZJVCGZvAwz\n\
 4pTHYNm4Z32/udjVnPLQxkN0iicu\n\
 -----END PRIVATE KEY-----\n";
-        (
-            X509::from_pem(CERT_PEM).unwrap(),
-            PKey::private_key_from_pem(KEY_PEM).unwrap(),
-        )
+        (X509::from_pem(CERT_PEM).unwrap(), PKey::private_key_from_pem(KEY_PEM).unwrap())
     }
 
     fn test_ca_cert(cn: &str) -> (X509, PKey<Private>) {
@@ -2407,34 +1842,17 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
         builder.set_subject_name(&name).unwrap();
         builder.set_issuer_name(&name).unwrap();
         builder.set_pubkey(&key).unwrap();
+        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+        builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
+        builder.append_extension(BasicConstraints::new().critical().ca().build().unwrap()).unwrap();
         builder
-            .set_not_before(&Asn1Time::days_from_now(0).unwrap())
-            .unwrap();
-        builder
-            .set_not_after(&Asn1Time::days_from_now(365).unwrap())
-            .unwrap();
-        builder
-            .append_extension(BasicConstraints::new().critical().ca().build().unwrap())
-            .unwrap();
-        builder
-            .append_extension(
-                KeyUsage::new()
-                    .critical()
-                    .key_cert_sign()
-                    .crl_sign()
-                    .build()
-                    .unwrap(),
-            )
+            .append_extension(KeyUsage::new().critical().key_cert_sign().crl_sign().build().unwrap())
             .unwrap();
         builder.sign(&key, MessageDigest::sha256()).unwrap();
         (builder.build(), key)
     }
 
-    fn test_leaf_cert(
-        cn: &str,
-        ca_cert: &X509Ref,
-        ca_key: &PKeyRef<Private>,
-    ) -> (X509, PKey<Private>) {
+    fn test_leaf_cert(cn: &str, ca_cert: &X509Ref, ca_key: &PKeyRef<Private>) -> (X509, PKey<Private>) {
         test_leaf_cert_with_usage(cn, ca_cert, ca_key, LeafKeyUsage::DigitalSignature)
     }
 
@@ -2444,12 +1862,7 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
         KeyEnciphermentOnly,
     }
 
-    fn test_leaf_cert_with_usage(
-        cn: &str,
-        ca_cert: &X509Ref,
-        ca_key: &PKeyRef<Private>,
-        key_usage: LeafKeyUsage,
-    ) -> (X509, PKey<Private>) {
+    fn test_leaf_cert_with_usage(cn: &str, ca_cert: &X509Ref, ca_key: &PKeyRef<Private>, key_usage: LeafKeyUsage) -> (X509, PKey<Private>) {
         let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
         let mut name = X509NameBuilder::new().unwrap();
         name.append_entry_by_text("CN", cn).unwrap();
@@ -2460,15 +1873,9 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
         builder.set_subject_name(&name).unwrap();
         builder.set_issuer_name(ca_cert.subject_name()).unwrap();
         builder.set_pubkey(&key).unwrap();
-        builder
-            .set_not_before(&Asn1Time::days_from_now(0).unwrap())
-            .unwrap();
-        builder
-            .set_not_after(&Asn1Time::days_from_now(365).unwrap())
-            .unwrap();
-        builder
-            .append_extension(BasicConstraints::new().build().unwrap())
-            .unwrap();
+        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+        builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
+        builder.append_extension(BasicConstraints::new().build().unwrap()).unwrap();
         let mut usage = KeyUsage::new();
         usage.critical();
         match key_usage {
@@ -2484,11 +1891,7 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
         (builder.build(), key)
     }
 
-    fn test_leaf_cert_no_key_usage(
-        cn: &str,
-        ca_cert: &X509Ref,
-        ca_key: &PKeyRef<Private>,
-    ) -> (X509, PKey<Private>) {
+    fn test_leaf_cert_no_key_usage(cn: &str, ca_cert: &X509Ref, ca_key: &PKeyRef<Private>) -> (X509, PKey<Private>) {
         let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
         let mut name = X509NameBuilder::new().unwrap();
         name.append_entry_by_text("CN", cn).unwrap();
@@ -2499,24 +1902,14 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
         builder.set_subject_name(&name).unwrap();
         builder.set_issuer_name(ca_cert.subject_name()).unwrap();
         builder.set_pubkey(&key).unwrap();
-        builder
-            .set_not_before(&Asn1Time::days_from_now(0).unwrap())
-            .unwrap();
-        builder
-            .set_not_after(&Asn1Time::days_from_now(365).unwrap())
-            .unwrap();
-        builder
-            .append_extension(BasicConstraints::new().build().unwrap())
-            .unwrap();
+        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+        builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
+        builder.append_extension(BasicConstraints::new().build().unwrap()).unwrap();
         builder.sign(ca_key, MessageDigest::sha256()).unwrap();
         (builder.build(), key)
     }
 
-    fn test_expired_leaf_cert(
-        cn: &str,
-        ca_cert: &X509Ref,
-        ca_key: &PKeyRef<Private>,
-    ) -> (X509, PKey<Private>) {
+    fn test_expired_leaf_cert(cn: &str, ca_cert: &X509Ref, ca_key: &PKeyRef<Private>) -> (X509, PKey<Private>) {
         let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
         let mut name = X509NameBuilder::new().unwrap();
         name.append_entry_by_text("CN", cn).unwrap();
@@ -2527,34 +1920,17 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
         builder.set_subject_name(&name).unwrap();
         builder.set_issuer_name(ca_cert.subject_name()).unwrap();
         builder.set_pubkey(&key).unwrap();
+        builder.set_not_before(&Asn1Time::from_unix(0).unwrap()).unwrap();
+        builder.set_not_after(&Asn1Time::from_unix(now_unix_seconds() - 3600).unwrap()).unwrap();
+        builder.append_extension(BasicConstraints::new().build().unwrap()).unwrap();
         builder
-            .set_not_before(&Asn1Time::from_unix(0).unwrap())
-            .unwrap();
-        builder
-            .set_not_after(&Asn1Time::from_unix(now_unix_seconds() - 3600).unwrap())
-            .unwrap();
-        builder
-            .append_extension(BasicConstraints::new().build().unwrap())
-            .unwrap();
-        builder
-            .append_extension(
-                KeyUsage::new()
-                    .critical()
-                    .digital_signature()
-                    .build()
-                    .unwrap(),
-            )
+            .append_extension(KeyUsage::new().critical().digital_signature().build().unwrap())
             .unwrap();
         builder.sign(ca_key, MessageDigest::sha256()).unwrap();
         (builder.build(), key)
     }
 
-    fn test_ec_leaf_cert(
-        cn: &str,
-        ca_cert: &X509Ref,
-        ca_key: &PKeyRef<Private>,
-        curve: Nid,
-    ) -> (X509, PKey<Private>) {
+    fn test_ec_leaf_cert(cn: &str, ca_cert: &X509Ref, ca_key: &PKeyRef<Private>, curve: Nid) -> (X509, PKey<Private>) {
         let group = EcGroup::from_curve_name(curve).unwrap();
         let key = PKey::from_ec_key(EcKey::generate(&group).unwrap()).unwrap();
         let mut name = X509NameBuilder::new().unwrap();
@@ -2566,23 +1942,11 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
         builder.set_subject_name(&name).unwrap();
         builder.set_issuer_name(ca_cert.subject_name()).unwrap();
         builder.set_pubkey(&key).unwrap();
+        builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+        builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
+        builder.append_extension(BasicConstraints::new().build().unwrap()).unwrap();
         builder
-            .set_not_before(&Asn1Time::days_from_now(0).unwrap())
-            .unwrap();
-        builder
-            .set_not_after(&Asn1Time::days_from_now(365).unwrap())
-            .unwrap();
-        builder
-            .append_extension(BasicConstraints::new().build().unwrap())
-            .unwrap();
-        builder
-            .append_extension(
-                KeyUsage::new()
-                    .critical()
-                    .digital_signature()
-                    .build()
-                    .unwrap(),
-            )
+            .append_extension(KeyUsage::new().critical().digital_signature().build().unwrap())
             .unwrap();
         builder.sign(ca_key, MessageDigest::sha256()).unwrap();
         (builder.build(), key)
@@ -2595,9 +1959,6 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
     }
 
     fn now_unix_seconds() -> i64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
     }
 }

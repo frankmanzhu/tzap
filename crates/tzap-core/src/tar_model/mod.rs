@@ -19,10 +19,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
 
 use crate::entry_metadata::{
-    decode_percent_name, parse_canonical_pax, parse_primary_metadata, ArchiveTimestamp,
-    AuxiliaryRecord, AuxiliaryStreamValidator, CaptureStatus, MemberMetadata, PaxRecords,
-    PortableMetadataMirror, RestoreClass, RestorePolicy, SparseExtent, SparseStreamValidator,
-    HAS_NATIVE_METADATA, HAS_SPARSE_EXTENTS, MAX_AGGREGATE_PAX_PAYLOAD, MAX_LOCAL_PAX_PAYLOAD,
+    decode_percent_name, parse_canonical_pax, parse_primary_metadata, ArchiveTimestamp, AuxiliaryRecord, AuxiliaryStreamValidator, CaptureStatus,
+    MemberMetadata, PaxRecords, PortableMetadataMirror, RestoreClass, RestorePolicy, SparseExtent, SparseStreamValidator, HAS_NATIVE_METADATA,
+    HAS_SPARSE_EXTENTS, MAX_AGGREGATE_PAX_PAYLOAD, MAX_LOCAL_PAX_PAYLOAD,
 };
 use crate::format::{ExtractError, FormatError};
 use crate::metadata::validate_file_path_bytes;
@@ -213,32 +212,27 @@ pub struct ParsedTarMember<'a> {
 impl ParsedTarMember<'_> {
     pub fn to_owned_member(&self) -> Result<OwnedTarMember, FormatError> {
         let data = if let Some(layout) = &self.v45_metadata.sparse_layout {
-            let logical_len = usize::try_from(layout.logical_size).map_err(|_| {
-                FormatError::ReaderUnsupported("sparse logical size exceeds platform limits")
-            })?;
+            let logical_len =
+                usize::try_from(layout.logical_size).map_err(|_| FormatError::ReaderUnsupported("sparse logical size exceeds platform limits"))?;
             let mut logical = vec![0u8; logical_len];
             let mut stored_cursor = layout.map_and_padding_size;
             for extent in &layout.extents {
-                let extent_len = usize::try_from(extent.length).map_err(|_| {
-                    FormatError::ReaderUnsupported("sparse extent exceeds platform limits")
-                })?;
+                let extent_len = usize::try_from(extent.length).map_err(|_| FormatError::ReaderUnsupported("sparse extent exceeds platform limits"))?;
                 let stored_end = stored_cursor
                     .checked_add(extent_len)
                     .ok_or(FormatError::InvalidArchive("sparse stored range overflow"))?;
-                let logical_start = usize::try_from(extent.offset).map_err(|_| {
-                    FormatError::ReaderUnsupported("sparse offset exceeds platform limits")
-                })?;
+                let logical_start = usize::try_from(extent.offset).map_err(|_| FormatError::ReaderUnsupported("sparse offset exceeds platform limits"))?;
                 let logical_end = logical_start
                     .checked_add(extent_len)
                     .ok_or(FormatError::InvalidArchive("sparse logical range overflow"))?;
                 logical
                     .get_mut(logical_start..logical_end)
-                    .ok_or(FormatError::InvalidArchive(
-                        "sparse logical range is invalid",
-                    ))?
-                    .copy_from_slice(self.data.get(stored_cursor..stored_end).ok_or(
-                        FormatError::InvalidArchive("sparse stored range is invalid"),
-                    )?);
+                    .ok_or(FormatError::InvalidArchive("sparse logical range is invalid"))?
+                    .copy_from_slice(
+                        self.data
+                            .get(stored_cursor..stored_end)
+                            .ok_or(FormatError::InvalidArchive("sparse stored range is invalid"))?,
+                    );
                 stored_cursor = stored_end;
             }
             logical
@@ -290,13 +284,10 @@ pub struct SafeExtractionOptions {
 }
 
 pub(super) fn checked_u64_add(lhs: u64, rhs: u64) -> Result<u64, FormatError> {
-    lhs.checked_add(rhs).ok_or(FormatError::InvalidArchive(
-        "tar member arithmetic overflow",
-    ))
+    lhs.checked_add(rhs).ok_or(FormatError::InvalidArchive("tar member arithmetic overflow"))
 }
 pub(crate) fn validate_symlink_target(link_path: &[u8], target: &[u8]) -> Result<(), FormatError> {
-    if target.is_empty() || target.contains(&0) || target.contains(&b'\\') || target.contains(&b':')
-    {
+    if target.is_empty() || target.contains(&0) || target.contains(&b'\\') || target.contains(&b':') {
         return Err(FormatError::UnsafeArchivePath);
     }
     let target = std::str::from_utf8(target).map_err(|_| FormatError::UnsafeArchivePath)?;
@@ -385,10 +376,7 @@ pub(super) fn parse_tar_octal(field: &[u8]) -> Result<u64, FormatError> {
 }
 
 pub(super) fn nul_trimmed(bytes: &[u8]) -> &[u8] {
-    let end = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .unwrap_or(bytes.len());
+    let end = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
     &bytes[..end]
 }
 
@@ -420,9 +408,7 @@ pub(super) fn slice(bytes: &[u8], offset: usize, len: usize) -> Result<&[u8], Fo
 }
 
 pub(super) fn checked_add(lhs: usize, rhs: usize) -> Result<usize, FormatError> {
-    lhs.checked_add(rhs).ok_or(FormatError::InvalidArchive(
-        "tar member arithmetic overflow",
-    ))
+    lhs.checked_add(rhs).ok_or(FormatError::InvalidArchive("tar member arithmetic overflow"))
 }
 
 pub(super) fn to_usize(value: u64) -> Result<usize, FormatError> {

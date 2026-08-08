@@ -8,11 +8,7 @@ use ed25519_dalek::SigningKey;
 use rand::RngCore;
 
 pub(crate) fn run_keygen(quiet: bool, args: KeygenArgs) -> Result<()> {
-    let KeygenArgs {
-        output,
-        stdout,
-        force,
-    } = args;
+    let KeygenArgs { output, stdout, force } = args;
 
     let bytes = generate_random_key_material()?;
     let key_hex = format!("{}\n", encode_hex(&bytes));
@@ -62,10 +58,7 @@ pub(crate) fn run_signing_keygen(quiet: bool, args: SigningKeygenArgs) -> Result
         ],
         force,
     )?;
-    emit_success_summary(
-        quiet,
-        &format!("wrote signing keypair to {secret_output} and {public_output}"),
-    )?;
+    emit_success_summary(quiet, &format!("wrote signing keypair to {secret_output} and {public_output}"))?;
     Ok(())
 }
 
