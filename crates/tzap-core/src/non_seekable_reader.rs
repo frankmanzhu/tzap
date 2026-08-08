@@ -20,7 +20,7 @@ use crate::reader::{
     block_record_error_is_recoverable_erasure, expected_stream_block_index,
     manifest_bootstrap_fields_match, observed_archive_size, parse_non_seekable_bootstrap_material,
     parse_terminal_material_read_at, recipient_wrap_subkeys_from_table, required_object_parity,
-    startup_key_wrap_table, total_extraction_size_cap, v41_terminal_tail_cap,
+    startup_key_wrap_table, total_extraction_size_cap, v45_terminal_tail_cap,
     validate_crypto_class_parity_exactness, validate_reader_options, ArchiveEntry,
     ArchiveIndexEntry, ArchiveReadAt, KeyHoldingTerminalContext, NonSeekableBootstrapMaterial,
     OpenedArchive, ReaderOptions, RecipientWrapCandidateMasterKey, RecipientWrapRecordContext,
@@ -95,8 +95,8 @@ impl Default for NonSeekableReaderOptions {
     fn default() -> Self {
         Self {
             reader: ReaderOptions::default(),
-            max_terminal_tail_size: v41_terminal_tail_cap()
-                .expect("v41 terminal tail cap must fit usize"),
+            max_terminal_tail_size: v45_terminal_tail_cap()
+                .expect("v45 terminal tail cap must fit usize"),
             max_retained_metadata_bytes: DEFAULT_MAX_RETAINED_METADATA_BYTES,
             max_incomplete_tar_group_bytes: DEFAULT_MAX_INCOMPLETE_TAR_GROUP_BYTES,
             max_streamed_member_count: DEFAULT_MAX_STREAMED_MEMBER_COUNT,

@@ -263,7 +263,7 @@ pub(crate) fn parse_seekable_volume_with_prefix(
     } = prefix;
     let crypto_bytes = crypto_header_bytes.as_slice();
 
-    let terminal = locate_v41_terminal(
+    let terminal = locate_v45_terminal(
         bytes,
         KeyHoldingTerminalContext {
             subkeys: &subkeys,
@@ -290,7 +290,7 @@ pub(crate) fn parse_seekable_volume_from_recovered_terminal(
     master_key: &MasterKey,
     options: ReaderOptions,
 ) -> Result<ParsedSeekableVolume, FormatError> {
-    let authority = locate_v41_terminal_authority(bytes, master_key, options)?;
+    let authority = locate_v45_terminal_authority(bytes, master_key, options)?;
     parse_volume_format_dispatch(&authority.volume_header)?;
     let startup_key_wrap_table = startup_key_wrap_table(
         &authority.volume_header,
@@ -330,7 +330,7 @@ where
         RecipientWrapRecordContext<'_>,
     ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
-    let authority = locate_v41_recipient_wrap_terminal_authority(bytes, resolver, options)?;
+    let authority = locate_v45_recipient_wrap_terminal_authority(bytes, resolver, options)?;
     finish_parse_seekable_volume(
         bytes,
         authority.volume_header,
@@ -350,9 +350,9 @@ pub(crate) fn recipient_wrap_prefix_error_precludes_recovery(error: &FormatError
             | FormatError::ReaderUnsupported(_)
             | FormatError::InvalidArchive(
                 "VolumeHeader and CryptoHeader stripe_width differ"
-                    | "fec_parity_shards does not match v41 compute_parity"
-                    | "index_fec_parity_shards does not match v41 compute_parity"
-                    | "index_root_fec_parity_shards does not match v41 compute_parity"
+                    | "fec_parity_shards does not match v45 compute_parity"
+                    | "index_fec_parity_shards does not match v45 compute_parity"
+                    | "index_root_fec_parity_shards does not match v45 compute_parity"
             )
     )
 }
@@ -548,7 +548,7 @@ pub(crate) fn finish_parse_seekable_volume(
     key_wrap_table_bytes: Option<Vec<u8>>,
     block_records_start: u64,
     subkeys: Subkeys,
-    terminal: V41Terminal,
+    terminal: V45Terminal,
 ) -> Result<ParsedSeekableVolume, FormatError> {
     let trailer_offset = to_usize(terminal.image.volume_trailer_offset, "VolumeTrailer")?;
     let volume_trailer = terminal.volume_trailer.clone();
@@ -729,7 +729,7 @@ pub(crate) fn parse_seekable_read_at_volume_with_prefix(
         subkeys,
     } = prefix;
 
-    let terminal = locate_v41_terminal_read_at(
+    let terminal = locate_v45_terminal_read_at(
         reader.as_ref(),
         observed_len,
         KeyHoldingTerminalContext {
@@ -759,7 +759,7 @@ pub(crate) fn parse_seekable_read_at_volume_from_recovered_terminal(
     options: ReaderOptions,
 ) -> Result<ParsedSeekableReadAtVolume, FormatError> {
     let authority =
-        locate_v41_terminal_authority_read_at(reader.as_ref(), observed_len, master_key, options)?;
+        locate_v45_terminal_authority_read_at(reader.as_ref(), observed_len, master_key, options)?;
     parse_volume_format_dispatch(&authority.volume_header)?;
     if matches!(authority.kdf_params, KdfParams::RecipientWrap { .. }) {
         return Err(FormatError::KeyMaterialMismatch);
@@ -794,7 +794,7 @@ where
         RecipientWrapRecordContext<'_>,
     ) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
-    let authority = locate_v41_recipient_wrap_terminal_authority_read_at(
+    let authority = locate_v45_recipient_wrap_terminal_authority_read_at(
         reader.as_ref(),
         observed_len,
         resolver,
@@ -940,7 +940,7 @@ pub(crate) fn finish_parse_seekable_read_at_volume(
     key_wrap_table_bytes: Option<Vec<u8>>,
     block_records_start: u64,
     subkeys: Subkeys,
-    terminal: V41Terminal,
+    terminal: V45Terminal,
 ) -> Result<ParsedSeekableReadAtVolume, FormatError> {
     let volume_trailer = terminal.volume_trailer.clone();
     validate_trailer_identity(&volume_header, &volume_trailer)?;
@@ -1120,6 +1120,105 @@ where
     })
 }
 
+/// Footer-only inspection of a single volume's public no-key metadata.
+///
+/// Unlike [`public_no_key_verify_volumes_with_options`], this reads only the
+/// volume header, crypto header, and the bounded critical-recovery tail
+/// (locators + CMRA image) through [`ArchiveReadAt`] — never the data blocks —
+/// so memory use is O(1) with respect to archive size. The footer's signature
+/// is *not* validated here; callers verify `archive_root` (recomputed from
+/// footer + crypto-header fields only, including the *claimed*
+/// `data_block_merkle_root`) against the embedded signer identity themselves.
+#[derive(Debug)]
+pub struct PublicNoKeyFooterInspection {
+    pub volume_header: VolumeHeader,
+    pub crypto_header: CryptoHeaderFixed,
+    pub kdf_params: KdfParams,
+    pub root_auth_footer: RootAuthFooterV1,
+    pub root_auth_footer_bytes: Vec<u8>,
+    pub archive_root: [u8; 32],
+}
+
+/// Outcome of [`public_no_key_inspect_footer`].
+#[derive(Debug)]
+// The inspection is produced once per call and moved, never cloned; boxing
+// would only add an allocation for a single-value result.
+#[allow(clippy::large_enum_variant)]
+pub enum PublicNoKeyFooterStatus {
+    /// A root-auth footer was recovered; `archive_root` is recomputed and
+    /// self-consistent, but the signature is not yet verified.
+    Signed(PublicNoKeyFooterInspection),
+    /// The volume is a valid v45 archive but carries no root-auth footer.
+    Unsigned,
+}
+
+pub fn public_no_key_inspect_footer(
+    reader: &dyn ArchiveReadAt,
+    options: ReaderOptions,
+) -> Result<PublicNoKeyFooterStatus, FormatError> {
+    validate_reader_options(options)?;
+    let len = reader.len()?;
+    if len < (VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN) as u64 {
+        return Err(FormatError::InvalidLength {
+            structure: "archive",
+            expected: VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN,
+            actual: to_usize(len, "archive length")?,
+        });
+    }
+    let volume_header_bytes = read_at_vec(reader, 0, VOLUME_HEADER_LEN, "archive")?;
+    let volume_header = VolumeHeader::parse(&volume_header_bytes)?;
+    parse_volume_format_dispatch(&volume_header)?;
+    let crypto_start = volume_header.crypto_header_offset as u64;
+    let crypto_len = volume_header.crypto_header_length as usize;
+    let crypto_bytes = read_at_vec(reader, crypto_start, crypto_len, "CryptoHeader")?;
+    let parsed_crypto = CryptoHeader::parse(&crypto_bytes, volume_header.crypto_header_length)?;
+    parsed_crypto.validate_extension_semantics()?;
+    validate_seekable_supported_volume(
+        &volume_header,
+        &parsed_crypto.fixed,
+        &parsed_crypto.extensions,
+    )?;
+    validate_crypto_class_parity_exactness(&parsed_crypto.fixed)?;
+
+    let terminal = match locate_v45_public_terminal_read_at(
+        reader,
+        len,
+        &volume_header,
+        &parsed_crypto,
+        options,
+    ) {
+        Ok(terminal) => terminal,
+        Err(err) => {
+            // Distinguish an unsigned archive (root-auth flag clear) from a
+            // corrupt one: the public terminal locators are present either
+            // way, but the root-auth layout check fails for unsigned volumes.
+            if let Some(flags) = public_no_key_layout_flags(reader, len)? {
+                if flags & 0x0000_0001 == 0 {
+                    return Ok(PublicNoKeyFooterStatus::Unsigned);
+                }
+            }
+            return Err(err);
+        }
+    };
+    let archive_root =
+        recompute_public_archive_root(&terminal.root_auth_footer, &parsed_crypto.fixed)?;
+    if archive_root != terminal.root_auth_footer.archive_root {
+        return Err(FormatError::InvalidArchive(
+            "public no-key archive_root mismatch",
+        ));
+    }
+    Ok(PublicNoKeyFooterStatus::Signed(
+        PublicNoKeyFooterInspection {
+            volume_header,
+            crypto_header: parsed_crypto.fixed,
+            kdf_params: parsed_crypto.kdf_params,
+            root_auth_footer: terminal.root_auth_footer,
+            root_auth_footer_bytes: terminal.root_auth_footer_bytes,
+            archive_root,
+        },
+    ))
+}
+
 pub(crate) fn parse_public_no_key_volume(
     bytes: &[u8],
     options: ReaderOptions,
@@ -1146,7 +1245,7 @@ pub(crate) fn parse_public_no_key_volume(
     )?;
     validate_crypto_class_parity_exactness(&parsed_crypto.fixed)?;
 
-    let terminal = locate_v41_public_terminal(bytes, &volume_header, &parsed_crypto, options)?;
+    let terminal = locate_v45_public_terminal(bytes, &volume_header, &parsed_crypto, options)?;
     let block_records_start = match &parsed_crypto.kdf_params {
         KdfParams::RecipientWrap {
             key_wrap_table_length,
@@ -1311,13 +1410,13 @@ pub(crate) fn validate_crypto_class_parity_exactness(
     let fec = required_object_parity(crypto_header.fec_data_shards as u64, crypto_header)?;
     if crypto_header.fec_parity_shards as u32 != fec {
         return Err(FormatError::InvalidArchive(
-            "fec_parity_shards does not match v41 compute_parity",
+            "fec_parity_shards does not match v45 compute_parity",
         ));
     }
     let index = required_object_parity(crypto_header.index_fec_data_shards as u64, crypto_header)?;
     if crypto_header.index_fec_parity_shards as u32 != index {
         return Err(FormatError::InvalidArchive(
-            "index_fec_parity_shards does not match v41 compute_parity",
+            "index_fec_parity_shards does not match v45 compute_parity",
         ));
     }
     let index_root = required_object_parity(
@@ -1326,7 +1425,7 @@ pub(crate) fn validate_crypto_class_parity_exactness(
     )?;
     if crypto_header.index_root_fec_parity_shards as u32 != index_root {
         return Err(FormatError::InvalidArchive(
-            "index_root_fec_parity_shards does not match v41 compute_parity",
+            "index_root_fec_parity_shards does not match v45 compute_parity",
         ));
     }
     Ok(())

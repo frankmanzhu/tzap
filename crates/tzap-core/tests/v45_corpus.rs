@@ -44,7 +44,7 @@ fn final_locator(volume: &[u8]) -> CriticalRecoveryLocator {
     .unwrap()
 }
 
-fn corrupt_v41_terminal_recovery(volume: &mut [u8]) {
+fn corrupt_v45_terminal_recovery(volume: &mut [u8]) {
     let locator = final_locator(volume);
     let final_offset = volume.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
     let mirror_offset = final_offset - CRITICAL_RECOVERY_LOCATOR_LEN;
@@ -120,10 +120,10 @@ fn mutation_fixture_generator_rejects_authentication_and_revision_mutations() {
         .unwrap()
         .verify()
         .unwrap();
-    corrupt_v41_terminal_recovery(&mut trailer_hmac);
+    corrupt_v45_terminal_recovery(&mut trailer_hmac);
     assert_eq!(
         open_archive(&trailer_hmac, &master_key()).unwrap_err(),
-        FormatError::InvalidArchive("no valid v41 CMRA candidate found")
+        FormatError::InvalidArchive("no valid v45 CMRA candidate found")
     );
 
     let mut payload_tamper = archive.bytes.clone();

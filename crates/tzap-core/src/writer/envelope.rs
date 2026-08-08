@@ -2343,7 +2343,7 @@ pub(crate) struct CmraBuildInput<'a> {
     pub volume_index: u32,
 }
 
-pub(crate) fn build_v41_cmra(input: CmraBuildInput<'_>) -> Result<BuiltCmra, FormatError> {
+pub(crate) fn build_v45_cmra(input: CmraBuildInput<'_>) -> Result<BuiltCmra, FormatError> {
     let block_record_len = input.options.block_size as u64 + BLOCK_RECORD_FRAMING_LEN as u64;
     let crypto_end = VOLUME_HEADER_LEN as u64 + input.crypto_header.len() as u64;
     let block_records_offset = input.block_records_offset;

@@ -11,9 +11,9 @@ use crate::format::{
     BOOTSTRAP_SIDECAR_HEADER_LEN, CRITICAL_METADATA_RECOVERY_HEADER_LEN,
     CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN, CRITICAL_RECOVERY_LOCATOR_LEN,
     CRYPTO_EXTENSION_HEADER_LEN, CRYPTO_HEADER_FIXED_LEN, FORMAT_VERSION, LOCATOR_PAIR_LEN,
-    MANIFEST_FOOTER_LEN, READER_MAX_ENVELOPE_TARGET_SIZE, READER_MAX_METADATA_OBJECT_SIZE,
-    READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV, VOLUME_FORMAT_REV_45,
-    VOLUME_TRAILER_LEN,
+    MANIFEST_FOOTER_LEN, READER_MAX_CRYPTO_HEADER_LEN, READER_MAX_ENVELOPE_TARGET_SIZE,
+    READER_MAX_METADATA_OBJECT_SIZE, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV, VOLUME_FORMAT_REV,
+    VOLUME_FORMAT_REV_45, VOLUME_TRAILER_LEN,
 };
 use crate::metadata::{
     hash_prefix, DirectoryHintEntry, DirectoryHintTableHeader, IndexRootHeader, IndexShardHeader,
@@ -31,7 +31,7 @@ use crate::raw_stream_profile::{
 use crate::wire::{
     compute_key_wrap_table_digest, BootstrapSidecarHeader, CriticalMetadataImage,
     CriticalMetadataRecoveryHeader, CriticalMetadataRecoveryShard, CriticalRecoveryLocator,
-    RecipientRecordV1,
+    RecipientRecordV1, VolumeHeader,
 };
 use crate::writer::NativeFileMetadata;
 use crate::writer::{
@@ -648,7 +648,7 @@ fn public_no_key_rejects_recovered_footer_revision_mismatch() {
     assert!(!called);
     assert_eq!(
         err,
-        FormatError::InvalidArchive("no valid v41 public CMRA candidate found")
+        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
     );
 }
 
@@ -682,7 +682,7 @@ fn public_no_key_rejects_recovered_image_with_unknown_layout_flags() {
     assert!(!called);
     assert_eq!(
         err,
-        FormatError::InvalidArchive("no valid v41 public CMRA candidate found")
+        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
     );
 }
 
@@ -822,7 +822,215 @@ fn locator_based_cmra_recovery_treats_header_damage_as_recoverable() {
     }
     assert_eq!(
         public_no_key_verify_archive_with(&bad_hint, |_, _| Ok(true)).unwrap_err(),
-        FormatError::InvalidArchive("no valid v41 public CMRA candidate found")
+        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
+    );
+}
+
+fn signed_fixture() -> Vec<u8> {
+    write_archive_with_root_auth(
+        &[RegularFile::new("signed.txt", b"root-auth payload")],
+        &master_key(),
+        single_stream_options(),
+        RootAuthWriterConfig {
+            authenticator_id: 0x7777,
+            signer_identity_type: 1,
+            signer_identity: b"test signer",
+            authenticator_value_length: 32,
+        },
+        |request| Ok(request.archive_root.to_vec()),
+    )
+    .unwrap()
+    .bytes
+}
+
+#[test]
+fn public_no_key_inspect_footer_reads_only_header_and_tail() {
+    // Incompressible pseudo-random payload so the archive keeps a real data
+    // region (uniform bytes would zstd-compress to a few KB).
+    let mut payload = vec![0u8; 2 * 1024 * 1024];
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    for byte in &mut payload {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        *byte = state as u8;
+    }
+    let archive = write_archive_with_root_auth(
+        &[RegularFile::new("big.bin", &payload)],
+        &master_key(),
+        single_stream_options(),
+        RootAuthWriterConfig {
+            authenticator_id: 0x7777,
+            signer_identity_type: 1,
+            signer_identity: b"test signer",
+            authenticator_value_length: 32,
+        },
+        |request| Ok(request.archive_root.to_vec()),
+    )
+    .unwrap();
+
+    let volume_header = VolumeHeader::parse(&archive.bytes[..VOLUME_HEADER_LEN]).unwrap();
+    let crypto_end = u64::from(volume_header.crypto_header_offset)
+        + u64::from(volume_header.crypto_header_length);
+    let len = archive.bytes.len() as u64;
+    let tail_budget = 1024 * 1024;
+    assert!(
+        len > crypto_end + tail_budget,
+        "fixture must have a data region"
+    );
+
+    // Deny the entire data region: any read into it surfaces as an error.
+    let reader = CountingReadAt::new(archive.bytes.clone(), vec![(crypto_end, len - tail_budget)]);
+    let status = public_no_key_inspect_footer(&reader, ReaderOptions::default()).unwrap();
+    let PublicNoKeyFooterStatus::Signed(inspection) = status else {
+        panic!("expected signed inspection");
+    };
+    assert_eq!(inspection.root_auth_footer.authenticator_id, 0x7777);
+    assert_eq!(
+        inspection.root_auth_footer.signer_identity_bytes,
+        b"test signer"
+    );
+    assert_eq!(
+        inspection.archive_root,
+        inspection.root_auth_footer.archive_root
+    );
+
+    let header_budget = (VOLUME_HEADER_LEN + READER_MAX_CRYPTO_HEADER_LEN as usize) as u64;
+    let reads = reader.reads();
+    assert!(!reads.is_empty(), "expected at least header and tail reads");
+    for (start, end) in &reads {
+        assert!(
+            *end <= header_budget || *start >= len - tail_budget,
+            "read [{start}, {end}) crosses into the data region"
+        );
+    }
+    let total_read: u64 = reads.iter().map(|(start, end)| end - start).sum();
+    assert!(
+        total_read < tail_budget,
+        "footer inspection read {total_read} bytes"
+    );
+}
+
+#[test]
+fn public_no_key_inspect_footer_reports_unsigned_archives() {
+    let unencrypted = write_archive_unencrypted(
+        &[RegularFile::new("plain.txt", b"no signature")],
+        single_stream_options(),
+    )
+    .unwrap();
+    let status = public_no_key_inspect_footer(
+        &CountingReadAt::new(unencrypted.bytes, vec![]),
+        ReaderOptions::default(),
+    )
+    .unwrap();
+    assert!(matches!(status, PublicNoKeyFooterStatus::Unsigned));
+
+    let encrypted = write_archive(
+        &[RegularFile::new("plain.txt", b"no signature")],
+        &master_key(),
+        single_stream_options(),
+    )
+    .unwrap();
+    let status = public_no_key_inspect_footer(
+        &CountingReadAt::new(encrypted.bytes, vec![]),
+        ReaderOptions::default(),
+    )
+    .unwrap();
+    assert!(matches!(status, PublicNoKeyFooterStatus::Unsigned));
+}
+
+#[test]
+fn public_no_key_inspect_footer_rejects_tampered_terminal() {
+    let mut tampered = signed_fixture();
+    // Destroy the CMRA image body beyond GF16 repair capacity (parity + 1
+    // shards). The recovery header, TZCR boundary magic, and locator metadata
+    // stay intact so every recovery path is attempted — and must fail.
+    let locator = final_recovery_locator(&tampered);
+    let kill_shards = usize::from(locator.cmra_parity_shard_count) + 1;
+    let start = locator.cmra_offset as usize + CRITICAL_METADATA_RECOVERY_HEADER_LEN;
+    let end = (start + kill_shards * locator.cmra_shard_size as usize)
+        .min(locator.cmra_offset as usize + locator.cmra_image_length as usize);
+    for byte in &mut tampered[start..end] {
+        *byte ^= 0x55;
+    }
+
+    let err = public_no_key_inspect_footer(
+        &CountingReadAt::new(tampered, vec![]),
+        ReaderOptions::default(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
+    );
+}
+
+#[test]
+fn public_no_key_inspect_footer_does_not_validate_authenticator() {
+    let archive = write_archive_with_root_auth(
+        &[RegularFile::new("forged.txt", b"forged payload")],
+        &master_key(),
+        single_stream_options(),
+        RootAuthWriterConfig {
+            authenticator_id: 0x1234,
+            signer_identity_type: 1,
+            signer_identity: b"forged signer",
+            authenticator_value_length: 32,
+        },
+        // A signature no real key ever produced: inspection must still report
+        // the footer Signed; authenticating it is the caller's job.
+        |_request| Ok(vec![0u8; 32]),
+    )
+    .unwrap();
+
+    let status = public_no_key_inspect_footer(
+        &CountingReadAt::new(archive.bytes, vec![]),
+        ReaderOptions::default(),
+    )
+    .unwrap();
+    let PublicNoKeyFooterStatus::Signed(inspection) = status else {
+        panic!("expected signed inspection");
+    };
+    assert_eq!(inspection.root_auth_footer.authenticator_id, 0x1234);
+    assert_eq!(
+        inspection.root_auth_footer.signer_identity_bytes,
+        b"forged signer"
+    );
+    assert_eq!(
+        inspection.archive_root,
+        inspection.root_auth_footer.archive_root
+    );
+}
+
+#[test]
+fn public_no_key_inspect_footer_rejects_truncated_archive() {
+    let mut truncated = signed_fixture();
+    // Cut into the CMRA image itself (locator pair + trailer + most of the
+    // image gone). Truncating only the locator pair is recoverable by design:
+    // the CMRA image exists exactly so the terminal survives lost locators.
+    let cmra_offset = final_recovery_locator(&truncated).cmra_offset as usize;
+    truncated.truncate(cmra_offset + CRITICAL_METADATA_RECOVERY_HEADER_LEN + 64);
+    assert!(public_no_key_inspect_footer(
+        &CountingReadAt::new(truncated, vec![]),
+        ReaderOptions::default(),
+    )
+    .is_err());
+}
+
+#[test]
+fn public_no_key_inspect_footer_rejects_short_file() {
+    let bytes = b"not an archive".to_vec();
+    assert_eq!(
+        public_no_key_inspect_footer(
+            &CountingReadAt::new(bytes, vec![]),
+            ReaderOptions::default(),
+        )
+        .unwrap_err(),
+        FormatError::InvalidLength {
+            structure: "archive",
+            expected: VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN,
+            actual: 14,
+        }
     );
 }
 
@@ -1310,7 +1518,7 @@ fn public_no_key_rejects_unsigned_archives() {
 
     assert_eq!(
         public_no_key_verify_archive_with(&archive.bytes, |_, _| Ok(true)).unwrap_err(),
-        FormatError::InvalidArchive("no valid v41 public CMRA candidate found")
+        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
     );
 }
 
@@ -2923,7 +3131,7 @@ fn public_no_key_rejects_recipientwrap_startup_and_cmra_kdf_mismatch() {
 
     assert_eq!(
         err,
-        FormatError::InvalidArchive("no valid v41 public CMRA candidate found")
+        FormatError::InvalidArchive("no valid v45 public CMRA candidate found")
     );
 }
 
@@ -3828,7 +4036,7 @@ fn non_seekable_full_sidecar_bootstraps_when_terminal_trailer_is_corrupt() {
     )
     .unwrap();
     let mut corrupted = archive.bytes.clone();
-    corrupt_v41_terminal_recovery(&mut corrupted);
+    corrupt_v45_terminal_recovery(&mut corrupted);
     assert!(open_archive(&corrupted, &master_key()).is_err());
 
     let opened =
@@ -4243,7 +4451,7 @@ fn sequential_rejects_when_terminal_authentication_fails_without_returning_bytes
     )
     .unwrap();
     let mut corrupted = archive.bytes;
-    corrupt_v41_terminal_recovery(&mut corrupted);
+    corrupt_v45_terminal_recovery(&mut corrupted);
 
     match sequential_extract_tar_stream(&corrupted, &master_key()) {
         Ok(bytes) => panic!(
@@ -4252,7 +4460,7 @@ fn sequential_rejects_when_terminal_authentication_fails_without_returning_bytes
         ),
         Err(err) => assert_eq!(
             err,
-            FormatError::InvalidArchive("no valid v41 CMRA candidate found")
+            FormatError::InvalidArchive("no valid v45 CMRA candidate found")
         ),
     }
 }
@@ -4660,7 +4868,7 @@ fn live_non_seekable_extract_stream_terminal_failure_leaves_no_final_output() {
     )
     .unwrap();
     let mut corrupted = archive.bytes;
-    corrupt_v41_terminal_recovery(&mut corrupted);
+    corrupt_v45_terminal_recovery(&mut corrupted);
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("out");
 
@@ -4675,7 +4883,7 @@ fn live_non_seekable_extract_stream_terminal_failure_leaves_no_final_output() {
     {
         ExtractError::Format(err) => assert_eq!(
             err,
-            FormatError::InvalidArchive("no valid v41 CMRA candidate found")
+            FormatError::InvalidArchive("no valid v45 CMRA candidate found")
         ),
         ExtractError::Output(err) => panic!("unexpected output error: {err}"),
     }
@@ -5880,7 +6088,7 @@ fn object_extent_rejects_parity_below_recoverability_requirement() {
 
     assert_eq!(
         validate_object_extent(extent, &crypto_header, 1, 1).unwrap_err(),
-        FormatError::InvalidArchive("encrypted object parity does not match v41 compute_parity")
+        FormatError::InvalidArchive("encrypted object parity does not match v45 compute_parity")
     );
 }
 
@@ -6869,7 +7077,7 @@ fn manifest_footer_corruption_requires_trusted_sidecar() {
     let manifest_offset = terminal_material_offset(&archive.bytes);
     let mut corrupted = archive.bytes.clone();
     corrupted[manifest_offset + MANIFEST_HMAC_COVERED_LEN] ^= 0x01;
-    corrupt_v41_terminal_recovery(&mut corrupted);
+    corrupt_v45_terminal_recovery(&mut corrupted);
 
     assert!(open_archive(&corrupted, &master_key()).is_err());
 
@@ -7019,7 +7227,7 @@ fn rejects_same_key_header_terminal_material_splice() {
 
     assert_eq!(
         open_archive(&spliced, &master_key()).unwrap_err(),
-        FormatError::InvalidArchive("no valid v41 CMRA candidate found")
+        FormatError::InvalidArchive("no valid v45 CMRA candidate found")
     );
 }
 
@@ -7278,7 +7486,7 @@ fn rejects_authenticated_trailer_outside_trailing_scan_cap() {
     );
     assert_eq!(
         OpenedArchive::open_with_options(&beyond_scan, &master_key(), options).unwrap_err(),
-        FormatError::InvalidArchive("no valid v41 CMRA candidate found")
+        FormatError::InvalidArchive("no valid v45 CMRA candidate found")
     );
 }
 
@@ -7863,7 +8071,7 @@ fn rewrite_locator_image_sha(volume: &mut [u8], offset: usize, image_sha256: [u8
     volume[offset..offset + CRITICAL_RECOVERY_LOCATOR_LEN].copy_from_slice(&locator.to_bytes());
 }
 
-fn corrupt_v41_terminal_recovery(volume: &mut [u8]) {
+fn corrupt_v45_terminal_recovery(volume: &mut [u8]) {
     let final_offset = volume.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
     let final_locator = CriticalRecoveryLocator::parse(
         &volume[final_offset..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN],

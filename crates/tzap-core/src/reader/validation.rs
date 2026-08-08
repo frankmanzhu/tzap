@@ -349,7 +349,7 @@ pub(crate) fn parse_terminal_material(
     context: KeyHoldingTerminalContext<'_>,
     options: ReaderOptions,
 ) -> Result<(ManifestFooter, VolumeTrailer, Option<RootAuthFooterV1>), FormatError> {
-    let candidate = locate_v41_terminal_candidate(bytes, context, options)?;
+    let candidate = locate_v45_terminal_candidate(bytes, context, options)?;
     if !terminal_candidate_reaches_eof(&candidate, bytes.len())? {
         return Err(FormatError::InvalidArchive(
             "sequential terminal does not end at EOF",
@@ -383,7 +383,7 @@ pub(crate) fn parse_terminal_material_read_at(
 ) -> Result<SequentialTerminalMaterial, FormatError> {
     let mut candidates = Vec::new();
     if input_len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
-        collect_v41_locator_candidate_read_at(
+        collect_v45_locator_candidate_read_at(
             reader,
             input_len - CRITICAL_RECOVERY_LOCATOR_LEN as u64,
             0,
@@ -392,7 +392,7 @@ pub(crate) fn parse_terminal_material_read_at(
         );
     }
     if input_len >= LOCATOR_PAIR_LEN as u64 {
-        collect_v41_locator_candidate_read_at(
+        collect_v45_locator_candidate_read_at(
             reader,
             input_len - LOCATOR_PAIR_LEN as u64,
             1,
@@ -401,7 +401,7 @@ pub(crate) fn parse_terminal_material_read_at(
         );
     }
 
-    let candidate = choose_v41_terminal_candidate(candidates)?;
+    let candidate = choose_v45_terminal_candidate(candidates)?;
     if !terminal_candidate_reaches_eof(&candidate, to_usize(input_len, "terminal EOF")?)? {
         return Err(FormatError::InvalidArchive(
             "sequential terminal does not end at EOF",
@@ -1220,7 +1220,7 @@ pub(crate) fn validate_object_extent(
     let required_parity = required_object_parity(extent.data_block_count as u64, crypto_header)?;
     if extent.parity_block_count != required_parity {
         return Err(FormatError::InvalidArchive(
-            "encrypted object parity does not match v41 compute_parity",
+            "encrypted object parity does not match v45 compute_parity",
         ));
     }
     let total = checked_u64_add(

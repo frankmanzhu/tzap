@@ -16,7 +16,7 @@ use std::io::{self, Read};
 use std::rc::Rc;
 
 #[test]
-fn writer_defaults_use_v41_sizing_and_parallel_mode() {
+fn writer_defaults_use_v45_sizing_and_parallel_mode() {
     let options = WriterOptions::default();
 
     assert_eq!(options.chunk_size, 256 * 1024);
@@ -559,7 +559,7 @@ fn directory_hint_rows_include_directory_members_own_paths() {
 }
 
 #[test]
-fn directory_hints_are_required_only_above_v41_threshold() {
+fn directory_hints_are_required_only_above_v45_threshold() {
     assert!(!should_emit_directory_hints(0));
     assert!(!should_emit_directory_hints(
         DIRECTORY_HINT_REQUIRED_FILE_COUNT
@@ -1731,7 +1731,7 @@ fn writes_empty_archive_with_authentic_bootstrap_structures() {
 }
 
 #[test]
-fn parity_auto_scaling_matches_v41_examples() {
+fn parity_auto_scaling_matches_v45_examples() {
     let options = WriterOptions {
         fec_data_shards: 224,
         stripe_width: 8,
@@ -1783,7 +1783,7 @@ fn zero_parity_is_allowed_when_no_recovery_margin_is_requested() {
 }
 
 #[test]
-fn index_root_data_shard_maximum_obeys_v41_minimum() {
+fn index_root_data_shard_maximum_obeys_v45_minimum() {
     let planned = plan_writer_options(WriterOptions {
         index_root_fec_data_shards: 1,
         ..WriterOptions::default()

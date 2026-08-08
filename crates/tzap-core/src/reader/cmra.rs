@@ -18,7 +18,7 @@ use crate::wire::{
 };
 
 #[derive(Debug)]
-pub(crate) struct V41Terminal {
+pub(crate) struct V45Terminal {
     pub(crate) image: CriticalMetadataImage,
     pub(crate) manifest_footer_bytes: Vec<u8>,
     pub(crate) root_auth_footer_bytes: Option<Vec<u8>>,
@@ -33,7 +33,7 @@ pub(crate) struct SequentialTerminalMaterial {
 }
 
 #[derive(Debug)]
-pub(crate) struct V41PublicTerminal {
+pub(crate) struct V45PublicTerminal {
     pub(crate) image: CriticalMetadataImage,
     pub(crate) root_auth_footer_bytes: Vec<u8>,
     pub(crate) root_auth_footer: RootAuthFooterV1,
@@ -109,7 +109,7 @@ pub(crate) struct RecoveredCmra {
 
 #[derive(Debug)]
 pub(crate) struct TerminalCandidate {
-    pub(crate) terminal: V41Terminal,
+    pub(crate) terminal: V45Terminal,
     pub(crate) anchor: usize,
     pub(crate) locator_sequence: Option<u32>,
     pub(crate) cmra_offset: u64,
@@ -118,7 +118,7 @@ pub(crate) struct TerminalCandidate {
 
 #[derive(Debug)]
 pub(crate) struct PublicTerminalCandidate {
-    pub(crate) terminal: V41PublicTerminal,
+    pub(crate) terminal: V45PublicTerminal,
     pub(crate) anchor: usize,
     pub(crate) cmra_offset: u64,
     pub(crate) cmra_length: u64,
@@ -126,7 +126,7 @@ pub(crate) struct PublicTerminalCandidate {
 
 #[derive(Debug)]
 pub(crate) struct RecoveredTerminalAuthority {
-    pub(crate) terminal: V41Terminal,
+    pub(crate) terminal: V45Terminal,
     pub(crate) volume_header: VolumeHeader,
     pub(crate) crypto_header: CryptoHeaderFixed,
     pub(crate) crypto_header_bytes: Vec<u8>,
@@ -136,7 +136,7 @@ pub(crate) struct RecoveredTerminalAuthority {
 
 #[derive(Debug)]
 pub(crate) struct RecoveredRecipientWrapTerminalAuthority {
-    pub(crate) terminal: V41Terminal,
+    pub(crate) terminal: V45Terminal,
     pub(crate) volume_header: VolumeHeader,
     pub(crate) crypto_header: CryptoHeaderFixed,
     pub(crate) crypto_header_bytes: Vec<u8>,
@@ -175,28 +175,28 @@ pub(crate) struct KeyHoldingTerminalContext<'a> {
     pub(crate) crypto_header_bytes: &'a [u8],
 }
 
-pub(crate) fn locate_v41_terminal(
+pub(crate) fn locate_v45_terminal(
     bytes: &[u8],
     context: KeyHoldingTerminalContext<'_>,
     options: ReaderOptions,
-) -> Result<V41Terminal, FormatError> {
-    locate_v41_terminal_candidate(bytes, context, options).map(|candidate| candidate.terminal)
+) -> Result<V45Terminal, FormatError> {
+    locate_v45_terminal_candidate(bytes, context, options).map(|candidate| candidate.terminal)
 }
 
-pub(crate) fn locate_v41_terminal_read_at(
+pub(crate) fn locate_v45_terminal_read_at(
     reader: &dyn ArchiveReadAt,
     len: u64,
     context: KeyHoldingTerminalContext<'_>,
     options: ReaderOptions,
-) -> Result<V41Terminal, FormatError> {
+) -> Result<V45Terminal, FormatError> {
     let mut candidates = Vec::new();
     if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
         let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
-        collect_v41_locator_candidate_read_at(reader, final_offset, 0, context, &mut candidates);
+        collect_v45_locator_candidate_read_at(reader, final_offset, 0, context, &mut candidates);
     }
     if len >= LOCATOR_PAIR_LEN as u64 {
         let mirror_offset = len - LOCATOR_PAIR_LEN as u64;
-        collect_v41_locator_candidate_read_at(reader, mirror_offset, 1, context, &mut candidates);
+        collect_v45_locator_candidate_read_at(reader, mirror_offset, 1, context, &mut candidates);
     }
 
     if candidates.is_empty() {
@@ -208,7 +208,7 @@ pub(crate) fn locate_v41_terminal_read_at(
         while offset < tail.len() {
             let absolute_offset = checked_u64_add(scan_start, offset as u64, "CMRA scan")?;
             if tail.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v41_locator_candidate_read_at(
+                collect_v45_locator_candidate_read_at(
                     reader,
                     absolute_offset,
                     2,
@@ -229,10 +229,10 @@ pub(crate) fn locate_v41_terminal_read_at(
         }
     }
 
-    choose_v41_terminal_candidate(candidates).map(|candidate| candidate.terminal)
+    choose_v45_terminal_candidate(candidates).map(|candidate| candidate.terminal)
 }
 
-pub(crate) fn locate_v41_terminal_authority(
+pub(crate) fn locate_v45_terminal_authority(
     bytes: &[u8],
     master_key: &MasterKey,
     options: ReaderOptions,
@@ -240,7 +240,7 @@ pub(crate) fn locate_v41_terminal_authority(
     let mut candidates = Vec::new();
     if bytes.len() >= CRITICAL_RECOVERY_LOCATOR_LEN {
         let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-        collect_v41_locator_authority_candidate(
+        collect_v45_locator_authority_candidate(
             bytes,
             final_offset,
             0,
@@ -250,7 +250,7 @@ pub(crate) fn locate_v41_terminal_authority(
     }
     if bytes.len() >= LOCATOR_PAIR_LEN {
         let mirror_offset = bytes.len() - LOCATOR_PAIR_LEN;
-        collect_v41_locator_authority_candidate(
+        collect_v45_locator_authority_candidate(
             bytes,
             mirror_offset,
             1,
@@ -265,7 +265,7 @@ pub(crate) fn locate_v41_terminal_authority(
         let mut offset = bytes.len().saturating_sub(4);
         while offset >= scan_start {
             if bytes.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v41_locator_authority_candidate(
+                collect_v45_locator_authority_candidate(
                     bytes,
                     offset,
                     2,
@@ -286,10 +286,10 @@ pub(crate) fn locate_v41_terminal_authority(
         }
     }
 
-    choose_v41_terminal_authority_candidate(candidates).map(|candidate| candidate.authority)
+    choose_v45_terminal_authority_candidate(candidates).map(|candidate| candidate.authority)
 }
 
-pub(crate) fn locate_v41_recipient_wrap_terminal_authority<F>(
+pub(crate) fn locate_v45_recipient_wrap_terminal_authority<F>(
     bytes: &[u8],
     resolver: &mut F,
     options: ReaderOptions,
@@ -302,7 +302,7 @@ where
     let mut candidates = Vec::new();
     if bytes.len() >= CRITICAL_RECOVERY_LOCATOR_LEN {
         let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-        collect_v41_recipient_wrap_locator_authority_candidate(
+        collect_v45_recipient_wrap_locator_authority_candidate(
             bytes,
             final_offset,
             0,
@@ -312,7 +312,7 @@ where
     }
     if bytes.len() >= LOCATOR_PAIR_LEN {
         let mirror_offset = bytes.len() - LOCATOR_PAIR_LEN;
-        collect_v41_recipient_wrap_locator_authority_candidate(
+        collect_v45_recipient_wrap_locator_authority_candidate(
             bytes,
             mirror_offset,
             1,
@@ -327,7 +327,7 @@ where
         let mut offset = bytes.len().saturating_sub(4);
         while offset >= scan_start {
             if bytes.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v41_recipient_wrap_locator_authority_candidate(
+                collect_v45_recipient_wrap_locator_authority_candidate(
                     bytes,
                     offset,
                     2,
@@ -348,11 +348,11 @@ where
         }
     }
 
-    choose_v41_recipient_wrap_terminal_authority_candidate(candidates)
+    choose_v45_recipient_wrap_terminal_authority_candidate(candidates)
         .map(|candidate| candidate.authority)
 }
 
-pub(crate) fn locate_v41_recipient_wrap_terminal_authority_read_at<F>(
+pub(crate) fn locate_v45_recipient_wrap_terminal_authority_read_at<F>(
     reader: &dyn ArchiveReadAt,
     len: u64,
     resolver: &mut F,
@@ -366,7 +366,7 @@ where
     let mut candidates = Vec::new();
     if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
         let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
-        collect_v41_recipient_wrap_locator_authority_candidate_read_at(
+        collect_v45_recipient_wrap_locator_authority_candidate_read_at(
             reader,
             final_offset,
             0,
@@ -376,7 +376,7 @@ where
     }
     if len >= LOCATOR_PAIR_LEN as u64 {
         let mirror_offset = len - LOCATOR_PAIR_LEN as u64;
-        collect_v41_recipient_wrap_locator_authority_candidate_read_at(
+        collect_v45_recipient_wrap_locator_authority_candidate_read_at(
             reader,
             mirror_offset,
             1,
@@ -394,7 +394,7 @@ where
         while offset < tail.len() {
             let absolute_offset = checked_u64_add(scan_start, offset as u64, "CMRA scan")?;
             if tail.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v41_recipient_wrap_locator_authority_candidate_read_at(
+                collect_v45_recipient_wrap_locator_authority_candidate_read_at(
                     reader,
                     absolute_offset,
                     2,
@@ -419,11 +419,11 @@ where
         }
     }
 
-    choose_v41_recipient_wrap_terminal_authority_candidate(candidates)
+    choose_v45_recipient_wrap_terminal_authority_candidate(candidates)
         .map(|candidate| candidate.authority)
 }
 
-pub(crate) fn locate_v41_terminal_authority_read_at(
+pub(crate) fn locate_v45_terminal_authority_read_at(
     reader: &dyn ArchiveReadAt,
     len: u64,
     master_key: &MasterKey,
@@ -432,7 +432,7 @@ pub(crate) fn locate_v41_terminal_authority_read_at(
     let mut candidates = Vec::new();
     if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
         let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
-        collect_v41_locator_authority_candidate_read_at(
+        collect_v45_locator_authority_candidate_read_at(
             reader,
             final_offset,
             0,
@@ -442,7 +442,7 @@ pub(crate) fn locate_v41_terminal_authority_read_at(
     }
     if len >= LOCATOR_PAIR_LEN as u64 {
         let mirror_offset = len - LOCATOR_PAIR_LEN as u64;
-        collect_v41_locator_authority_candidate_read_at(
+        collect_v45_locator_authority_candidate_read_at(
             reader,
             mirror_offset,
             1,
@@ -460,7 +460,7 @@ pub(crate) fn locate_v41_terminal_authority_read_at(
         while offset < tail.len() {
             let absolute_offset = checked_u64_add(scan_start, offset as u64, "CMRA scan")?;
             if tail.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v41_locator_authority_candidate_read_at(
+                collect_v45_locator_authority_candidate_read_at(
                     reader,
                     absolute_offset,
                     2,
@@ -483,10 +483,10 @@ pub(crate) fn locate_v41_terminal_authority_read_at(
         }
     }
 
-    choose_v41_terminal_authority_candidate(candidates).map(|candidate| candidate.authority)
+    choose_v45_terminal_authority_candidate(candidates).map(|candidate| candidate.authority)
 }
 
-pub(crate) fn locate_v41_terminal_candidate(
+pub(crate) fn locate_v45_terminal_candidate(
     bytes: &[u8],
     context: KeyHoldingTerminalContext<'_>,
     options: ReaderOptions,
@@ -494,11 +494,11 @@ pub(crate) fn locate_v41_terminal_candidate(
     let mut candidates = Vec::new();
     if bytes.len() >= CRITICAL_RECOVERY_LOCATOR_LEN {
         let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-        collect_v41_locator_candidate(bytes, final_offset, 0, context, &mut candidates);
+        collect_v45_locator_candidate(bytes, final_offset, 0, context, &mut candidates);
     }
     if bytes.len() >= LOCATOR_PAIR_LEN {
         let mirror_offset = bytes.len() - LOCATOR_PAIR_LEN;
-        collect_v41_locator_candidate(bytes, mirror_offset, 1, context, &mut candidates);
+        collect_v45_locator_candidate(bytes, mirror_offset, 1, context, &mut candidates);
     }
 
     if candidates.is_empty() {
@@ -507,7 +507,7 @@ pub(crate) fn locate_v41_terminal_candidate(
         let mut offset = bytes.len().saturating_sub(4);
         while offset >= scan_start {
             if bytes.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v41_locator_candidate(bytes, offset, 2, context, &mut candidates);
+                collect_v45_locator_candidate(bytes, offset, 2, context, &mut candidates);
             } else if bytes.get(offset..offset + 4) == Some(b"TZCR") {
                 if let Ok(candidate) = parse_locatorless_cmra_candidate(bytes, offset, context) {
                     candidates.push(candidate);
@@ -520,19 +520,19 @@ pub(crate) fn locate_v41_terminal_candidate(
         }
     }
 
-    choose_v41_terminal_candidate(candidates)
+    choose_v45_terminal_candidate(candidates)
 }
 
-pub(crate) fn locate_v41_public_terminal(
+pub(crate) fn locate_v45_public_terminal(
     bytes: &[u8],
     volume_header: &VolumeHeader,
     crypto_header: &CryptoHeader<'_>,
     options: ReaderOptions,
-) -> Result<V41PublicTerminal, FormatError> {
+) -> Result<V45PublicTerminal, FormatError> {
     let mut candidates = Vec::new();
     if bytes.len() >= CRITICAL_RECOVERY_LOCATOR_LEN {
         let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
-        collect_v41_public_locator_candidate(
+        collect_v45_public_locator_candidate(
             bytes,
             final_offset,
             0,
@@ -543,7 +543,7 @@ pub(crate) fn locate_v41_public_terminal(
     }
     if bytes.len() >= LOCATOR_PAIR_LEN {
         let mirror_offset = bytes.len() - LOCATOR_PAIR_LEN;
-        collect_v41_public_locator_candidate(
+        collect_v45_public_locator_candidate(
             bytes,
             mirror_offset,
             1,
@@ -559,7 +559,7 @@ pub(crate) fn locate_v41_public_terminal(
         let mut offset = bytes.len().saturating_sub(4);
         while offset >= scan_start {
             if bytes.get(offset..offset + 4) == Some(b"TZCL") {
-                collect_v41_public_locator_candidate(
+                collect_v45_public_locator_candidate(
                     bytes,
                     offset,
                     2,
@@ -584,10 +584,133 @@ pub(crate) fn locate_v41_public_terminal(
         }
     }
 
-    choose_v41_public_terminal_candidate(candidates).map(|candidate| candidate.terminal)
+    choose_v45_public_terminal_candidate(candidates).map(|candidate| candidate.terminal)
 }
 
-pub(crate) fn collect_v41_locator_candidate(
+pub(crate) fn locate_v45_public_terminal_read_at(
+    reader: &dyn ArchiveReadAt,
+    len: u64,
+    volume_header: &VolumeHeader,
+    crypto_header: &CryptoHeader<'_>,
+    options: ReaderOptions,
+) -> Result<V45PublicTerminal, FormatError> {
+    let mut candidates = Vec::new();
+    if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
+        let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
+        collect_v45_public_locator_candidate_read_at(
+            reader,
+            final_offset,
+            0,
+            volume_header,
+            crypto_header,
+            &mut candidates,
+        );
+    }
+    if len >= LOCATOR_PAIR_LEN as u64 {
+        let mirror_offset = len - LOCATOR_PAIR_LEN as u64;
+        collect_v45_public_locator_candidate_read_at(
+            reader,
+            mirror_offset,
+            1,
+            volume_header,
+            crypto_header,
+            &mut candidates,
+        );
+    }
+
+    if candidates.is_empty() {
+        let scan = max_critical_recovery_scan(options)? as u64;
+        let scan_start = len.saturating_sub(scan);
+        let scan_len = to_usize(len.saturating_sub(scan_start), "CMRA scan")?;
+        let tail = read_at_vec(reader, scan_start, scan_len, "CMRA scan")?;
+        let mut offset = tail.len().saturating_sub(4);
+        while offset < tail.len() {
+            let absolute_offset = checked_u64_add(scan_start, offset as u64, "CMRA scan")?;
+            if tail.get(offset..offset + 4) == Some(b"TZCL") {
+                collect_v45_public_locator_candidate_read_at(
+                    reader,
+                    absolute_offset,
+                    2,
+                    volume_header,
+                    crypto_header,
+                    &mut candidates,
+                );
+            } else if tail.get(offset..offset + 4) == Some(b"TZCR") {
+                if let Ok(candidate) = parse_public_locatorless_cmra_candidate_read_at(
+                    reader,
+                    absolute_offset,
+                    volume_header,
+                    crypto_header,
+                ) {
+                    candidates.push(candidate);
+                }
+            }
+            if offset == 0 {
+                break;
+            }
+            offset -= 1;
+        }
+    }
+
+    choose_v45_public_terminal_candidate(candidates).map(|candidate| candidate.terminal)
+}
+
+/// Recovers the terminal image's `layout_flags` without validating the public
+/// terminal, to distinguish an unsigned archive (root-auth flag clear) from a
+/// corrupt one (no recoverable image). Bounded: reads only the final/mirror
+/// critical-recovery locator and the CMRA image. Returns `Ok(None)` when no
+/// matching locator or recoverable image exists.
+pub(crate) fn public_no_key_layout_flags(
+    reader: &dyn ArchiveReadAt,
+    len: u64,
+) -> Result<Option<u32>, FormatError> {
+    if len >= CRITICAL_RECOVERY_LOCATOR_LEN as u64 {
+        let final_offset = len - CRITICAL_RECOVERY_LOCATOR_LEN as u64;
+        if let Some(flags) = public_no_key_layout_flags_at(reader, final_offset, 0)? {
+            return Ok(Some(flags));
+        }
+    }
+    if len >= LOCATOR_PAIR_LEN as u64 {
+        let mirror_offset = len - LOCATOR_PAIR_LEN as u64;
+        if let Some(flags) = public_no_key_layout_flags_at(reader, mirror_offset, 1)? {
+            return Ok(Some(flags));
+        }
+    }
+    Ok(None)
+}
+
+fn public_no_key_layout_flags_at(
+    reader: &dyn ArchiveReadAt,
+    offset: u64,
+    expected_sequence: u32,
+) -> Result<Option<u32>, FormatError> {
+    let Ok(raw) = read_at_vec(
+        reader,
+        offset,
+        CRITICAL_RECOVERY_LOCATOR_LEN,
+        "CriticalRecoveryLocator",
+    ) else {
+        return Ok(None);
+    };
+    let Ok(locator) = CriticalRecoveryLocator::parse(&raw) else {
+        return Ok(None);
+    };
+    if locator.locator_sequence != expected_sequence {
+        return Ok(None);
+    }
+    let tuple = CmraDecoderTuple::from(locator);
+    let Ok(recovered) = recover_cmra_read_at(
+        reader,
+        locator.cmra_offset,
+        Some(tuple),
+        CmraRecoveryMode::PublicNoKey,
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(recovered.image.layout_flags))
+}
+
+pub(crate) fn collect_v45_locator_candidate(
     bytes: &[u8],
     offset: usize,
     expected_sequence: u32,
@@ -608,7 +731,7 @@ pub(crate) fn collect_v41_locator_candidate(
     }
 }
 
-pub(crate) fn collect_v41_locator_candidate_read_at(
+pub(crate) fn collect_v45_locator_candidate_read_at(
     reader: &dyn ArchiveReadAt,
     offset: u64,
     expected_sequence: u32,
@@ -634,7 +757,7 @@ pub(crate) fn collect_v41_locator_candidate_read_at(
     }
 }
 
-pub(crate) fn collect_v41_locator_authority_candidate(
+pub(crate) fn collect_v45_locator_authority_candidate(
     bytes: &[u8],
     offset: usize,
     expected_sequence: u32,
@@ -657,7 +780,7 @@ pub(crate) fn collect_v41_locator_authority_candidate(
     }
 }
 
-pub(crate) fn collect_v41_recipient_wrap_locator_authority_candidate<F>(
+pub(crate) fn collect_v45_recipient_wrap_locator_authority_candidate<F>(
     bytes: &[u8],
     offset: usize,
     expected_sequence: u32,
@@ -684,7 +807,7 @@ pub(crate) fn collect_v41_recipient_wrap_locator_authority_candidate<F>(
     }
 }
 
-pub(crate) fn collect_v41_recipient_wrap_locator_authority_candidate_read_at<F>(
+pub(crate) fn collect_v45_recipient_wrap_locator_authority_candidate_read_at<F>(
     reader: &dyn ArchiveReadAt,
     offset: u64,
     expected_sequence: u32,
@@ -716,7 +839,7 @@ pub(crate) fn collect_v41_recipient_wrap_locator_authority_candidate_read_at<F>(
     }
 }
 
-pub(crate) fn collect_v41_locator_authority_candidate_read_at(
+pub(crate) fn collect_v45_locator_authority_candidate_read_at(
     reader: &dyn ArchiveReadAt,
     offset: u64,
     expected_sequence: u32,
@@ -744,7 +867,7 @@ pub(crate) fn collect_v41_locator_authority_candidate_read_at(
     }
 }
 
-pub(crate) fn collect_v41_public_locator_candidate(
+pub(crate) fn collect_v45_public_locator_candidate(
     bytes: &[u8],
     offset: usize,
     expected_sequence: u32,
@@ -768,66 +891,99 @@ pub(crate) fn collect_v41_public_locator_candidate(
     }
 }
 
-pub(crate) fn choose_v41_terminal_candidate(
+pub(crate) fn collect_v45_public_locator_candidate_read_at(
+    reader: &dyn ArchiveReadAt,
+    offset: u64,
+    expected_sequence: u32,
+    volume_header: &VolumeHeader,
+    crypto_header: &CryptoHeader<'_>,
+    candidates: &mut Vec<PublicTerminalCandidate>,
+) {
+    let Ok(raw) = read_at_vec(
+        reader,
+        offset,
+        CRITICAL_RECOVERY_LOCATOR_LEN,
+        "CriticalRecoveryLocator",
+    ) else {
+        return;
+    };
+    let Ok(locator) = CriticalRecoveryLocator::parse(&raw) else {
+        return;
+    };
+    if expected_sequence <= 1 && locator.locator_sequence != expected_sequence {
+        return;
+    }
+    if let Ok(candidate) = parse_public_locator_cmra_candidate_read_at(
+        reader,
+        offset,
+        locator,
+        volume_header,
+        crypto_header,
+    ) {
+        candidates.push(candidate);
+    }
+}
+
+pub(crate) fn choose_v45_terminal_candidate(
     mut candidates: Vec<TerminalCandidate>,
 ) -> Result<TerminalCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
     let winner = candidates.pop().ok_or(FormatError::InvalidArchive(
-        "no valid v41 CMRA candidate found",
+        "no valid v45 CMRA candidate found",
     ))?;
     if let Some(previous) = candidates.last() {
         if previous.anchor == winner.anchor
             && (previous.cmra_offset != winner.cmra_offset
                 || previous.cmra_length != winner.cmra_length)
         {
-            return Err(FormatError::InvalidArchive("ambiguous v41 CMRA candidates"));
+            return Err(FormatError::InvalidArchive("ambiguous v45 CMRA candidates"));
         }
     }
     Ok(winner)
 }
 
-pub(crate) fn choose_v41_terminal_authority_candidate(
+pub(crate) fn choose_v45_terminal_authority_candidate(
     mut candidates: Vec<TerminalAuthorityCandidate>,
 ) -> Result<TerminalAuthorityCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
     let winner = candidates.pop().ok_or(FormatError::InvalidArchive(
-        "no valid v41 CMRA candidate found",
+        "no valid v45 CMRA candidate found",
     ))?;
     if let Some(previous) = candidates.last() {
         if previous.anchor == winner.anchor
             && (previous.cmra_offset != winner.cmra_offset
                 || previous.cmra_length != winner.cmra_length)
         {
-            return Err(FormatError::InvalidArchive("ambiguous v41 CMRA candidates"));
+            return Err(FormatError::InvalidArchive("ambiguous v45 CMRA candidates"));
         }
     }
     Ok(winner)
 }
 
-pub(crate) fn choose_v41_recipient_wrap_terminal_authority_candidate(
+pub(crate) fn choose_v45_recipient_wrap_terminal_authority_candidate(
     mut candidates: Vec<RecipientWrapTerminalAuthorityCandidate>,
 ) -> Result<RecipientWrapTerminalAuthorityCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
     let winner = candidates.pop().ok_or(FormatError::InvalidArchive(
-        "no valid v41 CMRA candidate found",
+        "no valid v45 CMRA candidate found",
     ))?;
     if let Some(previous) = candidates.last() {
         if previous.anchor == winner.anchor
             && (previous.cmra_offset != winner.cmra_offset
                 || previous.cmra_length != winner.cmra_length)
         {
-            return Err(FormatError::InvalidArchive("ambiguous v41 CMRA candidates"));
+            return Err(FormatError::InvalidArchive("ambiguous v45 CMRA candidates"));
         }
     }
     Ok(winner)
 }
 
-pub(crate) fn choose_v41_public_terminal_candidate(
+pub(crate) fn choose_v45_public_terminal_candidate(
     mut candidates: Vec<PublicTerminalCandidate>,
 ) -> Result<PublicTerminalCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
     let winner = candidates.pop().ok_or(FormatError::InvalidArchive(
-        "no valid v41 public CMRA candidate found",
+        "no valid v45 public CMRA candidate found",
     ))?;
     if let Some(previous) = candidates.last() {
         if previous.anchor == winner.anchor
@@ -835,7 +991,7 @@ pub(crate) fn choose_v41_public_terminal_candidate(
                 || previous.cmra_length != winner.cmra_length)
         {
             return Err(FormatError::InvalidArchive(
-                "ambiguous v41 public CMRA candidates",
+                "ambiguous v45 public CMRA candidates",
             ));
         }
     }
@@ -1202,6 +1358,63 @@ pub(crate) fn parse_public_locator_cmra_candidate(
     })
 }
 
+pub(crate) fn parse_public_locator_cmra_candidate_read_at(
+    reader: &dyn ArchiveReadAt,
+    locator_offset: u64,
+    locator: CriticalRecoveryLocator,
+    volume_header: &VolumeHeader,
+    crypto_header: &CryptoHeader<'_>,
+) -> Result<PublicTerminalCandidate, FormatError> {
+    let tuple = CmraDecoderTuple::from(locator);
+    validate_cmra_decoder_tuple(tuple)?;
+    let expected_cmra_length = cmra_serialized_length(tuple)?;
+    if locator.cmra_length as u64 != expected_cmra_length {
+        return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
+    }
+    validate_locator_position(
+        to_usize(locator_offset, "CriticalRecoveryLocator")?,
+        locator,
+    )?;
+    let recovered = recover_cmra_read_at(
+        reader,
+        locator.cmra_offset,
+        Some(tuple),
+        CmraRecoveryMode::PublicNoKey,
+    )?;
+    if recovered.tuple != tuple {
+        return Err(FormatError::InvalidArchive("CMRA decoder tuple mismatch"));
+    }
+    if expected_cmra_length != recovered.cmra_length {
+        return Err(FormatError::InvalidArchive("locator CMRA length mismatch"));
+    }
+    validate_locator_image_boundary(locator, &recovered.image)?;
+    validate_cmra_identity_hints(
+        recovered.header_hints,
+        Some(CmraIdentityHints::from(locator)),
+        &recovered.image,
+    )?;
+    let terminal = validate_recovered_public_terminal_read_at(
+        recovered.image,
+        reader,
+        volume_header,
+        crypto_header,
+        false,
+    )?;
+    Ok(PublicTerminalCandidate {
+        terminal,
+        anchor: to_usize(
+            checked_u64_add(
+                locator_offset,
+                CRITICAL_RECOVERY_LOCATOR_LEN as u64,
+                "locator anchor",
+            )?,
+            "locator anchor overflow",
+        )?,
+        cmra_offset: locator.cmra_offset,
+        cmra_length: recovered.cmra_length,
+    })
+}
+
 pub(crate) fn parse_locatorless_cmra_candidate(
     bytes: &[u8],
     cmra_offset: usize,
@@ -1501,6 +1714,48 @@ pub(crate) fn parse_public_locatorless_cmra_candidate(
             .checked_add(to_usize(recovered.cmra_length, "CMRA")?)
             .ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
         cmra_offset: cmra_offset as u64,
+        cmra_length: recovered.cmra_length,
+    })
+}
+
+pub(crate) fn parse_public_locatorless_cmra_candidate_read_at(
+    reader: &dyn ArchiveReadAt,
+    cmra_offset: u64,
+    volume_header: &VolumeHeader,
+    crypto_header: &CryptoHeader<'_>,
+) -> Result<PublicTerminalCandidate, FormatError> {
+    let recovered = recover_cmra_read_at(reader, cmra_offset, None, CmraRecoveryMode::PublicNoKey)?;
+    if recovered.image.body_bytes_before_cmra != cmra_offset {
+        return Err(FormatError::InvalidArchive(
+            "locatorless CMRA boundary mismatch",
+        ));
+    }
+    if recovered
+        .image
+        .volume_trailer_offset
+        .checked_add(VOLUME_TRAILER_LEN as u64)
+        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
+        != cmra_offset
+    {
+        return Err(FormatError::InvalidArchive(
+            "locatorless trailer boundary mismatch",
+        ));
+    }
+    validate_cmra_identity_hints(recovered.header_hints, None, &recovered.image)?;
+    let terminal = validate_recovered_public_terminal_read_at(
+        recovered.image,
+        reader,
+        volume_header,
+        crypto_header,
+        true,
+    )?;
+    Ok(PublicTerminalCandidate {
+        terminal,
+        anchor: to_usize(
+            checked_u64_add(cmra_offset, recovered.cmra_length, "CMRA anchor overflow")?,
+            "CMRA anchor overflow",
+        )?,
+        cmra_offset,
         cmra_length: recovered.cmra_length,
     })
 }
@@ -2332,7 +2587,7 @@ pub(crate) fn validate_recovered_terminal(
     bytes: &[u8],
     context: KeyHoldingTerminalContext<'_>,
     require_cmra_boundary_magic: bool,
-) -> Result<V41Terminal, FormatError> {
+) -> Result<V45Terminal, FormatError> {
     let cmra_offset = to_usize(image.body_bytes_before_cmra, "CMRA")?;
     let cmra_boundary_magic_ok = bytes.get(cmra_offset..cmra_offset + 4) == Some(b"TZCR");
     validate_recovered_terminal_inner(
@@ -2350,7 +2605,7 @@ pub(crate) fn validate_recovered_terminal_read_at(
     reader: &dyn ArchiveReadAt,
     context: KeyHoldingTerminalContext<'_>,
     require_cmra_boundary_magic: bool,
-) -> Result<V41Terminal, FormatError> {
+) -> Result<V45Terminal, FormatError> {
     let mut magic = [0u8; 4];
     reader.read_exact_at(image.body_bytes_before_cmra, &mut magic)?;
     validate_recovered_terminal_inner(
@@ -2368,7 +2623,7 @@ pub(crate) fn validate_recovered_terminal_inner(
     require_cmra_boundary_magic: bool,
     cmra_boundary_magic_ok: bool,
     context: KeyHoldingTerminalContext<'_>,
-) -> Result<V41Terminal, FormatError> {
+) -> Result<V45Terminal, FormatError> {
     let subkeys = context.subkeys;
     let volume_header = context.volume_header;
     let crypto_header = context.crypto_header;
@@ -2480,7 +2735,7 @@ pub(crate) fn validate_recovered_terminal_inner(
         &trailer.trailer_hmac,
     )?;
     validate_trailer_identity(volume_header, &trailer)?;
-    validate_v41_trailer_equations(&image, &trailer)?;
+    validate_v45_trailer_equations(&image, &trailer)?;
 
     if require_cmra_boundary_magic && !cmra_boundary_magic_ok {
         return Err(FormatError::InvalidArchive("CMRA is not at image boundary"));
@@ -2488,7 +2743,7 @@ pub(crate) fn validate_recovered_terminal_inner(
 
     let manifest_footer_bytes = manifest_region.bytes.clone();
     let root_auth_footer_bytes = image.region(4).map(|region| region.bytes.clone());
-    Ok(V41Terminal {
+    Ok(V45Terminal {
         image,
         manifest_footer_bytes,
         root_auth_footer_bytes,
@@ -2503,7 +2758,43 @@ pub(crate) fn validate_recovered_public_terminal(
     volume_header: &VolumeHeader,
     public_crypto_header: &CryptoHeader<'_>,
     require_cmra_boundary_magic: bool,
-) -> Result<V41PublicTerminal, FormatError> {
+) -> Result<V45PublicTerminal, FormatError> {
+    let cmra_offset = to_usize(image.body_bytes_before_cmra, "CMRA")?;
+    let cmra_boundary_magic_ok = bytes.get(cmra_offset..cmra_offset + 4) == Some(b"TZCR");
+    validate_recovered_public_terminal_inner(
+        image,
+        volume_header,
+        public_crypto_header,
+        require_cmra_boundary_magic,
+        cmra_boundary_magic_ok,
+    )
+}
+
+pub(crate) fn validate_recovered_public_terminal_read_at(
+    image: CriticalMetadataImage,
+    reader: &dyn ArchiveReadAt,
+    volume_header: &VolumeHeader,
+    public_crypto_header: &CryptoHeader<'_>,
+    require_cmra_boundary_magic: bool,
+) -> Result<V45PublicTerminal, FormatError> {
+    let mut magic = [0u8; 4];
+    reader.read_exact_at(image.body_bytes_before_cmra, &mut magic)?;
+    validate_recovered_public_terminal_inner(
+        image,
+        volume_header,
+        public_crypto_header,
+        require_cmra_boundary_magic,
+        magic == *b"TZCR",
+    )
+}
+
+pub(crate) fn validate_recovered_public_terminal_inner(
+    image: CriticalMetadataImage,
+    volume_header: &VolumeHeader,
+    public_crypto_header: &CryptoHeader<'_>,
+    require_cmra_boundary_magic: bool,
+    cmra_boundary_magic_ok: bool,
+) -> Result<V45PublicTerminal, FormatError> {
     if image.layout_flags & 0x0000_0001 == 0 {
         return Err(FormatError::ReaderUnsupported(
             "public no-key verification requires root-auth",
@@ -2566,22 +2857,21 @@ pub(crate) fn validate_recovered_public_terminal(
         .ok_or(FormatError::InvalidArchive("missing VolumeTrailer region"))?;
     let trailer = VolumeTrailer::parse(&trailer_region.bytes)?;
     validate_trailer_identity(volume_header, &trailer)?;
-    validate_v41_public_trailer_profile(&image, &trailer)?;
+    validate_v45_public_trailer_profile(&image, &trailer)?;
 
-    let cmra_offset = to_usize(image.body_bytes_before_cmra, "CMRA")?;
-    if require_cmra_boundary_magic && bytes.get(cmra_offset..cmra_offset + 4) != Some(b"TZCR") {
+    if require_cmra_boundary_magic && !cmra_boundary_magic_ok {
         return Err(FormatError::InvalidArchive("CMRA is not at image boundary"));
     }
 
     let root_auth_footer_bytes = root_auth_region.bytes.clone();
-    Ok(V41PublicTerminal {
+    Ok(V45PublicTerminal {
         image,
         root_auth_footer_bytes,
         root_auth_footer,
     })
 }
 
-pub(crate) fn validate_v41_trailer_equations(
+pub(crate) fn validate_v45_trailer_equations(
     image: &CriticalMetadataImage,
     trailer: &VolumeTrailer,
 ) -> Result<(), FormatError> {
@@ -2592,7 +2882,7 @@ pub(crate) fn validate_v41_trailer_equations(
         || trailer.block_count != image.block_count
     {
         return Err(FormatError::InvalidArchive(
-            "VolumeTrailer does not match v41 terminal layout",
+            "VolumeTrailer does not match v45 terminal layout",
         ));
     }
     if root_auth_present {
@@ -2615,7 +2905,7 @@ pub(crate) fn validate_v41_trailer_equations(
                 != image.volume_trailer_offset
         {
             return Err(FormatError::InvalidArchive(
-                "VolumeTrailer root-auth fields do not match v41 terminal layout",
+                "VolumeTrailer root-auth fields do not match v45 terminal layout",
             ));
         }
     } else if trailer.root_auth_footer_offset != 0
@@ -2629,7 +2919,7 @@ pub(crate) fn validate_v41_trailer_equations(
     Ok(())
 }
 
-pub(crate) fn validate_v41_public_trailer_profile(
+pub(crate) fn validate_v45_public_trailer_profile(
     image: &CriticalMetadataImage,
     trailer: &VolumeTrailer,
 ) -> Result<(), FormatError> {
@@ -2638,7 +2928,7 @@ pub(crate) fn validate_v41_public_trailer_profile(
         || trailer.manifest_footer_length != MANIFEST_FOOTER_LEN as u32
     {
         return Err(FormatError::InvalidArchive(
-            "VolumeTrailer does not match v41 public terminal layout",
+            "VolumeTrailer does not match v45 public terminal layout",
         ));
     }
     if trailer.root_auth_flags != 0x0000_0001
@@ -2663,7 +2953,7 @@ pub(crate) fn validate_v41_public_trailer_profile(
             != image.volume_trailer_offset
     {
         return Err(FormatError::InvalidArchive(
-            "VolumeTrailer root-auth fields do not match v41 public terminal layout",
+            "VolumeTrailer root-auth fields do not match v45 public terminal layout",
         ));
     }
     Ok(())
@@ -2738,7 +3028,7 @@ pub(crate) fn cmra_worst_case_cap() -> Result<u64, FormatError> {
     Ok(worst)
 }
 
-pub(crate) fn v41_terminal_tail_cap() -> Result<usize, FormatError> {
+pub(crate) fn v45_terminal_tail_cap() -> Result<usize, FormatError> {
     let total = [
         MANIFEST_FOOTER_LEN as u64,
         READER_MAX_ROOT_AUTH_FOOTER_LEN as u64,

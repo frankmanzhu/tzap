@@ -618,7 +618,7 @@ pub(crate) fn required_stripe_width_for_plan(
             plan.options.stripe_width,
             volume_index,
         );
-        let volume_size = planned_v41_volume_size(plan, &subkeys, volume_index, block_count)?;
+        let volume_size = planned_v45_volume_size(plan, &subkeys, volume_index, block_count)?;
         max_volume_size = max_volume_size.max(volume_size);
         let record_bytes = checked_u64_mul(block_count, block_record_len, "volume records")?;
         let overhead =
@@ -651,7 +651,7 @@ pub(crate) fn required_stripe_width_for_plan(
     u32::try_from(required).map_err(|_| FormatError::WriterUnsupported("volume count"))
 }
 
-pub(crate) fn planned_v41_volume_size(
+pub(crate) fn planned_v45_volume_size(
     plan: &WriterPlan,
     subkeys: &Subkeys,
     volume_index: u32,
@@ -719,7 +719,7 @@ pub(crate) fn planned_v41_volume_size(
         root_auth_footer: root_auth_footer_offset.zip(plan.root_auth_footer_length),
     })?;
     let cmra_offset = checked_u64_add(trailer_offset, VOLUME_TRAILER_LEN as u64, "CMRA")?;
-    let cmra = build_v41_cmra(CmraBuildInput {
+    let cmra = build_v45_cmra(CmraBuildInput {
         volume_format_rev: plan.volume_format_rev,
         volume_header_bytes: &volume_header_bytes,
         crypto_header: &plan.crypto_header,
@@ -1040,7 +1040,7 @@ pub(crate) fn emit_writer_plan_suffix<O: ArchiveWriteSink>(
         )?;
 
         let cmra_offset = state.bytes_written[volume_index];
-        let cmra = build_v41_cmra(CmraBuildInput {
+        let cmra = build_v45_cmra(CmraBuildInput {
             volume_format_rev: plan.volume_format_rev,
             volume_header_bytes: &state.volume_headers[volume_index],
             crypto_header: &plan.crypto_header,

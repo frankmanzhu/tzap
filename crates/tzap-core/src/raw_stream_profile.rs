@@ -24,7 +24,7 @@ pub const RAW_ENVELOPE_ENTRY_V1_LEN: usize = 56;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentProfile {
-    TarMemberV41,
+    TarMember,
     RawStreamV1,
 }
 
@@ -52,7 +52,7 @@ pub fn validate_raw_stream_content_model_extension(
 pub fn content_profile_from_extensions(
     extensions: &[ExtensionTlv<'_>],
 ) -> Result<ContentProfile, FormatError> {
-    let mut profile = ContentProfile::TarMemberV41;
+    let mut profile = ContentProfile::TarMember;
     for extension in extensions {
         let ext_tag = extension.tag & 0x7fff;
         let is_critical = extension.tag & 0x8000 != 0;
@@ -68,7 +68,7 @@ pub fn reject_unsupported_raw_stream_profile(
     extensions: &[ExtensionTlv<'_>],
 ) -> Result<(), FormatError> {
     match content_profile_from_extensions(extensions)? {
-        ContentProfile::TarMemberV41 => Ok(()),
+        ContentProfile::TarMember => Ok(()),
         ContentProfile::RawStreamV1 => Err(FormatError::ReaderUnsupported(
             RAW_STREAM_UNSUPPORTED_MESSAGE,
         )),
@@ -521,13 +521,13 @@ mod tests {
             FormatError::MalformedKnownExtension(RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG)
         );
         assert_eq!(
-            validate_raw_stream_content_model_extension(true, b"tar_member_v41").unwrap_err(),
+            validate_raw_stream_content_model_extension(true, b"tar_member").unwrap_err(),
             FormatError::MalformedKnownExtension(RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG)
         );
     }
 
     #[test]
-    fn base_v41_readers_reject_raw_stream_profile_before_tar_metadata() {
+    fn base_readers_reject_raw_stream_profile_before_tar_metadata() {
         let master_key = MasterKey::from_raw_key(&[9; 32]).unwrap();
         let archive = minimal_raw_profile_archive(&master_key);
         let expected = FormatError::ReaderUnsupported(RAW_STREAM_UNSUPPORTED_MESSAGE);
@@ -671,13 +671,13 @@ mod tests {
     fn non_critical_raw_stream_tag_is_forward_compatible_unknown_extension() {
         let extension = ExtensionTlv {
             tag: RAW_STREAM_CONTENT_MODEL_EXTENSION_TAG,
-            value: b"ignored by base v41",
+            value: b"ignored by base reader",
         };
 
         validate_crypto_extension_semantics(std::slice::from_ref(&extension)).unwrap();
         assert_eq!(
             content_profile_from_extensions(&[extension]).unwrap(),
-            ContentProfile::TarMemberV41
+            ContentProfile::TarMember
         );
     }
 

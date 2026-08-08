@@ -2233,7 +2233,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_reader_caps_match_v41() {
+    fn default_reader_caps_match_v45() {
         let limits = MetadataLimits::default();
         assert_eq!(limits.max_shard_count, 1_000_000);
         assert_eq!(limits.max_directory_hint_shards, 1_000_000);
