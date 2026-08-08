@@ -38,6 +38,7 @@ use crate::writer::{
     write_archive, write_archive_sources_to_sink_single_pass, write_archive_unencrypted,
     write_archive_with_dictionary, write_archive_with_kdf,
     write_archive_with_recipient_wrap_records, write_archive_with_root_auth,
+    write_archive_with_root_auth_and_kdf,
     write_archive_with_root_auth_and_recipient_wrap_records, MemoryArchiveSink,
     PortableFileMetadata, PortableModeOrigin, PortablePosixOwner, RegularFile, RegularFileSource,
     RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, WriterOptions,
@@ -1193,6 +1194,325 @@ fn public_no_key_inspect_footer_reports_recipientwrap_signed_footers() {
     assert_eq!(
         inspection.root_auth_footer.signer_identity_bytes,
         b"recipient signer"
+    );
+}
+
+/// Runs `public_no_key_inspect_footer` on the archive and asserts that every
+/// extracted piece matches an independent parse of the same volume and of the
+/// authoritative CMRA-stored copy of the footer.
+fn assert_signed_inspection_matches(
+    archive: &[u8],
+    config: RootAuthWriterConfig<'_>,
+) -> PublicNoKeyFooterInspection {
+    let status = public_no_key_inspect_footer(
+        &CountingReadAt::new(archive.to_vec(), vec![]),
+        ReaderOptions::default(),
+    )
+    .unwrap();
+    let PublicNoKeyFooterStatus::Signed(inspection) = status else {
+        panic!("expected signed inspection");
+    };
+
+    // The recovered footer bytes must be byte-identical to the authoritative
+    // copy stored in the CMRA image (SerializedRegion type 4).
+    let locator = final_recovery_locator(archive);
+    let recovered = recover_cmra(
+        archive,
+        locator.cmra_offset,
+        Some(CmraDecoderTuple::from(locator)),
+        CmraRecoveryMode::PublicNoKey,
+    )
+    .unwrap();
+    let region = recovered
+        .image
+        .regions
+        .iter()
+        .find(|region| region.region_type == 4)
+        .unwrap_or_else(|| panic!("CMRA image has no root-auth region"));
+    assert_eq!(
+        inspection.root_auth_footer_bytes.as_slice(),
+        region.bytes.as_slice()
+    );
+    let stored_footer = RootAuthFooterV1::parse(&region.bytes).unwrap();
+    assert_eq!(inspection.root_auth_footer, stored_footer);
+
+    // Header, crypto fixed fields, and KDF params must equal the independent
+    // parse of the same volume.
+    let volume_header = VolumeHeader::parse(&archive[..VOLUME_HEADER_LEN]).unwrap();
+    assert_eq!(inspection.volume_header, volume_header);
+    let crypto_start = volume_header.crypto_header_offset as usize;
+    let crypto_end = crypto_start + volume_header.crypto_header_length as usize;
+    let crypto = CryptoHeader::parse(
+        &archive[crypto_start..crypto_end],
+        volume_header.crypto_header_length,
+    )
+    .unwrap();
+    assert_eq!(inspection.crypto_header, crypto.fixed);
+    assert_eq!(inspection.kdf_params, crypto.kdf_params);
+
+    // The footer fields must match what the writer was asked to record.
+    let footer = &inspection.root_auth_footer;
+    assert_eq!(footer.authenticator_id, config.authenticator_id);
+    assert_eq!(footer.signer_identity_type, config.signer_identity_type);
+    assert_eq!(footer.signer_identity_bytes, config.signer_identity);
+    assert_eq!(footer.archive_uuid, volume_header.archive_uuid);
+    assert_eq!(footer.session_id, volume_header.session_id);
+    assert_eq!(footer.format_version, FORMAT_VERSION);
+    assert_eq!(footer.volume_format_rev, VOLUME_FORMAT_REV_45);
+
+    // The returned bytes are exactly the footer's wire form, and the archive
+    // root recomputed by the inspection matches the footer commitment.
+    assert_eq!(
+        footer.footer_length().unwrap() as usize,
+        inspection.root_auth_footer_bytes.len()
+    );
+    assert_eq!(
+        RootAuthFooterV1::parse(&inspection.root_auth_footer_bytes).unwrap(),
+        *footer
+    );
+    assert_eq!(inspection.archive_root, footer.archive_root);
+
+    inspection
+}
+
+#[test]
+fn public_no_key_inspect_footer_extracts_varied_signer_identities() {
+    let mut cases: Vec<(Vec<u8>, u16, u16)> = vec![
+        (Vec::new(), 0, 0),
+        (b"x".to_vec(), 0, 1),
+        (b"test signer".to_vec(), 1, 0x7777),
+        ("签名者证书🔑".as_bytes().to_vec(), 2, 0xABCD),
+        (vec![0u8; 16], 3, 0x1111),
+    ];
+    // Binary non-UTF8 identity: extraction must be byte-oriented.
+    let mut binary = Vec::with_capacity(1024);
+    for idx in 0..1024 {
+        binary.push((idx as u8).wrapping_mul(37).wrapping_add(0x5A));
+    }
+    cases.push((binary, 4, 0xE001));
+    // Identity at exactly the 16 KiB wire cap.
+    cases.push((vec![0x42; 16 * 1024], 5, 0xFFFF));
+
+    for (identity, identity_type, authenticator_id) in cases {
+        let config = RootAuthWriterConfig {
+            authenticator_id,
+            signer_identity_type: identity_type,
+            signer_identity: &identity,
+            authenticator_value_length: TEST_ROOT_AUTH_VALUE_LEN,
+        };
+        let archive = write_archive_with_root_auth(
+            &[RegularFile::new("identity.txt", b"identity payload")],
+            &master_key(),
+            single_stream_options(),
+            config,
+            |request| Ok(test_root_auth_value(request)),
+        )
+        .unwrap();
+        assert_signed_inspection_matches(&archive.bytes, config);
+    }
+}
+
+#[test]
+fn public_no_key_inspect_footer_extracts_varied_authenticator_values() {
+    // 0 exercises the empty-authenticator edge; 131072 is the wire cap.
+    let lengths: &[u32] = &[0, 1, 32, 1024, 131072];
+    for (index, length) in lengths.iter().enumerate() {
+        let mut authenticator = vec![0u8; *length as usize];
+        // Patterned bytes so any byte-order or offset bug in extraction shows.
+        for (idx, byte) in authenticator.iter_mut().enumerate() {
+            *byte = (idx as u8).wrapping_add(0x10 * (index as u8 + 1));
+        }
+        let config = RootAuthWriterConfig {
+            authenticator_id: 0x7000 + index as u16,
+            signer_identity_type: index as u16,
+            signer_identity: b"auth value signer",
+            authenticator_value_length: *length,
+        };
+        let written_authenticator = authenticator.clone();
+        let archive = write_archive_with_root_auth(
+            &[RegularFile::new("auth.txt", b"authenticator payload")],
+            &master_key(),
+            single_stream_options(),
+            config,
+            move |_request| Ok(written_authenticator.clone()),
+        )
+        .unwrap();
+        let inspection = assert_signed_inspection_matches(&archive.bytes, config);
+        assert_eq!(
+            inspection.root_auth_footer.authenticator_value,
+            authenticator
+        );
+    }
+}
+
+#[test]
+fn public_no_key_inspect_footer_extracts_password_derived_and_raw_kdf_combos() {
+    // Passphrase-derived Argon2id params, as produced by a password.
+    let passphrase_kdf = KdfParams::Argon2id {
+        t_cost: 1,
+        m_cost_kib: 8,
+        parallelism: 1,
+        salt: b"0123456789abcdef".to_vec(),
+    };
+    let passphrase_key = crate::crypto::MasterKey::derive_from_passphrase(
+        &passphrase_kdf,
+        "correct horse battery staple",
+    )
+    .unwrap();
+    let passphrase_config = RootAuthWriterConfig {
+        authenticator_id: 0x0BAD,
+        signer_identity_type: 1,
+        signer_identity: b"password signer",
+        authenticator_value_length: TEST_ROOT_AUTH_VALUE_LEN,
+    };
+    let archive = write_archive_with_root_auth_and_kdf(
+        &[RegularFile::new("pass.txt", b"password payload")],
+        &passphrase_key,
+        single_stream_options(),
+        &passphrase_kdf,
+        passphrase_config,
+        |request| Ok(test_root_auth_value(request)),
+    )
+    .unwrap();
+    let inspection = assert_signed_inspection_matches(&archive.bytes, passphrase_config);
+    assert_eq!(inspection.kdf_params, passphrase_kdf);
+
+    // A second Argon2id profile with different costs and a 33-byte salt.
+    let odd_salt_kdf = KdfParams::Argon2id {
+        t_cost: 2,
+        m_cost_kib: 16,
+        parallelism: 2,
+        salt: vec![0xA5; 33],
+    };
+    let odd_config = RootAuthWriterConfig {
+        authenticator_id: 0x0BAE,
+        signer_identity_type: 2,
+        signer_identity: b"odd salt signer",
+        authenticator_value_length: TEST_ROOT_AUTH_VALUE_LEN,
+    };
+    let archive = write_archive_with_root_auth_and_kdf(
+        &[RegularFile::new("odd.txt", b"odd salt payload")],
+        &master_key(),
+        single_stream_options(),
+        &odd_salt_kdf,
+        odd_config,
+        |request| Ok(test_root_auth_value(request)),
+    )
+    .unwrap();
+    let inspection = assert_signed_inspection_matches(&archive.bytes, odd_config);
+    assert_eq!(inspection.kdf_params, odd_salt_kdf);
+
+    // Raw-key encrypted archives use KdfParams::Raw.
+    let raw_config = RootAuthWriterConfig {
+        authenticator_id: 0x0BAF,
+        signer_identity_type: 3,
+        signer_identity: b"raw signer",
+        authenticator_value_length: TEST_ROOT_AUTH_VALUE_LEN,
+    };
+    let archive = write_archive_with_root_auth(
+        &[RegularFile::new("raw.txt", b"raw payload")],
+        &master_key(),
+        single_stream_options(),
+        raw_config,
+        |request| Ok(test_root_auth_value(request)),
+    )
+    .unwrap();
+    let inspection = assert_signed_inspection_matches(&archive.bytes, raw_config);
+    assert_eq!(inspection.kdf_params, KdfParams::Raw);
+
+    // Unencrypted archives with root auth use KdfParams::None.
+    let mut plain_options = single_stream_options();
+    plain_options.aead_algo = AeadAlgo::None;
+    let none_config = RootAuthWriterConfig {
+        authenticator_id: 0x0AB0,
+        signer_identity_type: 4,
+        signer_identity: b"none signer",
+        authenticator_value_length: TEST_ROOT_AUTH_VALUE_LEN,
+    };
+    let archive = write_archive_with_root_auth_and_kdf(
+        &[RegularFile::new("plain.txt", b"plain payload")],
+        &master_key(),
+        plain_options,
+        &KdfParams::None,
+        none_config,
+        |request| Ok(test_root_auth_value(request)),
+    )
+    .unwrap();
+    let inspection = assert_signed_inspection_matches(&archive.bytes, none_config);
+    assert_eq!(inspection.kdf_params, KdfParams::None);
+}
+
+#[test]
+fn public_no_key_inspect_footer_extracts_recipient_wrap_table_variants() {
+    for record_count in [1usize, 2, 8] {
+        let config = RootAuthWriterConfig {
+            authenticator_id: 0x4000 + record_count as u16,
+            signer_identity_type: 1,
+            signer_identity: b"wrap signer",
+            authenticator_value_length: TEST_ROOT_AUTH_VALUE_LEN,
+        };
+        let archive = write_archive_with_root_auth_and_recipient_wrap_records(
+            &[RegularFile::new("wrap.txt", b"wrap payload")],
+            &master_key(),
+            single_stream_options(),
+            vec![recipient_wrap_test_record(); record_count],
+            config,
+            |request| Ok(test_root_auth_value(request)),
+        )
+        .unwrap();
+        let inspection = assert_signed_inspection_matches(&archive.bytes, config);
+        let KdfParams::RecipientWrap {
+            key_wrap_table_record_count,
+            key_wrap_table_version,
+            ..
+        } = inspection.kdf_params
+        else {
+            panic!("expected recipient-wrap kdf params");
+        };
+        assert_eq!(key_wrap_table_record_count, record_count as u32);
+        assert_eq!(key_wrap_table_version, 1);
+    }
+}
+
+#[test]
+fn public_no_key_inspect_footer_extracts_across_cmra_geometries() {
+    // Varying bit_rot_buffer_pct changes the CMRA parity row count, and the
+    // identity length changes the image size and therefore the data shard
+    // count. bit_rot_buffer_pct is also committed into the archive root, so
+    // every variant must recompute a distinct root.
+    let identities: [&[u8]; 2] = [b"test signer", &[0x42; 16 * 1024]];
+    let mut roots = Vec::new();
+    // pct = 100 cannot converge in the writer's object parity iteration
+    // (parity would grow unboundedly), so the spread tops out at 50.
+    for pct in [1u8, 25, 50] {
+        for (index, identity) in identities.iter().enumerate() {
+            let mut options = single_stream_options();
+            options.bit_rot_buffer_pct = pct;
+            let config = RootAuthWriterConfig {
+                authenticator_id: 0x5000 + pct as u16,
+                signer_identity_type: index as u16,
+                signer_identity: identity,
+                authenticator_value_length: TEST_ROOT_AUTH_VALUE_LEN,
+            };
+            let archive = write_archive_with_root_auth(
+                &[RegularFile::new("geometry.txt", b"geometry payload")],
+                &master_key(),
+                options,
+                config,
+                |request| Ok(test_root_auth_value(request)),
+            )
+            .unwrap();
+            let inspection = assert_signed_inspection_matches(&archive.bytes, config);
+            roots.push(inspection.archive_root);
+        }
+    }
+    let mut unique = roots.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        roots.len(),
+        "archive roots must differ across geometry variants"
     );
 }
 
