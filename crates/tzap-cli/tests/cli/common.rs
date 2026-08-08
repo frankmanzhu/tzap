@@ -197,9 +197,7 @@ pub fn master_key_from_hex(hex: &str) -> Vec<u8> {
 }
 
 pub fn numbered_volume_path(output_base: &Path, index: usize) -> PathBuf {
-    let file_name = output_base.file_name().unwrap().to_string_lossy();
-    let base = file_name.strip_suffix(".tzap").unwrap_or(&file_name);
-    output_base.with_file_name(format!("{base}.vol{index:03}.tzap"))
+    tzap_core::volume_file::volume_output_path(output_base, index)
 }
 
 pub fn tar_stream(entries: &[(&str, &[u8])]) -> Vec<u8> {

@@ -1161,7 +1161,12 @@ pub(crate) fn validate_key_wrap_table_bytes_match(
     Ok(())
 }
 
-pub(crate) fn validate_volume_set_member_metadata(
+/// Validates that `candidate` volume belongs to the same archive as `first`:
+/// the format version, revision, archive identity, and crypto headers must
+/// match. This is the authoritative cross-volume consistency check; hosts
+/// that read volume headers without opening an archive (for example bounded
+/// metadata summaries) call this instead of re-implementing the invariants.
+pub fn validate_volume_set_member_metadata(
     first_volume_header: &VolumeHeader,
     first_crypto_header: &CryptoHeaderFixed,
     first_crypto_header_bytes: &[u8],
@@ -1169,6 +1174,11 @@ pub(crate) fn validate_volume_set_member_metadata(
     candidate_crypto_header: &CryptoHeaderFixed,
     candidate_crypto_header_bytes: &[u8],
 ) -> Result<(), FormatError> {
+    if candidate_volume_header.format_version != first_volume_header.format_version
+        || candidate_volume_header.volume_format_rev != first_volume_header.volume_format_rev
+    {
+        return Err(FormatError::InvalidArchive("mixed format versions in volume set"));
+    }
     if candidate_volume_header.archive_uuid != first_volume_header.archive_uuid || candidate_volume_header.session_id != first_volume_header.session_id {
         return Err(FormatError::InvalidArchive("mixed archive or session IDs in volume set"));
     }

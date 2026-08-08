@@ -14,10 +14,11 @@ use tzap_core::format::FormatError;
 #[cfg(any(target_os = "macos", windows))]
 use tzap_core::NativeAuxiliaryNameEncoding;
 use tzap_core::{
-    write_archive_sources_to_sink, write_archive_sources_to_sink_ordered_parallel, write_archive_sources_to_sink_ordered_parallel_with_recipient_wrap_records,
-    write_sized_raw_member_archive_to_sink_with_kdf_and_root_auth, write_tar_stream_archive_to_sink_with_kdf_and_root_auth, AeadAlgo, ArchiveTimestamp,
-    ArchiveWriteError, ArchiveWriteSink, MasterKey, MemoryArchiveSink, NativeFileMetadata, PortableFileMetadata, RegularFileSource, RootAuthSigningRequest,
-    RootAuthWriterConfig, SourceEntryKind, SparseExtent, StreamingRawWriterSummary, StreamingTarWriterSummary, WriterOptions, WrittenArchiveSummary,
+    volume_file, write_archive_sources_to_sink, write_archive_sources_to_sink_ordered_parallel,
+    write_archive_sources_to_sink_ordered_parallel_with_recipient_wrap_records, write_sized_raw_member_archive_to_sink_with_kdf_and_root_auth,
+    write_tar_stream_archive_to_sink_with_kdf_and_root_auth, AeadAlgo, ArchiveTimestamp, ArchiveWriteError, ArchiveWriteSink, MasterKey, MemoryArchiveSink,
+    NativeFileMetadata, PortableFileMetadata, RegularFileSource, RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, SparseExtent,
+    StreamingRawWriterSummary, StreamingTarWriterSummary, WriterOptions, WrittenArchiveSummary,
 };
 use tzap_plugin_signing::ed25519_raw::{self, ED25519_AUTHENTICATOR_ID, ED25519_AUTHENTICATOR_VALUE_LEN};
 
@@ -1584,7 +1585,11 @@ pub(crate) fn check_output_path_collisions_for_volume_size_output(output: &str) 
     check_output_path_free("archive output", Path::new(output))?;
     let output_path = Path::new(output);
     let parent = output_path.parent().unwrap_or_else(|| Path::new("."));
-    let base = multi_volume_base_name(output)?;
+    let file_name = output_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("output path has invalid UTF-8: {output}"))?;
+    let base = volume_file::multi_volume_base_name(file_name);
     let entries = match fs::read_dir(parent) {
         Ok(entries) => entries,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -1592,22 +1597,14 @@ pub(crate) fn check_output_path_collisions_for_volume_size_output(output: &str) 
     };
     for entry in entries.filter_map(|entry| entry.ok()) {
         let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if looks_like_tzap_volume(&name, &base) {
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if volume_file::parse_volume_file_name(name).is_some_and(|pattern| pattern.base == base) {
             bail!("output path collision: {base}.volNNN.tzap already exists; use --force to overwrite");
         }
     }
     Ok(())
-}
-
-pub(crate) fn looks_like_tzap_volume(path_name: &str, base: &str) -> bool {
-    let Some(rest) = path_name.strip_prefix(base) else {
-        return false;
-    };
-    let Some(digits) = rest.strip_prefix(".vol").and_then(|rest| rest.strip_suffix(".tzap")) else {
-        return false;
-    };
-    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 pub(crate) fn check_archive_paths_free_for_write(paths: &[PathBuf]) -> Result<()> {
@@ -1668,26 +1665,10 @@ pub(crate) fn create_output_paths(output: &str, volume_count: usize) -> Vec<Path
     if volume_count == 1 {
         vec![PathBuf::from(output)]
     } else {
-        (0..volume_count).map(|index| create_volume_output_path(output, index)).collect()
+        (0..volume_count)
+            .map(|index| volume_file::volume_output_path(Path::new(output), index))
+            .collect()
     }
-}
-
-pub(crate) fn create_volume_output_path(output: &str, index: usize) -> PathBuf {
-    let output_path = Path::new(output);
-    let base = multi_volume_base_name(output).unwrap_or_else(|_| output.to_owned());
-    let file_name = format!("{base}.vol{index:03}.tzap");
-    match output_path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent.join(file_name),
-        _ => PathBuf::from(file_name),
-    }
-}
-
-pub(crate) fn multi_volume_base_name(output: &str) -> Result<String> {
-    let file_name = Path::new(output)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| anyhow!("output path has invalid UTF-8: {output}"))?;
-    Ok(file_name.strip_suffix(".tzap").unwrap_or(file_name).to_owned())
 }
 
 pub(crate) fn create_dry_run_output_paths(output: &str, volumes: Option<u32>, has_volume_size: bool) -> Vec<String> {
@@ -1698,8 +1679,8 @@ pub(crate) fn create_dry_run_output_paths(output: &str, volumes: Option<u32>, ha
             .collect();
     }
     if has_volume_size {
-        let first = create_volume_output_path(output, 0);
-        let second = create_volume_output_path(output, 1);
+        let first = volume_file::volume_output_path(Path::new(output), 0);
+        let second = volume_file::volume_output_path(Path::new(output), 1);
         return vec![
             format!("{output} (if one volume is emitted)"),
             format!("{}, {}, ... (if split)", first.display(), second.display()),

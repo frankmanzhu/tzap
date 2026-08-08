@@ -18,6 +18,7 @@ pub mod padding;
 pub mod reader;
 pub mod root_auth;
 pub mod tar_model;
+pub mod volume_file;
 #[cfg(windows)]
 pub mod windows_metadata;
 pub mod wire;
@@ -50,9 +51,9 @@ pub use reader::{
     open_seekable_archive_volumes_with_recipient_wrap_resolver_options, open_seekable_archive_with_bootstrap_sidecar,
     open_seekable_archive_with_bootstrap_sidecar_options, open_seekable_archive_with_recipient_wrap_resolver_options, public_no_key_inspect_footer,
     public_no_key_verify_archive_with, public_no_key_verify_volumes_with, public_no_key_verify_volumes_with_options, sequential_extract_tar_stream,
-    ArchiveContentVerification, ArchiveEntry, ArchiveExtractProgressSink, ArchiveIndexEntry, ArchiveReadAt, ArchiveRepairPatch, OpenedArchive,
-    PublicNoKeyDiagnostic, PublicNoKeyFooterInspection, PublicNoKeyFooterStatus, PublicNoKeyVerification, ReaderOptions, RecipientWrapArchiveIdentity,
-    RecipientWrapCandidateMasterKey, RecipientWrapRecordContext, RootAuthDiagnostic, RootAuthVerification,
+    validate_volume_set_member_metadata, ArchiveContentVerification, ArchiveEntry, ArchiveExtractProgressSink, ArchiveIndexEntry, ArchiveReadAt,
+    ArchiveRepairPatch, OpenedArchive, PublicNoKeyDiagnostic, PublicNoKeyFooterInspection, PublicNoKeyFooterStatus, PublicNoKeyVerification, ReaderOptions,
+    RecipientWrapArchiveIdentity, RecipientWrapCandidateMasterKey, RecipientWrapRecordContext, RootAuthDiagnostic, RootAuthVerification,
 };
 pub use streaming_writer::{
     write_sized_raw_member_archive_to_sink_with_kdf_and_root_auth, write_tar_stream_archive, write_tar_stream_archive_to_sink,

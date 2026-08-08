@@ -47,7 +47,7 @@ pub(crate) use validation::*;
 pub use volume::public_no_key_inspect_footer;
 pub use volume::public_no_key_verify_volumes_with_options;
 pub(crate) use volume::*;
-pub use volume::{PublicNoKeyFooterInspection, PublicNoKeyFooterStatus};
+pub use volume::{validate_volume_set_member_metadata, PublicNoKeyFooterInspection, PublicNoKeyFooterStatus};
 pub(crate) const TRAILER_HMAC_COVERED_LEN: usize = 96;
 pub(crate) const MANIFEST_HMAC_COVERED_LEN: usize = 104;
 pub(crate) const SIDECAR_HMAC_COVERED_LEN: usize = 92;

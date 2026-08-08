@@ -19,8 +19,8 @@ use tzap_core::format::{
 use tzap_core::reader::RecipientWrapRecordContext;
 use tzap_core::wire::{CryptoHeader, CryptoHeaderFixed, VolumeHeader};
 use tzap_core::{
-    open_seekable_archive, open_seekable_archive_volumes_with_recipient_wrap_resolver_options, open_seekable_archive_with_bootstrap_sidecar_options, AeadAlgo,
-    ArchiveRepairPatch, KdfAlgo, KdfParams, MasterKey, NonSeekableReaderOptions, OpenedArchive, ReaderOptions, WriterOptions,
+    open_seekable_archive, open_seekable_archive_volumes_with_recipient_wrap_resolver_options, open_seekable_archive_with_bootstrap_sidecar_options,
+    volume_file, AeadAlgo, ArchiveRepairPatch, KdfAlgo, KdfParams, MasterKey, NonSeekableReaderOptions, OpenedArchive, ReaderOptions, WriterOptions,
 };
 use tzap_plugin_keywrap::{
     dispatch_key_wrap_record, wrap_master_key_for_recipient, ArchiveIdentity as KeyWrapArchiveIdentity, KeyWrapOutcome, KeyWrapSuite, PrivateKeyLookup,
@@ -113,12 +113,6 @@ pub(crate) struct RepairedArchiveOutput {
     pub(crate) repaired_block_count: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct VolumePathPattern {
-    pub(crate) base: String,
-    pub(crate) volume_index: u32,
-}
-
 pub(crate) fn resolve_archive_input_paths(primary: &str, additional: &[String], allow_autodiscovery: bool) -> Result<ArchiveInputSelection> {
     let mut paths = Vec::with_capacity(additional.len() + 1);
     paths.push(primary.to_owned());
@@ -127,10 +121,13 @@ pub(crate) fn resolve_archive_input_paths(primary: &str, additional: &[String], 
         return Ok(ArchiveInputSelection { paths, autodiscovered: false });
     }
 
-    let Some(pattern) = parse_volume_path_pattern(Path::new(primary)) else {
+    let Some(file_name) = Path::new(primary).file_name().and_then(|name| name.to_str()) else {
         return Ok(ArchiveInputSelection { paths, autodiscovered: false });
     };
-    let discovered = discover_volume_siblings(Path::new(primary), &pattern)?;
+    let Some(pattern) = volume_file::parse_volume_file_name(file_name) else {
+        return Ok(ArchiveInputSelection { paths, autodiscovered: false });
+    };
+    let discovered = discover_volume_siblings(Path::new(primary), &pattern.base)?;
     if discovered.is_empty() {
         return Ok(ArchiveInputSelection { paths, autodiscovered: false });
     }
@@ -271,56 +268,27 @@ pub(crate) fn repaired_archive_output_path(input: &str) -> Result<PathBuf> {
         .file_name()
         .and_then(|file_name| file_name.to_str())
         .ok_or_else(|| anyhow!("archive path has no UTF-8 file name: {input}"))?;
-    let repaired_name = if let Some(pattern) = parse_volume_file_name(file_name) {
-        format!("{}.repaired.vol{:03}.tzap", pattern.base, pattern.volume_index)
-    } else if let Some(stem) = file_name.strip_suffix(".tzap") {
-        format!("{stem}.repaired.tzap")
+    let repaired_name = if let Some(pattern) = volume_file::parse_volume_file_name(file_name) {
+        volume_file::volume_file_name(&format!("{}.repaired", pattern.base), pattern.volume_index)
     } else {
-        format!("{file_name}.repaired")
+        let base = volume_file::multi_volume_base_name(file_name);
+        if base != file_name {
+            format!("{base}.repaired.tzap")
+        } else {
+            format!("{file_name}.repaired")
+        }
     };
     Ok(path.with_file_name(repaired_name))
 }
 
-pub(crate) fn parse_volume_path_pattern(path: &Path) -> Option<VolumePathPattern> {
-    let file_name = path.file_name()?.to_str()?;
-    parse_volume_file_name(file_name)
-}
-
-pub(crate) fn parse_volume_file_name(file_name: &str) -> Option<VolumePathPattern> {
-    let stem = file_name.strip_suffix(".tzap")?;
-    let (base, digits) = stem.rsplit_once(".vol")?;
-    if base.is_empty() || digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    Some(VolumePathPattern {
-        base: base.to_owned(),
-        volume_index: digits.parse().ok()?,
-    })
-}
-
-pub(crate) fn discover_volume_siblings(primary: &Path, pattern: &VolumePathPattern) -> Result<Vec<String>> {
+pub(crate) fn discover_volume_siblings(primary: &Path, base: &str) -> Result<Vec<String>> {
     let parent = primary.parent().unwrap_or_else(|| Path::new("."));
-    let entries = match fs::read_dir(parent) {
-        Ok(entries) => entries,
+    let discovered = match volume_file::discover_sibling_volume_paths(parent, base) {
+        Ok(paths) => paths,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(err) => return Err(err).with_context(|| format!("failed to inspect archive directory {}", parent.display())),
     };
-    let mut discovered = Vec::new();
-    for entry in entries.filter_map(|entry| entry.ok()) {
-        let file_name = entry.file_name();
-        let Some(file_name) = file_name.to_str() else {
-            continue;
-        };
-        let Some(candidate) = parse_volume_file_name(file_name) else {
-            continue;
-        };
-        if candidate.base != pattern.base {
-            continue;
-        }
-        discovered.push((candidate.volume_index, entry.path()));
-    }
-    discovered.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
-    Ok(discovered.into_iter().map(|(_, path)| path.to_string_lossy().into_owned()).collect())
+    Ok(discovered.into_iter().map(|path| path.to_string_lossy().into_owned()).collect())
 }
 
 pub(crate) fn reject_multi_volume_bootstrap(volume_count: usize, bootstrap: Option<&str>) -> Result<()> {
