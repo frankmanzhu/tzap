@@ -1,9 +1,9 @@
+#[cfg(not(windows))]
+use super::restore::sync_directory;
 use super::restore::{
     create_new_file_options, read_member_bytes, remove_existing_leaf_if_needed,
     PreparedDestination, TarMemberStreamHandler,
 };
-#[cfg(not(windows))]
-use super::restore::sync_directory;
 use super::*;
 
 #[cfg(target_os = "linux")]
