@@ -31,7 +31,7 @@ use crate::raw_stream_profile::{
 use crate::wire::{
     compute_key_wrap_table_digest, BootstrapSidecarHeader, CriticalMetadataImage,
     CriticalMetadataRecoveryHeader, CriticalMetadataRecoveryShard, CriticalRecoveryLocator,
-    RecipientRecordV1, VolumeHeader,
+    RecipientRecordV1, RootAuthFooterV1, VolumeHeader,
 };
 use crate::writer::NativeFileMetadata;
 use crate::writer::{
@@ -943,13 +943,16 @@ fn public_no_key_inspect_footer_reports_unsigned_archives() {
 fn public_no_key_inspect_footer_rejects_tampered_terminal() {
     let mut tampered = signed_fixture();
     // Destroy the CMRA image body beyond GF16 repair capacity (parity + 1
-    // shards). The recovery header, TZCR boundary magic, and locator metadata
-    // stay intact so every recovery path is attempted — and must fail.
+    // complete shard records). The recovery header, TZCR boundary magic, and
+    // locator metadata stay intact so every recovery path is attempted — and
+    // must fail.
     let locator = final_recovery_locator(&tampered);
     let kill_shards = usize::from(locator.cmra_parity_shard_count) + 1;
+    let shard_stride =
+        CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + locator.cmra_shard_size as usize;
     let start = locator.cmra_offset as usize + CRITICAL_METADATA_RECOVERY_HEADER_LEN;
-    let end = (start + kill_shards * locator.cmra_shard_size as usize)
-        .min(locator.cmra_offset as usize + locator.cmra_image_length as usize);
+    let end = (start + kill_shards * shard_stride)
+        .min(locator.cmra_offset as usize + locator.cmra_length as usize);
     for byte in &mut tampered[start..end] {
         *byte ^= 0x55;
     }
@@ -1031,6 +1034,165 @@ fn public_no_key_inspect_footer_rejects_short_file() {
             expected: VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN,
             actual: 14,
         }
+    );
+}
+
+#[test]
+fn public_no_key_inspect_footer_recovers_from_mirror_locator_when_final_is_corrupt() {
+    let mut bytes = signed_fixture();
+    // Destroy only the final locator's magic; the mirror locator still leads
+    // to the same CMRA image.
+    let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
+    bytes[final_offset..final_offset + 4].fill(0x00);
+
+    let status = public_no_key_inspect_footer(
+        &CountingReadAt::new(bytes, vec![]),
+        ReaderOptions::default(),
+    )
+    .unwrap();
+    let PublicNoKeyFooterStatus::Signed(inspection) = status else {
+        panic!("expected signed inspection");
+    };
+    assert_eq!(inspection.root_auth_footer.authenticator_id, 0x7777);
+    assert_eq!(
+        inspection.root_auth_footer.signer_identity_bytes,
+        b"test signer"
+    );
+}
+
+#[test]
+fn public_no_key_inspect_footer_recovers_locatorless_when_both_locators_are_destroyed() {
+    let mut bytes = signed_fixture();
+    // Both locators destroyed: only the bounded tail scan can find the CMRA
+    // via its TZCR recovery header (locatorless public recovery).
+    let final_offset = bytes.len() - CRITICAL_RECOVERY_LOCATOR_LEN;
+    bytes[final_offset - CRITICAL_RECOVERY_LOCATOR_LEN..final_offset + CRITICAL_RECOVERY_LOCATOR_LEN]
+        .fill(0x00);
+
+    let status = public_no_key_inspect_footer(
+        &CountingReadAt::new(bytes, vec![]),
+        ReaderOptions::default(),
+    )
+    .unwrap();
+    let PublicNoKeyFooterStatus::Signed(inspection) = status else {
+        panic!("expected signed inspection");
+    };
+    assert_eq!(inspection.root_auth_footer.authenticator_id, 0x7777);
+}
+
+#[test]
+fn public_no_key_inspect_footer_rejects_tampered_archive_root_commitment() {
+    let mut bytes = signed_fixture();
+    // Rewrite the recovered footer with a valid CRC and digest but an altered
+    // commitment: wire validation passes, the recomputed archive_root does
+    // not match the claimed one.
+    rewrite_public_cmra_image(&mut bytes, |image| {
+        let region = image
+            .regions
+            .iter_mut()
+            .find(|region| region.region_type == 4)
+            .unwrap();
+        let mut footer = RootAuthFooterV1::parse(&region.bytes).unwrap();
+        footer.total_data_block_count += 1;
+        region.bytes = footer.to_bytes().unwrap();
+    });
+
+    assert_eq!(
+        public_no_key_inspect_footer(
+            &CountingReadAt::new(bytes, vec![]),
+            ReaderOptions::default(),
+        )
+        .unwrap_err(),
+        FormatError::InvalidArchive("public no-key archive_root mismatch")
+    );
+}
+
+#[test]
+fn public_no_key_inspect_footer_rejects_tampered_signer_identity() {
+    let mut bytes = signed_fixture();
+    // Same-length identity replacement so footer_length and all structural
+    // checks still hold; only the stale signer_identity_digest gives it away.
+    rewrite_public_cmra_image(&mut bytes, |image| {
+        let region = image
+            .regions
+            .iter_mut()
+            .find(|region| region.region_type == 4)
+            .unwrap();
+        let mut footer = RootAuthFooterV1::parse(&region.bytes).unwrap();
+        assert_eq!(footer.signer_identity_bytes.len(), b"test forger".len());
+        footer.signer_identity_bytes = b"test forger".to_vec();
+        region.bytes = footer.to_bytes().unwrap();
+    });
+
+    assert_eq!(
+        public_no_key_inspect_footer(
+            &CountingReadAt::new(bytes, vec![]),
+            ReaderOptions::default(),
+        )
+        .unwrap_err(),
+        FormatError::InvalidArchive("public no-key signer identity digest mismatch")
+    );
+}
+
+#[test]
+fn public_no_key_inspect_footer_unsigned_requires_recoverable_image() {
+    // A corrupt unsigned archive must error rather than be mislabeled
+    // Unsigned: the layout-flags fallback needs a recoverable CMRA image.
+    let mut corrupted = write_archive_unencrypted(
+        &[RegularFile::new("plain.txt", b"no signature")],
+        single_stream_options(),
+    )
+    .unwrap()
+    .bytes;
+    let locator = final_recovery_locator(&corrupted);
+    // Destroy (parity + 1) complete shard records — beyond GF16 repair
+    // capacity. Each on-disk shard is SHARD_HEADER_LEN + shard_size bytes.
+    let kill_shards = usize::from(locator.cmra_parity_shard_count) + 1;
+    let shard_stride =
+        CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + locator.cmra_shard_size as usize;
+    let start = locator.cmra_offset as usize + CRITICAL_METADATA_RECOVERY_HEADER_LEN;
+    let end = (start + kill_shards * shard_stride)
+        .min(locator.cmra_offset as usize + locator.cmra_length as usize);
+    for byte in &mut corrupted[start..end] {
+        *byte ^= 0x55;
+    }
+    assert!(public_no_key_inspect_footer(
+        &CountingReadAt::new(corrupted, vec![]),
+        ReaderOptions::default(),
+    )
+    .is_err());
+}
+
+#[test]
+fn public_no_key_inspect_footer_reports_recipientwrap_signed_footers() {
+    let archive = write_archive_with_root_auth_and_recipient_wrap_records(
+        &[RegularFile::new("wrapped.txt", b"recipient payload")],
+        &master_key(),
+        single_stream_options(),
+        vec![recipient_wrap_test_record()],
+        RootAuthWriterConfig {
+            authenticator_id: 0x3333,
+            signer_identity_type: 1,
+            signer_identity: b"recipient signer",
+            authenticator_value_length: 32,
+        },
+        |request| Ok(request.archive_root.to_vec()),
+    )
+    .unwrap();
+
+    let status = public_no_key_inspect_footer(
+        &CountingReadAt::new(archive.bytes, vec![]),
+        ReaderOptions::default(),
+    )
+    .unwrap();
+    let PublicNoKeyFooterStatus::Signed(inspection) = status else {
+        panic!("expected signed inspection");
+    };
+    assert!(matches!(inspection.kdf_params, KdfParams::RecipientWrap { .. }));
+    assert_eq!(inspection.root_auth_footer.authenticator_id, 0x3333);
+    assert_eq!(
+        inspection.root_auth_footer.signer_identity_bytes,
+        b"recipient signer"
     );
 }
 
