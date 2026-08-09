@@ -25,15 +25,10 @@ jobs:
             exit 1
           fi
           failed=0
-          for manifest in \
-            crates/tzap-core/Cargo.toml \
-            crates/tzap-cli/Cargo.toml \
-            crates/tzap-plugin-keywrap/Cargo.toml \
-            crates/tzap-plugin-signing/Cargo.toml
-          do
-            crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$manifest")"
+          for crate in tzap-core tzap tzap-plugin-keywrap tzap-plugin-signing; do
+            crate_version=$(cargo metadata --no-deps --format-version 1 | jq -r --arg crate "$crate" '.packages[] | select(.name == $crate) | .version')
             if [ "$crate_version" != "$TAG_VERSION" ]; then
-              echo "::error::$manifest declares version $crate_version but tag is $TAG_VERSION"
+              echo "::error::$crate declares version $crate_version but tag is $TAG_VERSION"
               failed=1
             fi
           done
