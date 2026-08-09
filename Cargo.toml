@@ -8,6 +8,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
+version = "0.2.2"
 authors = ["Frank Zhu"]
 description = "Rust reference implementation of the tzap archive format specification"
 edition = "2021"
@@ -20,6 +21,9 @@ documentation = "https://github.com/tzap-org/tzap/blob/main/specs/tzap-format-re
 readme = "README.md"
 
 [workspace.dependencies]
+tzap-core = { path = "crates/tzap-core", version = "0.2.2" }
+tzap-plugin-keywrap = { path = "crates/tzap-plugin-keywrap", version = "0.2.2" }
+tzap-plugin-signing = { path = "crates/tzap-plugin-signing", version = "0.2.2" }
 aes-gcm = "0.10"
 aes-gcm-siv = "0.11"
 anyhow = "1"

@@ -1,6 +1,6 @@
 [package]
 name = "tzap-plugin-signing"
-version = "0.2.2"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -16,7 +16,7 @@ categories = ["cryptography"]
 ed25519-dalek.workspace = true
 openssl.workspace = true
 sha2.workspace = true
-tzap-core = { path = "../tzap-core", version = "0.2.2" }
+tzap-core.workspace = true
 x509-parser.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]

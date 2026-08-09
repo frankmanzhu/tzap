@@ -35,11 +35,19 @@ fn manifest_array_values(manifest: &str, key: &str) -> Vec<String> {
         .collect()
 }
 
+fn workspace_version() -> String {
+    let manifest = read_workspace_file("Cargo.toml");
+    manifest_string_value(&manifest, "version")
+}
+
 fn assert_package_metadata(manifest_path: &str, crate_name: &str, expected_version: &str, docs_url: &str, expected_description_fragment: &str) {
     let manifest = read_workspace_file(manifest_path);
 
     assert!(manifest.contains(&format!("name = \"{crate_name}\"")));
-    assert!(manifest.contains(&format!("version = \"{expected_version}\"")));
+    assert!(
+        manifest.contains(&format!("version = \"{expected_version}\"")) || manifest.contains("version.workspace = true"),
+        "{crate_name} should specify or inherit workspace version"
+    );
     assert!(manifest.contains("repository.workspace = true"));
     assert!(manifest.contains(&format!("documentation = \"{docs_url}\"")));
     assert_eq!(manifest_string_value(&manifest, "readme"), "README.md");
@@ -60,25 +68,20 @@ fn assert_package_metadata(manifest_path: &str, crate_name: &str, expected_versi
 
 #[test]
 fn manifests_have_crates_io_metadata() {
-    assert_package_metadata("crates/tzap-core/Cargo.toml", "tzap-core", "0.2.2", "https://docs.rs/tzap-core", "Core library");
-    assert_package_metadata(
-        "crates/tzap-cli/Cargo.toml",
-        "tzap",
-        "0.2.2",
-        "https://docs.rs/tzap",
-        "Fast encrypted archive CLI",
-    );
+    let ver = workspace_version();
+    assert_package_metadata("crates/tzap-core/Cargo.toml", "tzap-core", &ver, "https://docs.rs/tzap-core", "Core library");
+    assert_package_metadata("crates/tzap-cli/Cargo.toml", "tzap", &ver, "https://docs.rs/tzap", "Fast encrypted archive CLI");
     assert_package_metadata(
         "crates/tzap-plugin-signing/Cargo.toml",
         "tzap-plugin-signing",
-        "0.2.2",
+        &ver,
         "https://docs.rs/tzap-plugin-signing",
         "Signing profiles",
     );
     assert_package_metadata(
         "crates/tzap-plugin-keywrap/Cargo.toml",
         "tzap-plugin-keywrap",
-        "0.2.2",
+        &ver,
         "https://docs.rs/tzap-plugin-keywrap",
         "HPKE key-wrap",
     );
@@ -89,13 +92,39 @@ fn publish_dependencies_are_versioned() {
     let manifest = read_workspace_file("crates/tzap-cli/Cargo.toml");
     let plugin_manifest = read_workspace_file("crates/tzap-plugin-signing/Cargo.toml");
 
-    assert!(manifest.contains(r#"tzap-core = { path = "../tzap-core", version = "0.2.2" }"#));
-    assert!(manifest.contains(r#"tzap-plugin-signing = { path = "../tzap-plugin-signing", version = "0.2.2" }"#));
-    assert!(manifest.contains(r#"tzap-plugin-keywrap = { path = "../tzap-plugin-keywrap", version = "0.2.2" }"#));
-    assert!(plugin_manifest.contains(r#"tzap-core = { path = "../tzap-core", version = "0.2.2" }"#));
+    assert!(
+        manifest.contains("tzap-core.workspace = true")
+            || manifest.contains(r#"tzap-core = { path = "../tzap-core", version.workspace = true }"#)
+            || manifest.contains(&format!(r#"tzap-core = {{ path = "../tzap-core", version = "{}" }}"#, workspace_version()))
+    );
+    assert!(
+        manifest.contains("tzap-plugin-signing.workspace = true")
+            || manifest.contains(r#"tzap-plugin-signing = { path = "../tzap-plugin-signing", version.workspace = true }"#)
+            || manifest.contains(&format!(
+                r#"tzap-plugin-signing = {{ path = "../tzap-plugin-signing", version = "{}" }}"#,
+                workspace_version()
+            ))
+    );
+    assert!(
+        manifest.contains("tzap-plugin-keywrap.workspace = true")
+            || manifest.contains(r#"tzap-plugin-keywrap = { path = "../tzap-plugin-keywrap", version.workspace = true }"#)
+            || manifest.contains(&format!(
+                r#"tzap-plugin-keywrap = {{ path = "../tzap-plugin-keywrap", version = "{}" }}"#,
+                workspace_version()
+            ))
+    );
+    assert!(
+        plugin_manifest.contains("tzap-core.workspace = true")
+            || plugin_manifest.contains(r#"tzap-core = { path = "../tzap-core", version.workspace = true }"#)
+            || plugin_manifest.contains(&format!(r#"tzap-core = {{ path = "../tzap-core", version = "{}" }}"#, workspace_version()))
+    );
 
     let keywrap_manifest = read_workspace_file("crates/tzap-plugin-keywrap/Cargo.toml");
-    assert!(keywrap_manifest.contains(r#"tzap-core = { path = "../tzap-core", version = "0.2.2" }"#));
+    assert!(
+        keywrap_manifest.contains("tzap-core.workspace = true")
+            || keywrap_manifest.contains(r#"tzap-core = { path = "../tzap-core", version.workspace = true }"#)
+            || keywrap_manifest.contains(&format!(r#"tzap-core = {{ path = "../tzap-core", version = "{}" }}"#, workspace_version()))
+    );
     assert!(keywrap_manifest.contains("x509-parser.workspace = true"));
 }
 
