@@ -431,6 +431,15 @@ fn embedded_official_root_fingerprint_matches_certificate() {
 }
 
 #[test]
+fn embedded_staging_root_parses_cleanly() {
+    let staging_pem = include_bytes!("trust/tzap-staging-root-ca-2026.pem");
+    let der = x509_chain::certificate_der_from_pem_or_der(staging_pem).unwrap();
+    let cert = X509::from_der(&der).unwrap();
+    let digest = cert.digest(openssl::hash::MessageDigest::sha256()).unwrap();
+    assert!(!digest.is_empty());
+}
+
+#[test]
 fn bootstrap_required_errors_keep_missing_bootstrap_diagnostic() {
     for err in [
         FormatError::ReaderUnsupported("dictionary bootstrap required"),
