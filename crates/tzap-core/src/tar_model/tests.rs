@@ -932,6 +932,44 @@ fn exact_linux_restore_rejects_unrecognized_inode_flag_bits() {
     );
 }
 
+#[test]
+fn linux_restore_creationtime_supported_under_same_os() {
+    let bytes = member(b"file.txt", b'0', b"payload", b"");
+    let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
+    let mut metadata = parsed.v45_metadata;
+    metadata.declaration.source_os = "linux".into();
+    metadata
+        .declaration
+        .required_profiles
+        .extend(["linux-backup-v1".into(), "posix-backup-v1".into()]);
+    metadata.declaration.required_profiles.sort();
+    metadata.declaration.required_profiles.dedup();
+    metadata.primary_has_native_scalar = true;
+    metadata
+        .primary_records
+        .insert("LIBARCHIVE.creationtime".into(), b"1700000000.000000000".to_vec());
+
+    let plan_res = plan_restore(
+        b"file.txt",
+        &metadata,
+        TarEntryKind::Regular,
+        false,
+        SafeExtractionOptions {
+            restore_policy: RestorePolicy::SameOs,
+            ..SafeExtractionOptions::default()
+        },
+    );
+
+    if cfg!(target_os = "linux") {
+        assert!(plan_res.is_ok());
+    } else {
+        assert_eq!(
+            plan_res.unwrap_err(),
+            FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
+        );
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn macos_restore_plans_unknown_and_system_flags_without_silently_applying_them() {

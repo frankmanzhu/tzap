@@ -207,7 +207,12 @@ fn open_linux_metadata_file(input: &Path) -> io::Result<(File, bool)> {
         .open(input)
     {
         Ok(file) => Ok((file, false)),
-        Err(error) if error.raw_os_error() == Some(libc::ENXIO) || error.raw_os_error() == Some(libc::ENODEV) => {
+        Err(error)
+            if error.raw_os_error() == Some(libc::ENXIO)
+                || error.raw_os_error() == Some(libc::ENODEV)
+                || error.raw_os_error() == Some(libc::EPERM)
+                || error.raw_os_error() == Some(libc::EACCES) =>
+        {
             use std::ffi::CString;
             use std::os::fd::FromRawFd as _;
 

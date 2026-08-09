@@ -315,6 +315,9 @@ pub(crate) fn native_primary_restore_unsupported(metadata: &MemberMetadata, incl
         if key == "LIBARCHIVE.creationtime" && metadata.declaration.source_os == "macos" {
             return !cfg!(target_os = "macos");
         }
+        if key == "LIBARCHIVE.creationtime" && metadata.declaration.source_os == "linux" {
+            return !cfg!(target_os = "linux");
+        }
         if key == "TZAP.macos.st-flags" {
             let flags = metadata.primary_records.get(key).and_then(|value| parse_macos_flags(value).ok());
             return !cfg!(target_os = "macos")
