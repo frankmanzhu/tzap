@@ -25,6 +25,13 @@ sed -i.bak -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\"/version
 sed -i.bak -E "s/(tzap-[a-z-]+ = \{ path = \"[^\"]+\", version = \")[^\"]+(\" \})/\1${NEW_VERSION}\2/g" Cargo.toml
 rm -f Cargo.toml.bak
 
+# Update sub-crate README dependency snippet versions
+sed -i.bak -E "s/(tzap-[a-z-]+ = \")[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\")/\1${NEW_VERSION}\3/g" \
+    crates/tzap-core/README.md \
+    crates/tzap-plugin-keywrap/README.md \
+    crates/tzap-plugin-signing/README.md
+rm -f crates/tzap-core/README.md.bak crates/tzap-plugin-keywrap/README.md.bak crates/tzap-plugin-signing/README.md.bak
+
 echo "==> Updating root Cargo.lock..."
 cargo check --workspace
 
