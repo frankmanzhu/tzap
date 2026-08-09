@@ -1495,3 +1495,120 @@ fn cli_extract_preserves_crlf_payload_bytes() {
 
     assert_eq!(fs::read(output.join("payload.txt")).unwrap(), expected);
 }
+
+#[test]
+fn cli_extract_various_loss_tolerance_redundancy_and_bit_rot_levels() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    fs::write(&keyfile, KEY_HEX).unwrap();
+
+    let input = temp.path().join("payload.bin");
+    let payload_bytes: Vec<u8> = (0..500_000).map(|i| (i % 251) as u8).collect();
+    fs::write(&input, &payload_bytes).unwrap();
+
+    // Test volume loss tolerance counts: 1, 2 (out of 4 volumes)
+    for tolerance_count in [1, 2] {
+        let output_base = temp.path().join(format!("archive_tol_{tolerance_count}.tzap"));
+        let out_dir = temp.path().join(format!("out_tol_{tolerance_count}"));
+
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args([
+                "create",
+                "--keyfile",
+                keyfile.to_str().unwrap(),
+                "--volumes",
+                "4",
+                "--volume-loss-tolerance",
+                &tolerance_count.to_string(),
+                "--bit-rot-buffer-pct",
+                "10",
+                "-o",
+                output_base.to_str().unwrap(),
+                input.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+
+        // 1. Verify clean extraction without missing volumes
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args([
+                "extract",
+                "--keyfile",
+                keyfile.to_str().unwrap(),
+                "-C",
+                out_dir.to_str().unwrap(),
+                numbered_volume_path(&output_base, 0).to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        assert_eq!(fs::read(out_dir.join("payload.bin")).unwrap(), payload_bytes);
+
+        // 2. Corrupt one byte in a payload volume and test bit-rot recovery
+        let vol1 = numbered_volume_path(&output_base, 1);
+        let mut vol1_bytes = fs::read(&vol1).unwrap();
+        let flip_idx = vol1_bytes.len() / 2;
+        vol1_bytes[flip_idx] ^= 0xff;
+        fs::write(&vol1, &vol1_bytes).unwrap();
+
+        let out_corrupt_dir = temp.path().join(format!("out_corrupt_{tolerance_count}"));
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args([
+                "extract",
+                "--keyfile",
+                keyfile.to_str().unwrap(),
+                "-C",
+                out_corrupt_dir.to_str().unwrap(),
+                numbered_volume_path(&output_base, 0).to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        assert_eq!(fs::read(out_corrupt_dir.join("payload.bin")).unwrap(), payload_bytes);
+    }
+}
+
+#[test]
+fn cli_extract_cross_os_restore_policy_matrix() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    fs::write(&keyfile, KEY_HEX).unwrap();
+
+    let input = temp.path().join("doc.txt");
+    fs::write(&input, b"cross-os policy content\n").unwrap();
+
+    let archive = temp.path().join("cross_os.tzap");
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args([
+            "create",
+            "--keyfile",
+            keyfile.to_str().unwrap(),
+            "-o",
+            archive.to_str().unwrap(),
+            input.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    for policy in ["content", "portable", "same-os"] {
+        let out_dir = temp.path().join(format!("out_policy_{policy}"));
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args([
+                "extract",
+                "--keyfile",
+                keyfile.to_str().unwrap(),
+                "--restore",
+                policy,
+                "-C",
+                out_dir.to_str().unwrap(),
+                archive.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+
+        assert_eq!(fs::read(out_dir.join("doc.txt")).unwrap(), b"cross-os policy content\n");
+    }
+}

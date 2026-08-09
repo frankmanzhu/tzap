@@ -2685,3 +2685,66 @@ fn cli_create_rejects_bootstrap_out_with_volume_size_before_writing() {
     assert!(!numbered_volume_path(&archive, 0).exists());
     assert!(!bootstrap.exists());
 }
+
+#[test]
+fn cli_create_and_verify_all_zstd_compression_levels() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    fs::write(&keyfile, KEY_HEX).unwrap();
+
+    let input_dir = temp.path().join("data");
+    fs::create_dir(&input_dir).unwrap();
+    let file1 = input_dir.join("file1.txt");
+    let file2 = input_dir.join("file2.bin");
+    fs::write(
+        &file1,
+        b"Hello Zstd Compression Level Test! Repeated string text to test compression ratio.\n".repeat(50),
+    )
+    .unwrap();
+    let binary_data: Vec<u8> = (0..5000).map(|i| (i % 256) as u8).collect();
+    fs::write(&file2, &binary_data).unwrap();
+
+    for level in [1, 3, 9, 19, 22] {
+        let archive = temp.path().join(format!("test_level_{level}.tzap"));
+        let out_dir = temp.path().join(format!("out_level_{level}"));
+
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args([
+                "create",
+                "--keyfile",
+                keyfile.to_str().unwrap(),
+                "--compression-level",
+                &level.to_string(),
+                "-o",
+                archive.to_str().unwrap(),
+                input_dir.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
+            .assert()
+            .success();
+
+        Command::cargo_bin("tzap")
+            .unwrap()
+            .args([
+                "extract",
+                "--keyfile",
+                keyfile.to_str().unwrap(),
+                "-C",
+                out_dir.to_str().unwrap(),
+                archive.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+
+        let extracted_file1 = out_dir.join("data").join("file1.txt");
+        let extracted_file2 = out_dir.join("data").join("file2.bin");
+        assert_eq!(fs::read(&extracted_file1).unwrap(), fs::read(&file1).unwrap());
+        assert_eq!(fs::read(&extracted_file2).unwrap(), fs::read(&file2).unwrap());
+    }
+}
