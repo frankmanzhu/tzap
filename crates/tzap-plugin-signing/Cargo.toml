@@ -16,7 +16,7 @@ categories = ["cryptography"]
 ed25519-dalek.workspace = true
 openssl.workspace = true
 sha2.workspace = true
-tzap-core = { path = "../tzap-core", version = "0.2.1" }
+tzap-core = { path = "../tzap-core", version = "0.2.2" }
 x509-parser.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
