@@ -54,7 +54,6 @@ x509-parser = "0.18"
 windows-sys = "0.61.2"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 zstd = { version = "0.13", features = ["zstdmt"] }
-zstd-safe = "7"
 serde_json = "1"
 
 [workspace.dependencies.assert_cmd]

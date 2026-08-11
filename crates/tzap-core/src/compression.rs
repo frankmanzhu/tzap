@@ -13,7 +13,7 @@ pub fn compress_zstd_frame_with_jobs(plaintext: &[u8], level: i32, jobs: usize) 
     let jobs = u32::try_from(jobs).map_err(|_| FormatError::WriterUnsupported("jobs exceeds zstd worker limit"))?;
     let mut compressor = zstd::bulk::Compressor::new(level).map_err(|_| FormatError::ZstdCompressionFailure)?;
     compressor
-        .set_parameter(zstd_safe::CParameter::NbWorkers(jobs))
+        .set_parameter(zstd::zstd_safe::CParameter::NbWorkers(jobs))
         .map_err(|_| FormatError::ZstdCompressionFailure)?;
     compressor.compress(plaintext).map_err(|_| FormatError::ZstdCompressionFailure)
 }
@@ -27,7 +27,7 @@ pub fn compress_zstd_frame_with_dictionary_and_jobs(plaintext: &[u8], level: i32
     if jobs > 1 {
         let jobs = u32::try_from(jobs).map_err(|_| FormatError::WriterUnsupported("jobs exceeds zstd worker limit"))?;
         compressor
-            .set_parameter(zstd_safe::CParameter::NbWorkers(jobs))
+            .set_parameter(zstd::zstd_safe::CParameter::NbWorkers(jobs))
             .map_err(|_| FormatError::ZstdCompressionFailure)?;
     }
     compressor.compress(plaintext).map_err(|_| FormatError::ZstdCompressionFailure)
@@ -68,7 +68,7 @@ pub fn validate_exact_zstd_frame(compressed: &[u8]) -> Result<(), FormatError> {
     if compressed.len() < 4 || compressed[0..4] != ZSTD_MAGIC {
         return Err(FormatError::NotStandardZstdFrame);
     }
-    let frame_size = zstd_safe::find_frame_compressed_size(compressed).map_err(|_| FormatError::InvalidZstdFrame)?;
+    let frame_size = zstd::zstd_safe::find_frame_compressed_size(compressed).map_err(|_| FormatError::InvalidZstdFrame)?;
     if frame_size != compressed.len() {
         return Err(FormatError::TrailingBytesAfterZstdFrame);
     }

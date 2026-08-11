@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use crate::compression::validate_exact_zstd_frame;
 use crate::crypto::{decrypt_padded_aead_object, verify_integrity_tag, AeadObjectContext, HmacDomain, MasterKey, Subkeys};
 use crate::entry_metadata::ArchiveTimestamp;
-use crate::fec::repair_data_gf16;
+use crate::fec::recover_data_bytes_gf16;
 use crate::format::{BlockKind, ExtractError, FormatError, BLOCK_RECORD_FRAMING_LEN, VOLUME_HEADER_LEN};
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
 use crate::reader::{
@@ -158,10 +158,21 @@ impl StreamedPayloadSummary {
             .checked_add(frame.decompressed_size as u64)
             .ok_or(FormatError::InvalidArchive("streamed frame range overflow"))?;
         let mut flags = 0u32;
-        for member in &self.tar.members {
-            if member.group_start == frame.tar_stream_offset {
-                flags |= 0x0000_0001;
-            }
+        if self
+            .tar
+            .members
+            .binary_search_by_key(&frame.tar_stream_offset, |member| member.group_start)
+            .is_ok()
+        {
+            flags |= 0x0000_0001;
+        }
+        let end_candidate = self
+            .tar
+            .members
+            .partition_point(|member| member.group_start < frame_end)
+            .checked_sub(1)
+            .and_then(|index| self.tar.members.get(index));
+        if let Some(member) = end_candidate {
             let member_end = member
                 .group_start
                 .checked_add(member.group_size)
@@ -1203,11 +1214,8 @@ fn finalize_live_envelope<O: TarStreamObserver>(
         .first_block_index
         .ok_or(FormatError::InvalidArchive("sequential payload envelope is missing first block"))?;
 
-    let repaired = repair_data_gf16(&pending.data_shards, &pending.parity_shards, crypto_header.block_size as usize)?;
-    let mut encrypted = Vec::with_capacity(repaired.len() * crypto_header.block_size as usize);
-    for shard in repaired {
-        encrypted.extend_from_slice(&shard);
-    }
+    let block_size = crypto_header.block_size as usize;
+    let encrypted = recover_data_bytes_gf16(&pending.data_shards, &pending.parity_shards, block_size)?;
     let plaintext = decrypt_padded_aead_object(
         AeadObjectContext {
             algo: crypto_header.aead_algo,
@@ -1301,7 +1309,7 @@ impl<O: TarStreamObserver> StreamedPayloadCollector<O> {
         let first_frame_index = u64::try_from(self.frames.len()).map_err(|_| FormatError::InvalidArchive("FrameEntry count overflow"))?;
         let mut cursor = 0usize;
         while cursor < plaintext.len() {
-            let frame_len = zstd_safe::find_frame_compressed_size(&plaintext[cursor..]).map_err(|_| FormatError::InvalidZstdFrame)?;
+            let frame_len = zstd::zstd_safe::find_frame_compressed_size(&plaintext[cursor..]).map_err(|_| FormatError::InvalidZstdFrame)?;
             if frame_len == 0 {
                 return Err(FormatError::InvalidZstdFrame);
             }

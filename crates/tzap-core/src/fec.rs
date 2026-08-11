@@ -116,6 +116,38 @@ pub fn repair_data_gf16(data_shards: &[Option<Vec<u8>>], parity_shards: &[Option
     Ok(repaired)
 }
 
+fn concatenate_complete_data_shards(data_shards: &[Option<Vec<u8>>], shard_size: usize) -> Result<Option<Vec<u8>>, FormatError> {
+    if data_shards.is_empty() || data_shards.iter().any(Option::is_none) {
+        return Ok(None);
+    }
+
+    let capacity = data_shards.len().checked_mul(shard_size).ok_or(FormatError::FecInconsistentShardSize)?;
+    let mut concatenated = Vec::with_capacity(capacity);
+    for shard in data_shards {
+        let Some(shard) = shard.as_ref() else {
+            return Ok(None);
+        };
+        if shard.len() != shard_size {
+            return Err(FormatError::FecInconsistentShardSize);
+        }
+        concatenated.extend_from_slice(shard);
+    }
+    Ok(Some(concatenated))
+}
+
+pub(crate) fn recover_data_bytes_gf16(data_shards: &[Option<Vec<u8>>], parity_shards: &[Option<Vec<u8>>], shard_size: usize) -> Result<Vec<u8>, FormatError> {
+    if let Some(concatenated) = concatenate_complete_data_shards(data_shards, shard_size)? {
+        return Ok(concatenated);
+    }
+
+    let repaired = repair_data_gf16(data_shards, parity_shards, shard_size)?;
+    let mut recovered = Vec::with_capacity(repaired.len() * shard_size);
+    for shard in repaired {
+        recovered.extend_from_slice(&shard);
+    }
+    Ok(recovered)
+}
+
 pub fn gf16_add(a: u16, b: u16) -> u16 {
     a ^ b
 }
@@ -320,6 +352,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(repaired, data);
+    }
+
+    #[test]
+    fn concatenates_complete_data_shards_without_repair() {
+        let shards = vec![Some(vec![0x01, 0x00]), Some(vec![0x02, 0x00])];
+        assert_eq!(recover_data_bytes_gf16(&shards, &[], 2).unwrap(), vec![0x01, 0x00, 0x02, 0x00]);
+        assert_eq!(
+            recover_data_bytes_gf16(&[Some(vec![0; 1])], &[], 2).unwrap_err(),
+            FormatError::FecInconsistentShardSize
+        );
     }
 
     #[test]

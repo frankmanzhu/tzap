@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::compression::{decompress_exact_zstd_frame, validate_exact_zstd_frame};
 use crate::crypto::{decrypt_padded_aead_object, verify_integrity_tag, AeadObjectContext, HmacDomain, MasterKey, Subkeys};
-use crate::fec::repair_data_gf16;
+use crate::fec::recover_data_bytes_gf16;
 use crate::format::{BlockKind, FormatError, BLOCK_RECORD_FRAMING_LEN, CRITICAL_RECOVERY_LOCATOR_LEN, LOCATOR_PAIR_LEN, VOLUME_HEADER_LEN};
 use crate::metadata::{
     hash_prefix, DirectoryHintShardEntry, DirectoryHintTable, EnvelopeEntry, FileEntry, FrameEntry, IndexRoot, IndexShard, MetadataLimits, ShardEntry,
@@ -589,11 +589,8 @@ pub(crate) fn finalize_sequential_envelope(pending: &mut PendingSequentialEnvelo
         ));
     }
 
-    let repaired = repair_data_gf16(&pending.data_shards, &pending.parity_shards, context.crypto_header.block_size as usize)?;
-    let mut encrypted = Vec::with_capacity(repaired.len() * context.crypto_header.block_size as usize);
-    for shard in repaired {
-        encrypted.extend_from_slice(&shard);
-    }
+    let block_size = context.crypto_header.block_size as usize;
+    let encrypted = recover_data_bytes_gf16(&pending.data_shards, &pending.parity_shards, block_size)?;
     let plaintext = decrypt_padded_aead_object(
         AeadObjectContext {
             algo: context.crypto_header.aead_algo,
@@ -629,7 +626,7 @@ pub(crate) fn decode_concatenated_zstd_frames_with_cap(
 ) -> Result<(), FormatError> {
     let mut cursor = 0usize;
     while cursor < plaintext.len() {
-        let frame_len = zstd_safe::find_frame_compressed_size(&plaintext[cursor..]).map_err(|_| FormatError::InvalidZstdFrame)?;
+        let frame_len = zstd::zstd_safe::find_frame_compressed_size(&plaintext[cursor..]).map_err(|_| FormatError::InvalidZstdFrame)?;
         if frame_len == 0 {
             return Err(FormatError::InvalidZstdFrame);
         }

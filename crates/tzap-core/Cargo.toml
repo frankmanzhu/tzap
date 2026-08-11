@@ -32,7 +32,6 @@ unicode-normalization.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 zstd.workspace = true
-zstd-safe.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 sha2 = { workspace = true, features = ["asm"] }
