@@ -1165,7 +1165,6 @@ dependencies = [
  "xattr",
  "zeroize",
  "zstd",
- "zstd-safe",
 ]
 
 [[package]]
