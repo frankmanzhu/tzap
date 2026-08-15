@@ -6,8 +6,8 @@ use hpke::{
     kem::{DhP256HkdfSha256, X25519HkdfSha256},
     Deserializable, Kem as HpkeKem, OpModeR, OpModeS, Serializable,
 };
-use pkcs8::DecodePrivateKey;
 use pkcs8::der::Decode;
+use pkcs8::DecodePrivateKey;
 use rand_core::{OsRng, UnwrapErr};
 use sha2::{Digest, Sha256};
 use tzap_core::format::{FORMAT_VERSION, VOLUME_FORMAT_REV_45};
