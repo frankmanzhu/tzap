@@ -13,9 +13,31 @@ keywords = ["archive", "cryptography", "ed25519", "signing", "tzap"]
 categories = ["cryptography"]
 
 [dependencies]
+base64 = "0.22"
+# The 0.14 curve line is required for P-521: p521 0.13 implements no
+# `DigestPrimitive`, which leaves it without any ecdsa signing impls.
+ecdsa = { version = "0.17", features = ["der"] }
 ed25519-dalek.workspace = true
+# Chain path-validation allow-list: `x509_chain/x509_chain_verify_openssl.rs`
+# is the only module allowed to use OpenSSL (see the module docs and the
+# openssl-dependency-removal-plan §6 decision). Vendored, so no system
+# OpenSSL is required on any target.
 openssl.workspace = true
-sha2.workspace = true
+p256 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
+p384 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
+p521 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
+# pkcs8 0.10 pairs with rsa 0.9 (its pkcs8 trait impls and der 0.7-based
+# PrivateKeyInfo parsing); 0.11 pairs with the elliptic-curve 0.14 crates.
+pkcs8_010 = { package = "pkcs8", version = "0.10", features = ["std"] }
+pkcs8 = { version = "0.11", features = ["std"] }
+# RSA-PSS signing salt randomness (rsa 0.9's rand_core line).
+rand_core = { version = "0.6", features = ["getrandom"] }
+rsa = "0.9"
+# `oid` is required by the `rsa` crate's digest-associated signing keys.
+sha2 = { workspace = true, features = ["oid"] }
+# rsa 0.9 implements the signature 2.x traits; ecdsa 0.17 the 3.x ones.
+signature = "2"
+signature3 = { package = "signature", version = "3" }
 tzap-core.workspace = true
 x509-parser.workspace = true
 
