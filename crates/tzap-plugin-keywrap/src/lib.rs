@@ -709,8 +709,8 @@ mod tests {
 
     use openssl::{
         asn1::{Asn1Object, Asn1OctetString, Asn1Time},
-        bn::{BigNum, MsbOption},
-        ec::{EcGroup, EcKey},
+        bn::{BigNum, BigNumContext, MsbOption},
+        ec::{EcGroup, EcKey, PointConversionForm},
         hash::MessageDigest,
         nid::Nid,
         pkey::{PKey, Private},
@@ -718,6 +718,7 @@ mod tests {
         rsa::Rsa,
         x509::{extension::BasicConstraints, extension::KeyUsage, X509Extension, X509NameBuilder, X509},
     };
+    use x509_parser::prelude::FromDer;
 
     #[derive(Debug)]
     struct NoMatchLookup;
@@ -954,6 +955,37 @@ mod tests {
             recipient_identity_bytes: record.recipient_identity_bytes,
             profile_payload_bytes: record.profile_payload_bytes,
         }
+    }
+
+    #[test]
+    fn compressed_p256_point_spki_normalizes_like_openssl() {
+        // OpenSSL's `public_key_to_der` re-encodes compressed EC points as
+        // uncompressed; the recipient-digest path must match byte-for-byte so
+        // archives created against compressed-point certificates keep their
+        // key-wrap digests.
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
+        let key = EcKey::generate(&group).unwrap();
+        let mut context = BigNumContext::new().unwrap();
+        let compressed = key.public_key().to_bytes(&group, PointConversionForm::COMPRESSED, &mut context).unwrap();
+        assert_eq!(compressed.len(), 33);
+
+        let compressed_spki = p256_spki_with_point(&compressed);
+        let (_, spki) = x509_parser::x509::SubjectPublicKeyInfo::from_der(compressed_spki.as_slice()).unwrap();
+        let normalized = normalized_p256_spki_der(&spki).unwrap();
+
+        let expected = PKey::from_ec_key(key).unwrap().public_key_to_der().unwrap();
+        assert_eq!(normalized, expected);
+    }
+
+    /// Builds a P-256 SPKI DER carrying `point` bytes in the BIT STRING.
+    fn p256_spki_with_point(point: &[u8]) -> Vec<u8> {
+        let algorithm = der_wrap(
+            0x30,
+            &[der_wrap(0x06, b"\x2a\x86\x48\xce\x3d\x02\x01"), der_wrap(0x06, b"\x2a\x86\x48\xce\x3d\x03\x01\x07")].concat(),
+        );
+        let mut bit_string = vec![0x00];
+        bit_string.extend_from_slice(point);
+        der_wrap(0x30, &[algorithm, der_wrap(0x03, &bit_string)].concat())
     }
 
     #[test]
