@@ -19,7 +19,7 @@ use openssl::error::ErrorStack;
 use openssl::stack::Stack;
 use openssl::x509::store::X509StoreBuilder;
 use openssl::x509::verify::X509VerifyParam;
-use openssl::x509::{X509NameRef, X509StoreContext, X509};
+use openssl::x509::{X509StoreContext, X509};
 
 fn to_chain_error(error: ErrorStack) -> X509RootAuthError {
     X509RootAuthError::Chain(format!("{error}"))
@@ -29,17 +29,18 @@ fn to_chain_error(error: ErrorStack) -> X509RootAuthError {
 /// trusted roots (plus OpenSSL's system default paths when
 /// `use_system_roots`), at `chain_validation_time_unix_seconds`.
 ///
-/// Returns the verified chain's subjects, leaf first and ending at the trust
-/// anchor, formatted like the pre-migration report (OpenSSL NID short names,
-/// `key=value` joined by `", "`). An empty verified chain falls back to the
-/// leaf subject, matching the pre-migration behavior.
+/// Returns the verified chain's DER certificates, leaf first and ending at
+/// the trust anchor; the caller formats the subjects with the shared
+/// `x509_name_to_string` so leaf and chain names render identically. An
+/// empty verified chain falls back to the leaf certificate, matching the
+/// pre-migration behavior.
 pub(super) fn verify_certificate_chain(
     leaf_certificate_der: &[u8],
     chain_certificate_der: &[Vec<u8>],
     trusted_roots_der: &[Vec<u8>],
     use_system_roots: bool,
     chain_validation_time_unix_seconds: i64,
-) -> Result<Vec<String>, X509RootAuthError> {
+) -> Result<Vec<Vec<u8>>, X509RootAuthError> {
     let leaf_certificate = X509::from_der(leaf_certificate_der).map_err(to_chain_error)?;
     let mut store_builder = X509StoreBuilder::new().map_err(to_chain_error)?;
     for root_der in trusted_roots_der {
@@ -60,13 +61,13 @@ pub(super) fn verify_certificate_chain(
     }
     let mut context = X509StoreContext::new().map_err(to_chain_error)?;
     let mut verify_error = None;
-    let mut subjects = Vec::new();
+    let mut verified_chain_der = Vec::new();
     let verified = context
         .init(&store, &leaf_certificate, &chain, |ctx| {
             let ok = ctx.verify_cert()?;
             if ok {
                 if let Some(chain) = ctx.chain() {
-                    subjects = chain.iter().map(|cert| name_to_string(cert.subject_name())).collect();
+                    verified_chain_der = chain.iter().map(|cert| cert.to_der().unwrap_or_default()).collect();
                 }
             } else {
                 verify_error = Some(format!("{} at depth {}", ctx.error(), ctx.error_depth()));
@@ -79,26 +80,8 @@ pub(super) fn verify_certificate_chain(
             verify_error.unwrap_or_else(|| "certificate chain verification failed".to_string()),
         ));
     }
-    if subjects.is_empty() {
-        subjects.push(name_to_string(leaf_certificate.subject_name()));
+    if verified_chain_der.is_empty() {
+        verified_chain_der.push(leaf_certificate.to_der().map_err(to_chain_error)?);
     }
-    Ok(subjects)
-}
-
-fn name_to_string(name: &X509NameRef) -> String {
-    let mut parts = Vec::new();
-    for entry in name.entries() {
-        let key = entry.object().nid().short_name().unwrap_or("OID");
-        let value = entry.data().to_string().unwrap_or_else(|_| encode_hex(entry.data().as_slice()));
-        parts.push(format!("{key}={value}"));
-    }
-    parts.join(", ")
-}
-
-fn encode_hex(bytes: &[u8]) -> String {
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = std::fmt::Write::write_fmt(&mut output, format_args!("{:02x}", byte));
-    }
-    output
+    Ok(verified_chain_der)
 }

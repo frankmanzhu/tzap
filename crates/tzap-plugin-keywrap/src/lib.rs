@@ -406,16 +406,71 @@ fn parse_x509_recipient_identity(recipient_identity_bytes: &[u8]) -> Result<Pars
 
     // `raw` is the complete DER encoding of the SubjectPublicKeyInfo exactly
     // as it appears in the certificate. OpenSSL's `public_key_to_der` re-encode
-    // is byte-identical for canonical DER, so the digest stays compatible with
-    // archives created by the OpenSSL-backed implementation.
-    let spki_der = parsed_cert.tbs_certificate.subject_pki.raw;
+    // is byte-identical for canonical DER (non-minimal length encodings would
+    // differ, but those are malformed for strict DER parsers) and re-encodes
+    // compressed EC points as uncompressed, so the digest stays compatible
+    // with archives created by the OpenSSL-backed implementation.
+    let spki_der = normalized_p256_spki_der(&parsed_cert.tbs_certificate.subject_pki)?;
     let recipient_identity_digest = sha256_digest(recipient_identity_bytes);
-    let recipient_spki_digest = sha256_digest(spki_der);
+    let recipient_spki_digest = sha256_digest(spki_der.as_slice());
 
     Ok(ParsedRecipientIdentity {
         recipient_identity_digest,
         recipient_spki_digest,
     })
+}
+
+/// Rebuilds a P-256 SPKI the way OpenSSL's `public_key_to_der` would: the
+/// original bytes for uncompressed points, or the uncompressed re-encoding
+/// for compressed ones (keeping the algorithm identifier intact).
+fn normalized_p256_spki_der(spki: &x509_parser::x509::SubjectPublicKeyInfo<'_>) -> Result<Vec<u8>, KeyWrapOutcome> {
+    let point = spki.subject_public_key.data.as_ref();
+    let parameters_oid = spki
+        .algorithm
+        .parameters
+        .as_ref()
+        .and_then(|parameters| parameters.as_oid().ok().map(|oid| oid.to_id_string()));
+    let is_p256 = spki.algorithm.algorithm.to_id_string() == OID_EC_PUBLIC_KEY && parameters_oid.as_deref() == Some(OID_EC_P256);
+    if !is_p256 || (point.len() == 65 && point[0] == 0x04) {
+        // Non-P-256 SPKIs and uncompressed P-256 points keep the original
+        // encoding.
+        return Ok(spki.raw.to_vec());
+    }
+    let normalized = normalize_p256_point(point)?;
+    // Re-encode the SPKI: SEQUENCE { AlgorithmIdentifier, BIT STRING } with
+    // the uncompressed point.
+    let algorithm = &spki.algorithm;
+    let mut algorithm_der = der_wrap(0x06, algorithm.algorithm.as_bytes());
+    if let Some(parameters) = algorithm.parameters.as_ref() {
+        algorithm_der.extend(der_wrap(
+            u8::try_from(parameters.tag().0).map_err(|_| KeyWrapOutcome::InvalidRecord)?,
+            parameters.data,
+        ));
+    }
+    // AlgorithmIdentifier = SEQUENCE { OID, [parameters] }.
+    let algorithm_element = der_wrap(0x30, &algorithm_der);
+    // SPKI = SEQUENCE { AlgorithmIdentifier, BIT STRING }.
+    let mut bit_string = vec![0x00];
+    bit_string.extend(normalized);
+    let mut contents = algorithm_element;
+    contents.extend(der_wrap(0x03, &bit_string));
+    Ok(der_wrap(0x30, &contents))
+}
+
+/// Wraps contents with a DER tag and a minimal length prefix.
+fn der_wrap(tag: u8, contents: &[u8]) -> Vec<u8> {
+    let mut out = vec![tag];
+    let length = contents.len();
+    if length < 128 {
+        out.push(length as u8);
+    } else {
+        let bytes = length.to_be_bytes();
+        let first_nonzero = bytes.iter().position(|byte| *byte != 0).unwrap_or(0);
+        out.push(0x80 | (bytes.len() - first_nonzero) as u8);
+        out.extend(&bytes[first_nonzero..]);
+    }
+    out.extend(contents);
+    out
 }
 
 /// Parses a DER X.509 recipient certificate, rejecting trailing bytes.
@@ -567,12 +622,25 @@ fn p256_public_key_from_certificate(recipient_certificate_der: &[u8]) -> Result<
     if parameters_oid.as_deref() != Some(OID_EC_P256) {
         return Err(KeyWrapOutcome::InvalidRecord);
     }
-    // SEC1 uncompressed point: 0x04 || X || Y.
-    let encoded = spki.subject_public_key.data.as_ref();
-    if encoded.len() != 65 || encoded[0] != 0x04 {
-        return Err(KeyWrapOutcome::InvalidRecord);
+    // SEC1 point: OpenSSL's oct2point accepted compressed points too and
+    // re-encoded them uncompressed for the digest, so mirror that here.
+    let encoded = normalize_p256_point(spki.subject_public_key.data.as_ref())?;
+    <DhP256HkdfSha256 as HpkeKem>::PublicKey::from_bytes(encoded.as_slice()).map_err(|_| KeyWrapOutcome::InvalidRecord)
+}
+
+/// Accepts uncompressed (0x04 || X || Y) or compressed (0x02/0x03 || X)
+/// SEC1 points and returns the uncompressed encoding (OpenSSL's oct2point +
+/// uncompressed re-encode behavior).
+fn normalize_p256_point(encoded: &[u8]) -> Result<Vec<u8>, KeyWrapOutcome> {
+    if encoded.len() == 65 && encoded[0] == 0x04 {
+        return Ok(encoded.to_vec());
     }
-    <DhP256HkdfSha256 as HpkeKem>::PublicKey::from_bytes(encoded).map_err(|_| KeyWrapOutcome::InvalidRecord)
+    let public_key = p256::PublicKey::from_sec1_bytes(encoded).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
+    Ok(
+        p256::elliptic_curve::sec1::ToEncodedPoint::<p256::NistP256>::to_encoded_point(public_key.as_affine(), false)
+            .as_bytes()
+            .to_vec(),
+    )
 }
 
 fn x25519_private_key_from_bytes(private_key_bytes: &[u8]) -> Result<<X25519HkdfSha256 as HpkeKem>::PrivateKey, KeyWrapOutcome> {

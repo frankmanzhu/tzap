@@ -56,10 +56,10 @@ const X509_CHAIN_DOMAIN: &[u8] = b"tzap-x509-chain-v1\0";
 const AUTHENTICATOR_FIXED_LEN: usize = 60;
 const SHA256_LEN: usize = 32;
 
-/// Maximum DER-encoded ECDSA signature sizes, matching OpenSSL's
-/// `ECDSA_size` (and therefore `EVP_PKEY_size` on EC keys, which the
-/// pre-migration signer used for the authenticator signature capacity):
-/// SEQ(2) + 2 * INTEGER(tag+len+field+possible leading zero).
+/// Authenticator signature capacities for EC keys, measured from OpenSSL's
+/// `EVP_PKEY_size` (which the pre-migration signer used): 72/104/139 for
+/// P-256/P-384/P-521. These are upper bounds on the DER signature size, so
+/// a one-byte difference from another derivation is still safe.
 const ECDSA_SIG_MAX_P256: usize = 72;
 const ECDSA_SIG_MAX_P384: usize = 104;
 const ECDSA_SIG_MAX_P521: usize = 139;
@@ -136,6 +136,14 @@ impl X509SigningKey {
             return Ok(Self::Rsa(key));
         }
         if let Ok(info) = pkcs8_010::PrivateKeyInfo::from_der(bytes) {
+            // rsa's `from_pkcs8_der` requires NULL parameters; OpenSSL also
+            // accepted absent parameters for rsaEncryption, so that form is
+            // parsed directly from the inner PKCS#1 structure.
+            if info.algorithm.oid == pkcs8_010::ObjectIdentifier::new_unwrap(OID_RSA_ENCRYPTION) && info.algorithm.parameters.is_none() {
+                if let Ok(key) = rsa::RsaPrivateKey::from_pkcs1_der(info.private_key) {
+                    return Ok(Self::Rsa(key));
+                }
+            }
             if info.algorithm.oid == pkcs8_010::ObjectIdentifier::new_unwrap(OID_RSASSA_PSS) {
                 // RSA-PSS-restricted keys parse, but cannot pick a scheme on
                 // their own (matches the OpenSSL Id::RSA_PSS behavior).
@@ -157,13 +165,24 @@ impl X509SigningKey {
             return Ok(Self::EcP521(key.into()));
         }
         if let Ok(key) = p256::SecretKey::from_sec1_der(bytes) {
-            return Ok(Self::EcP256(key.into()));
+            // SEC1 keys with an explicit [0] namedCurve must name the same
+            // curve (OpenSSL's d2i_ECPrivateKey used that group).
+            if sec1_curve_matches(bytes, OID_EC_P256) {
+                return Ok(Self::EcP256(key.into()));
+            }
+            return Err(X509RootAuthError::Invalid("unsupported X.509 ECDSA curve"));
         }
         if let Ok(key) = p384::SecretKey::from_sec1_der(bytes) {
-            return Ok(Self::EcP384(key.into()));
+            if sec1_curve_matches(bytes, OID_EC_P384) {
+                return Ok(Self::EcP384(key.into()));
+            }
+            return Err(X509RootAuthError::Invalid("unsupported X.509 ECDSA curve"));
         }
         if let Ok(key) = p521::SecretKey::from_sec1_der(bytes) {
-            return Ok(Self::EcP521(key.into()));
+            if sec1_curve_matches(bytes, OID_EC_P521) {
+                return Ok(Self::EcP521(key.into()));
+            }
+            return Err(X509RootAuthError::Invalid("unsupported X.509 ECDSA curve"));
         }
         if let Ok(info) = pkcs8_010::PrivateKeyInfo::from_der(bytes) {
             let algorithm_oid = info.algorithm.oid.to_string();
@@ -538,13 +557,25 @@ pub fn verify_root_auth_footer(
     }
 
     let chain_validation_time_unix_seconds = current_unix_seconds()?;
-    let verified_chain_subjects = x509_chain_verify_openssl::verify_certificate_chain(
+    let verified_chain_der = x509_chain_verify_openssl::verify_certificate_chain(
         &footer.signer_identity_bytes,
         &parsed.chain_certificate_der,
         trusted_roots_der,
         use_system_roots,
         chain_validation_time_unix_seconds,
     )?;
+    // Subjects are formatted with the same `x509_name_to_string` as the leaf
+    // report fields, so one certificate renders identically everywhere.
+    let verified_chain_subjects: Vec<String> = verified_chain_der
+        .iter()
+        .map(|der| {
+            X509Certificate::from_der(der)
+                .ok()
+                .filter(|(remaining, _)| remaining.is_empty())
+                .map(|(_, certificate)| x509_name_to_string(certificate.subject()))
+                .unwrap_or_default()
+        })
+        .collect();
     let fingerprint = Sha256::digest(&footer.signer_identity_bytes);
     let mut certificate_sha256 = [0u8; SHA256_LEN];
     certificate_sha256.copy_from_slice(&fingerprint);
@@ -563,7 +594,8 @@ pub fn verify_root_auth_footer(
         eku_policy: "none",
         subject: x509_name_to_string(leaf_certificate.subject()),
         issuer: x509_name_to_string(leaf_certificate.issuer()),
-        serial_number_hex: leaf_certificate.serial.to_str_radix(16),
+        // BN::to_hex_str parity: uppercase, no leading zeros.
+        serial_number_hex: leaf_certificate.serial.to_str_radix(16).to_uppercase(),
         certificate_sha256,
         verified_chain_subjects,
         trust_anchor_subject,
@@ -1037,15 +1069,40 @@ fn authenticator_value_len(signature_capacity: usize, chain_certificate_der: &[V
 /// Formats an X.509 distinguished name the way the pre-migration OpenSSL
 /// code did: `short_name=value` entries joined by `", "`, in encoding order
 /// (empirically identical to `X509NameRef::entries()`), with unknown OIDs
-/// falling back to `OID` and non-string values hex-encoded.
+/// falling back to `OID` and non-string values hex-encoded. Beyond the string
+/// types `x509-parser` decodes natively, BMPString (UTF-16BE) and
+/// TeletexString (Latin-1, OpenSSL's `ASN1_STRING_to_UTF8` treatment) are
+/// decoded manually so reports match the OpenSSL-formatted chain subjects.
 fn x509_name_to_string(name: &X509Name<'_>) -> String {
     let mut parts = Vec::new();
     for attribute in name.iter_attributes() {
         let key = oid_short_name(attribute.attr_type().to_id_string().as_str()).unwrap_or("OID");
-        let value = attribute.as_str().map(str::to_owned).unwrap_or_else(|_| encode_hex(attribute.as_slice()));
+        let value = attribute_string_value(attribute).unwrap_or_else(|| encode_hex(attribute.as_slice()));
         parts.push(format!("{key}={value}"));
     }
     parts.join(", ")
+}
+
+fn attribute_string_value(attribute: &x509_parser::x509::AttributeTypeAndValue<'_>) -> Option<String> {
+    if let Ok(value) = attribute.as_str() {
+        return Some(value.to_owned());
+    }
+    let any = attribute.attr_value();
+    match any.tag() {
+        x509_parser::asn1_rs::Tag::BmpString => decode_bmp_string(any.data),
+        x509_parser::asn1_rs::Tag::TeletexString => Some(String::from_utf8_lossy(any.data).into_owned()),
+        _ => None,
+    }
+}
+
+/// Decodes a BMPString (big-endian UTF-16 code units), skipping unpaired
+/// surrogates the way OpenSSL's UTF-8 conversion does.
+fn decode_bmp_string(bytes: &[u8]) -> Option<String> {
+    let mut units = Vec::with_capacity(bytes.len() / 2);
+    for pair in bytes.chunks_exact(2) {
+        units.push(u16::from_be_bytes([pair[0], pair[1]]));
+    }
+    String::from_utf16(&units).ok()
 }
 
 /// OpenSSL NID short names for the common DN attribute OIDs.
@@ -1063,8 +1120,11 @@ fn oid_short_name(oid: &str) -> Option<&'static str> {
         "2.5.4.12" => "title",
         "2.5.4.13" => "description",
         "2.5.4.15" => "businessCategory",
+        "2.5.4.17" => "postalCode",
         "2.5.4.42" => "GN",
         "2.5.4.43" => "initials",
+        "2.5.4.44" => "generationQualifier",
+        "2.5.4.46" => "dnQualifier",
         "2.5.4.65" => "pseudonym",
         "2.5.4.97" => "organizationIdentifier",
         "0.9.2342.19200300.100.1.1" => "UID",
@@ -1077,6 +1137,24 @@ fn oid_short_name(oid: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+/// True when a SEC1 ECPrivateKey's explicit [0] namedCurve equals the
+/// expected curve OID (absent [0] means the key is used as parsed).
+fn sec1_curve_matches(bytes: &[u8], expected_oid: &str) -> bool {
+    // DER content bytes of the namedCurve OIDs (encoded once, avoids an OID
+    // parser round-trip).
+    let expected = match expected_oid {
+        OID_EC_P256 => &P256_OID_CONTENT[..],
+        OID_EC_P384 => &P384_OID_CONTENT[..],
+        OID_EC_P521 => &P521_OID_CONTENT[..],
+        _ => return false,
+    };
+    sec1_named_curve_oid(bytes).is_none_or(|oid| oid.as_slice() == expected)
+}
+
+const P256_OID_CONTENT: [u8; 8] = [0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
+const P384_OID_CONTENT: [u8; 5] = [0x2b, 0x81, 0x04, 0x00, 0x22];
+const P521_OID_CONTENT: [u8; 5] = [0x2b, 0x81, 0x04, 0x00, 0x23];
 
 /// True when the input is an EC key whose curve was not among the allowed
 /// set — the parser tried P-256/P-384/P-521 above, so anything EC-shaped
