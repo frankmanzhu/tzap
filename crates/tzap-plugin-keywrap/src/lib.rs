@@ -6,7 +6,8 @@ use hpke::{
     kem::{DhP256HkdfSha256, X25519HkdfSha256},
     Deserializable, Kem as HpkeKem, OpModeR, OpModeS, Serializable,
 };
-use openssl::{bn::BigNumContext, ec::PointConversionForm, nid::Nid, pkey::PKey, x509::X509};
+use pkcs8::DecodePrivateKey;
+use pkcs8::der::Decode;
 use rand_core::{OsRng, UnwrapErr};
 use sha2::{Digest, Sha256};
 use tzap_core::format::{FORMAT_VERSION, VOLUME_FORMAT_REV_45};
@@ -30,6 +31,12 @@ const P256_KEM_ID: u16 = 0x0010;
 const HKDF_SHA256_KDF_ID: u16 = 0x0001;
 const CHACHA20POLY1305_AEAD_ID: u16 = 0x0003;
 const AES256GCM_AEAD_ID: u16 = 0x0002;
+
+// X.509 SPKI algorithm identifiers (RFC 8410 X25519, RFC 5480 EC public keys
+// with the namedCurve parameter for P-256).
+const OID_X25519: &str = "1.3.101.110";
+const OID_EC_PUBLIC_KEY: &str = "1.2.840.10045.2.1";
+const OID_EC_P256: &str = "1.2.840.10045.3.1.7";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct HpkeSuite {
@@ -383,11 +390,7 @@ fn build_profile_payload(suite: HpkeSuite, key_wrap_context_digest: &[u8; 32], e
 }
 
 fn parse_x509_recipient_identity(recipient_identity_bytes: &[u8]) -> Result<ParsedRecipientIdentity, KeyWrapOutcome> {
-    let (remaining, parsed_cert) = parse_x509_certificate(recipient_identity_bytes).map_err(|_error| KeyWrapOutcome::InvalidRecord)?;
-
-    if !remaining.is_empty() {
-        return Err(KeyWrapOutcome::InvalidRecord);
-    }
+    let parsed_cert = parse_recipient_certificate(recipient_identity_bytes)?;
 
     match parsed_cert.key_usage() {
         Ok(Some(key_usage)) => {
@@ -401,16 +404,27 @@ fn parse_x509_recipient_identity(recipient_identity_bytes: &[u8]) -> Result<Pars
         }
     }
 
-    let openssl_cert = X509::from_der(recipient_identity_bytes).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    let openssl_public_key: PKey<_> = openssl_cert.public_key().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    let spki_der = openssl_public_key.public_key_to_der().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
+    // `raw` is the complete DER encoding of the SubjectPublicKeyInfo exactly
+    // as it appears in the certificate. OpenSSL's `public_key_to_der` re-encode
+    // is byte-identical for canonical DER, so the digest stays compatible with
+    // archives created by the OpenSSL-backed implementation.
+    let spki_der = parsed_cert.tbs_certificate.subject_pki.raw;
     let recipient_identity_digest = sha256_digest(recipient_identity_bytes);
-    let recipient_spki_digest = sha256_digest(&spki_der);
+    let recipient_spki_digest = sha256_digest(spki_der);
 
     Ok(ParsedRecipientIdentity {
         recipient_identity_digest,
         recipient_spki_digest,
     })
+}
+
+/// Parses a DER X.509 recipient certificate, rejecting trailing bytes.
+fn parse_recipient_certificate(recipient_identity_bytes: &[u8]) -> Result<x509_parser::certificate::X509Certificate<'_>, KeyWrapOutcome> {
+    let (remaining, parsed_cert) = parse_x509_certificate(recipient_identity_bytes).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
+    if !remaining.is_empty() {
+        return Err(KeyWrapOutcome::InvalidRecord);
+    }
+    Ok(parsed_cert)
 }
 
 fn parse_profile_payload(profile_payload_bytes: &[u8]) -> Result<ParsedProfilePayload, KeyWrapOutcome> {
@@ -524,39 +538,53 @@ fn hpke_aad_with_domain(domain: &[u8], key_wrap_context_digest: &[u8; 32]) -> Ve
 }
 
 fn x25519_public_key_from_certificate(recipient_certificate_der: &[u8]) -> Result<<X25519HkdfSha256 as HpkeKem>::PublicKey, KeyWrapOutcome> {
-    let certificate = X509::from_der(recipient_certificate_der).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    let public_key = certificate.public_key().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    let raw = public_key.raw_public_key().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
+    let certificate = parse_recipient_certificate(recipient_certificate_der)?;
+    let spki = &certificate.tbs_certificate.subject_pki;
+    if spki.algorithm.algorithm.to_id_string() != OID_X25519 {
+        return Err(KeyWrapOutcome::InvalidRecord);
+    }
+    // RFC 8410: the X25519 SPKI BIT STRING carries the raw 32-byte public key.
+    let raw = spki.subject_public_key.data.as_ref();
     if raw.len() != 32 {
         return Err(KeyWrapOutcome::InvalidRecord);
     }
-    <X25519HkdfSha256 as HpkeKem>::PublicKey::from_bytes(&raw).map_err(|_| KeyWrapOutcome::InvalidRecord)
+    <X25519HkdfSha256 as HpkeKem>::PublicKey::from_bytes(raw).map_err(|_| KeyWrapOutcome::InvalidRecord)
 }
 
 fn p256_public_key_from_certificate(recipient_certificate_der: &[u8]) -> Result<<DhP256HkdfSha256 as HpkeKem>::PublicKey, KeyWrapOutcome> {
-    let certificate = X509::from_der(recipient_certificate_der).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    let public_key = certificate.public_key().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    let ec_key = public_key.ec_key().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    if ec_key.group().curve_name() != Some(Nid::X9_62_PRIME256V1) {
+    let certificate = parse_recipient_certificate(recipient_certificate_der)?;
+    let spki = &certificate.tbs_certificate.subject_pki;
+    if spki.algorithm.algorithm.to_id_string() != OID_EC_PUBLIC_KEY {
         return Err(KeyWrapOutcome::InvalidRecord);
     }
-    let mut context = BigNumContext::new().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    let encoded = ec_key
-        .public_key()
-        .to_bytes(ec_key.group(), PointConversionForm::UNCOMPRESSED, &mut context)
-        .map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    if encoded.len() != 65 {
+    // RFC 5480: the curve must be named (no explicit parameters), and must be
+    // P-256 — OpenSSL's `curve_name() != X9_62_PRIME256V1` check equivalent.
+    let parameters_oid = spki
+        .algorithm
+        .parameters
+        .as_ref()
+        .and_then(|parameters| parameters.as_oid().ok().map(|oid| oid.to_id_string()));
+    if parameters_oid.as_deref() != Some(OID_EC_P256) {
         return Err(KeyWrapOutcome::InvalidRecord);
     }
-    <DhP256HkdfSha256 as HpkeKem>::PublicKey::from_bytes(&encoded).map_err(|_| KeyWrapOutcome::InvalidRecord)
+    // SEC1 uncompressed point: 0x04 || X || Y.
+    let encoded = spki.subject_public_key.data.as_ref();
+    if encoded.len() != 65 || encoded[0] != 0x04 {
+        return Err(KeyWrapOutcome::InvalidRecord);
+    }
+    <DhP256HkdfSha256 as HpkeKem>::PublicKey::from_bytes(encoded).map_err(|_| KeyWrapOutcome::InvalidRecord)
 }
 
 fn x25519_private_key_from_bytes(private_key_bytes: &[u8]) -> Result<<X25519HkdfSha256 as HpkeKem>::PrivateKey, KeyWrapOutcome> {
     let raw = if private_key_bytes.len() == 32 {
         private_key_bytes.to_vec()
     } else {
-        let private_key = PKey::private_key_from_der(private_key_bytes).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-        private_key.raw_private_key().map_err(|_| KeyWrapOutcome::InvalidRecord)?
+        // PKCS#8 (RFC 8410 wraps the raw 32-byte key in the privateKey field).
+        let private_key_info = pkcs8::PrivateKeyInfo::from_der(private_key_bytes).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
+        if private_key_info.algorithm.oid != pkcs8::ObjectIdentifier::new_unwrap(OID_X25519) {
+            return Err(KeyWrapOutcome::InvalidRecord);
+        }
+        private_key_info.private_key.to_vec()
     };
     if raw.len() != 32 {
         return Err(KeyWrapOutcome::InvalidRecord);
@@ -568,9 +596,14 @@ fn p256_private_key_from_bytes(private_key_bytes: &[u8]) -> Result<<DhP256HkdfSh
     let raw = if private_key_bytes.len() == 32 {
         private_key_bytes.to_vec()
     } else {
-        let private_key = PKey::private_key_from_der(private_key_bytes).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-        let ec_key = private_key.ec_key().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-        ec_key.private_key().to_vec_padded(32).map_err(|_| KeyWrapOutcome::InvalidRecord)?
+        // OpenSSL's EC private-key DER output is SEC1 (RFC 5915
+        // `ECPrivateKey`); PKCS#8 is also accepted for callers that convert.
+        // Both parsers validate the algorithm, the P-256 curve, and the
+        // scalar range.
+        let secret_key = p256::SecretKey::from_pkcs8_der(private_key_bytes)
+            .or_else(|_| p256::SecretKey::from_sec1_der(private_key_bytes))
+            .map_err(|_| KeyWrapOutcome::InvalidRecord)?;
+        secret_key.to_bytes().to_vec()
     };
     if raw.len() != 32 {
         return Err(KeyWrapOutcome::InvalidRecord);

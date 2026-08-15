@@ -15,7 +15,14 @@ categories = ["cryptography"]
 [dependencies]
 tzap-core.workspace = true
 hpke = { workspace = true }
-openssl = { workspace = true }
+# X.509 recipient identities are parsed with `x509-parser` (SPKI extraction,
+# key-type/curve checks). The OpenSSL crate is test-only (dev-dependency):
+# certificate generation fixtures stay on it until upstream replaces them.
+p256 = { version = "0.13", features = ["pkcs8"] }
+pkcs8 = { version = "0.10", features = ["std"] }
 rand_core = { version = "0.9", features = ["os_rng"] }
 sha2 = { workspace = true }
 x509-parser.workspace = true
+
+[dev-dependencies]
+openssl = { workspace = true }
