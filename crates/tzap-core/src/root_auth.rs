@@ -288,17 +288,15 @@ pub fn data_block_merkle_leaf_hash_for_revision(
 }
 
 fn data_block_merkle_leaf_hash_with_params(params: RootAuthRevisionParams, block_index: u64, kind: BlockKind, flags: u8, payload: &[u8]) -> [u8; 32] {
-    let mut leaf_payload = Vec::with_capacity(10 + payload.len());
-    push_u64(&mut leaf_payload, block_index);
-    leaf_payload.push(kind as u8);
-    leaf_payload.push(flags);
-    leaf_payload.extend_from_slice(payload);
-
-    let mut bytes = Vec::new();
-    bytes.push(0x00);
-    bytes.extend_from_slice(params.data_block_merkle_domain);
-    bytes.extend_from_slice(&leaf_payload);
-    sha256_bytes(&bytes)
+    let mut hasher = Sha256::new();
+    hasher.update(&[0x00]);
+    hasher.update(params.data_block_merkle_domain);
+    hasher.update(&block_index.to_le_bytes());
+    hasher.update(&[kind as u8, flags]);
+    hasher.update(payload);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&hasher.finalize());
+    out
 }
 
 pub fn data_block_merkle_root_from_leaf_hashes(leaf_hashes: &[[u8; 32]]) -> [u8; 32] {
@@ -328,12 +326,14 @@ fn data_block_merkle_root_from_leaf_hashes_with_params(params: RootAuthRevisionP
             if idx + 1 == level.len() {
                 next.push(level[idx]);
             } else {
-                let mut bytes = Vec::new();
-                bytes.push(0x01);
-                bytes.extend_from_slice(params.data_block_merkle_domain);
-                bytes.extend_from_slice(&level[idx]);
-                bytes.extend_from_slice(&level[idx + 1]);
-                next.push(sha256_bytes(&bytes));
+                let mut hasher = Sha256::new();
+                hasher.update(&[0x01]);
+                hasher.update(params.data_block_merkle_domain);
+                hasher.update(&level[idx]);
+                hasher.update(&level[idx + 1]);
+                let mut node_hash = [0u8; 32];
+                node_hash.copy_from_slice(&hasher.finalize());
+                next.push(node_hash);
             }
             idx += 2;
         }
@@ -343,10 +343,12 @@ fn data_block_merkle_root_from_leaf_hashes_with_params(params: RootAuthRevisionP
 }
 
 fn empty_data_block_merkle_root(params: RootAuthRevisionParams) -> [u8; 32] {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(EMPTY_MERKLE_DOMAIN);
-    bytes.extend_from_slice(params.data_block_merkle_domain);
-    sha256_bytes(&bytes)
+    let mut hasher = Sha256::new();
+    hasher.update(EMPTY_MERKLE_DOMAIN);
+    hasher.update(params.data_block_merkle_domain);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&hasher.finalize());
+    out
 }
 
 pub fn archive_root(inputs: ArchiveRootInputs) -> [u8; 32] {

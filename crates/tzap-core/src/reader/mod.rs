@@ -2202,15 +2202,6 @@ impl OpenedArchive {
             return Err(FormatError::ReaderUnsupported(FAST_FULL_EXTRACT_UNIQUE_PATHS_UNSUPPORTED));
         }
 
-        let dry_run = self.scan_seekable_payload(
-            &tables,
-            total_extraction_size_cap(self.options, self.observed_archive_bytes),
-            NoopTarStreamObserver,
-            false,
-            ParityReadPolicy::RepairOnly,
-        )?;
-        self.validate_streamed_payload_summary(&tables, &dry_run, true, false)?;
-
         let observer = TarStreamFilesystemRestoreObserver::new(root, options);
         let streamed = self.scan_seekable_payload(
             &tables,
@@ -2219,6 +2210,7 @@ impl OpenedArchive {
             false,
             ParityReadPolicy::RepairOnly,
         )?;
+        self.validate_streamed_payload_summary(&tables, &streamed, true, false)?;
         streamed
             .tar
             .members
@@ -2856,14 +2848,34 @@ impl OpenedArchive {
                 .cmp(&restore_phase(&right.2))
                 .then_with(|| left.2.path.cmp(&right.2.path))
         });
-        let restored = planned
-            .iter()
-            .map(|(path, entry, _)| {
-                let shard = &shards[entry.shard_index];
-                let diagnostics = self.stream_loaded_file_to_path(shard, entry.file_index, root, options)?;
-                Ok((path.clone(), diagnostics))
-            })
-            .collect::<Result<Vec<_>, FormatError>>()?;
+        let mut restored = Vec::with_capacity(planned.len());
+        let mut phase_start = 0;
+        while phase_start < planned.len() {
+            let current_phase = restore_phase(&planned[phase_start].2);
+            let mut phase_end = phase_start + 1;
+            while phase_end < planned.len() && restore_phase(&planned[phase_end].2) == current_phase {
+                phase_end += 1;
+            }
+            let phase_entries = &planned[phase_start..phase_end];
+            let phase_restored = if current_phase == 4 || phase_entries.len() <= 1 {
+                phase_entries
+                    .iter()
+                    .map(|(path, entry, _)| {
+                        let shard = &shards[entry.shard_index];
+                        let diagnostics = self.stream_loaded_file_to_path(shard, entry.file_index, root, options)?;
+                        Ok((path.clone(), diagnostics))
+                    })
+                    .collect::<Result<Vec<_>, FormatError>>()?
+            } else {
+                parallel_map_ref(phase_entries, jobs, |(path, entry, _)| {
+                    let shard = &shards[entry.shard_index];
+                    let diagnostics = self.stream_loaded_file_to_path(shard, entry.file_index, root, options)?;
+                    Ok((path.clone(), diagnostics))
+                })?
+            };
+            restored.extend(phase_restored);
+            phase_start = phase_end;
+        }
         #[cfg(windows)]
         let mut restored = restored;
         #[cfg(windows)]
@@ -2896,6 +2908,10 @@ impl OpenedArchive {
         // cap protects list/verify metadata passes just as much as extraction.
         self.validate_total_extraction_size(file.file_data_size)?;
         let expected_path = shard.file_path(file_index).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
+        let offset = file.offset_in_first_frame_plaintext as usize;
+        let group_len = to_usize(file.tar_member_group_size, "FileEntry")?;
+        let required_bytes = offset.checked_add(group_len).ok_or(FormatError::InvalidArchive("member group offset overflow"))?;
+
         let frames = frame_range_for_file(shard, file)?;
         let mut envelope_cache = HashMap::<u64, Vec<u8>>::new();
         let mut decoded = Vec::new();
@@ -2913,10 +2929,11 @@ impl OpenedArchive {
                 "FrameEntry",
             )?;
             decoded.extend_from_slice(&self.decompress_payload_frame(compressed, frame.decompressed_size)?);
+            if decoded.len() >= required_bytes {
+                break;
+            }
         }
 
-        let offset = file.offset_in_first_frame_plaintext as usize;
-        let group_len = to_usize(file.tar_member_group_size, "FileEntry")?;
         let group = slice(&decoded, offset, group_len, "FileEntry")?;
         let member = parse_tar_member_group(group, self.crypto_header.max_path_length)?;
         if member.path != expected_path {

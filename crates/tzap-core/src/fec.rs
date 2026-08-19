@@ -24,19 +24,21 @@ pub fn encode_parity_gf16(data_shards: &[Vec<u8>], parity_shard_count: usize) ->
     }
 
     let shard_size = data_shards[0].len();
-    let symbol_count = shard_size / 2;
     let mut parity = vec![vec![0u8; shard_size]; parity_shard_count];
+    let tables = gf16_tables();
 
     for (j, parity_shard) in parity.iter_mut().enumerate().take(parity_shard_count) {
         for (i, data_shard) in data_shards.iter().enumerate().take(data_shard_count) {
             let coefficient = cauchy_coefficient(data_shard_count, j, i);
-            for k in 0..symbol_count {
-                let symbol = read_symbol(data_shard, k);
-                let value = gf16_mul(symbol, coefficient);
-                let offset = 2 * k;
-                let current = u16::from_le_bytes([parity_shard[offset], parity_shard[offset + 1]]);
-                parity_shard[offset..offset + 2].copy_from_slice(&(current ^ value).to_le_bytes());
+            if coefficient == 0 {
+                continue;
             }
+            if coefficient == 1 {
+                accumulate_xor_shard(parity_shard, data_shard);
+                continue;
+            }
+            let log_c = tables.log[coefficient as usize] as usize;
+            accumulate_gf16_mul_shard(parity_shard, data_shard, log_c, tables);
         }
     }
 
@@ -100,16 +102,23 @@ pub fn repair_data_gf16(data_shards: &[Option<Vec<u8>>], parity_shards: &[Option
     }
 
     let inverse = invert_matrix(rows)?;
-    let symbol_count = shard_size / 2;
     let mut repaired = vec![vec![0u8; shard_size]; data_shard_count];
+    let tables = gf16_tables();
 
     for output_row in 0..data_shard_count {
-        for k in 0..symbol_count {
-            let mut value = 0u16;
-            for source_row in 0..data_shard_count {
-                value ^= gf16_mul(inverse[output_row][source_row], read_symbol(&available[source_row], k));
+        let dest = &mut repaired[output_row];
+        for source_row in 0..data_shard_count {
+            let coefficient = inverse[output_row][source_row];
+            if coefficient == 0 {
+                continue;
             }
-            repaired[output_row][2 * k..2 * k + 2].copy_from_slice(&value.to_le_bytes());
+            let src = &available[source_row];
+            if coefficient == 1 {
+                accumulate_xor_shard(dest, src);
+            } else {
+                let log_c = tables.log[coefficient as usize] as usize;
+                accumulate_gf16_mul_shard(dest, src, log_c, tables);
+            }
         }
     }
 
@@ -146,6 +155,37 @@ pub(crate) fn recover_data_bytes_gf16(data_shards: &[Option<Vec<u8>>], parity_sh
         recovered.extend_from_slice(&shard);
     }
     Ok(recovered)
+}
+
+#[inline]
+fn accumulate_xor_shard(dest: &mut [u8], src: &[u8]) {
+    let mut d_chunks = dest.chunks_exact_mut(8);
+    let mut s_chunks = src.chunks_exact(8);
+    for (d, s) in (&mut d_chunks).zip(&mut s_chunks) {
+        let dv = u64::from_ne_bytes(d.try_into().unwrap());
+        let sv = u64::from_ne_bytes(s.try_into().unwrap());
+        d.copy_from_slice(&(dv ^ sv).to_ne_bytes());
+    }
+    let d_rem = d_chunks.into_remainder();
+    let s_rem = s_chunks.remainder();
+    for (d, s) in d_rem.iter_mut().zip(s_rem.iter()) {
+        *d ^= *s;
+    }
+}
+
+#[inline]
+fn accumulate_gf16_mul_shard(dest: &mut [u8], src: &[u8], log_c: usize, tables: &Gf16Tables) {
+    let symbol_count = dest.len() / 2;
+    for k in 0..symbol_count {
+        let offset = 2 * k;
+        let symbol = u16::from_le_bytes([src[offset], src[offset + 1]]);
+        if symbol != 0 {
+            let log_a = tables.log[symbol as usize] as usize;
+            let val = tables.exp[log_a + log_c];
+            let current = u16::from_le_bytes([dest[offset], dest[offset + 1]]);
+            dest[offset..offset + 2].copy_from_slice(&(current ^ val).to_le_bytes());
+        }
+    }
 }
 
 pub fn gf16_add(a: u16, b: u16) -> u16 {
@@ -300,11 +340,6 @@ fn invert_matrix(mut matrix: Vec<Vec<u16>>) -> Result<Vec<Vec<u16>>, FormatError
     Ok(matrix.into_iter().map(|row| row[n..2 * n].to_vec()).collect())
 }
 
-fn read_symbol(shard: &[u8], symbol_index: usize) -> u16 {
-    let offset = 2 * symbol_index;
-    u16::from_le_bytes([shard[offset], shard[offset + 1]])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,4 +444,35 @@ mod tests {
             FormatError::FecTooFewAvailableShards
         );
     }
+
+    #[test]
+    fn multi_shard_random_erasure_repair_round_trips() {
+        // Test 16 data shards + 4 parity shards, 1024 bytes each
+        let data_shard_count = 16;
+        let parity_shard_count = 4;
+        let shard_size = 1024;
+        let mut data = Vec::with_capacity(data_shard_count);
+        for i in 0..data_shard_count {
+            let shard = (0..shard_size)
+                .map(|b| ((i * 37 + b * 13 + 7) & 0xff) as u8)
+                .collect::<Vec<u8>>();
+            data.push(shard);
+        }
+
+        let parity = encode_parity_gf16(&data, parity_shard_count).unwrap();
+        assert_eq!(parity.len(), parity_shard_count);
+
+        // Erase 4 data shards: #2, #5, #10, #14
+        let mut data_with_erasures: Vec<Option<Vec<u8>>> = data.iter().cloned().map(Some).collect();
+        data_with_erasures[2] = None;
+        data_with_erasures[5] = None;
+        data_with_erasures[10] = None;
+        data_with_erasures[14] = None;
+
+        let parity_available: Vec<Option<Vec<u8>>> = parity.iter().cloned().map(Some).collect();
+
+        let repaired = repair_data_gf16(&data_with_erasures, &parity_available, shard_size).unwrap();
+        assert_eq!(repaired, data);
+    }
 }
+
