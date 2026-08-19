@@ -73,11 +73,7 @@ pub fn create_windows_relative_symlink(path: &Path, target: &str) {
         reparse.extend_from_slice(&unit.to_le_bytes());
     }
 
-    let file = fs::OpenOptions::new()
-        .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(path)
-        .unwrap();
+    let file = fs::OpenOptions::new().access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT).open(path).unwrap();
     let mut returned = 0u32;
     // SAFETY: the handle and complete relative-symlink reparse buffer remain
     // live for the synchronous call.
@@ -165,13 +161,7 @@ pub fn windows_process_is_elevated() -> bool {
     // SAFETY: `token` is live and `elevation` is a correctly sized writable
     // output buffer for TokenElevation.
     let result = unsafe {
-        GetTokenInformation(
-            token,
-            TokenElevation,
-            (&mut elevation as *mut TOKEN_ELEVATION).cast(),
-            size_of::<TOKEN_ELEVATION>() as u32,
-            &mut returned,
-        )
+        GetTokenInformation(token, TokenElevation, (&mut elevation as *mut TOKEN_ELEVATION).cast(), size_of::<TOKEN_ELEVATION>() as u32, &mut returned)
     };
     // SAFETY: `token` is owned by this function and closed exactly once.
     unsafe {
@@ -348,16 +338,9 @@ pub fn corrupt_first_record_magic_of_kind(volume: &mut [u8], kind: BlockKind) {
 
 pub fn zero_deterministic_payload_blocks(volume_paths: &[PathBuf], corruption_pct: usize) -> (usize, usize) {
     let mut volumes = volume_paths.iter().map(|path| fs::read(path).unwrap()).collect::<Vec<_>>();
-    let mut locations = volumes
-        .iter()
-        .enumerate()
-        .flat_map(|(volume_index, volume)| payload_data_record_locations(volume_index, volume))
-        .collect::<Vec<_>>();
+    let mut locations = volumes.iter().enumerate().flat_map(|(volume_index, volume)| payload_data_record_locations(volume_index, volume)).collect::<Vec<_>>();
     locations.sort_by_key(|location| location.block_index);
-    assert!(
-        locations.len() >= 50,
-        "test archive should have enough payload blocks for a meaningful percent corruption"
-    );
+    assert!(locations.len() >= 50, "test archive should have enough payload blocks for a meaningful percent corruption");
 
     let corrupt_count = locations.len() * corruption_pct / 100;
     assert!(corrupt_count > 0, "corruption percent should select at least one payload block");
@@ -383,19 +366,8 @@ pub fn zero_deterministic_payload_blocks(volume_paths: &[PathBuf], corruption_pc
 
 pub fn assert_no_archive_stream_claims(help: &str) {
     let lower = help.to_lowercase();
-    for phrase in [
-        "archive stdin",
-        "archive from stdin",
-        "read archive from stdin",
-        "stdin archive",
-        "pipe archive",
-        "archive stdout",
-        "create to stdout",
-    ] {
-        assert!(
-            !lower.contains(phrase),
-            "help text should not claim unsupported archive streaming via {phrase:?}"
-        );
+    for phrase in ["archive stdin", "archive from stdin", "read archive from stdin", "stdin archive", "pipe archive", "archive stdout", "create to stdout"] {
+        assert!(!lower.contains(phrase), "help text should not claim unsupported archive streaming via {phrase:?}");
     }
 }
 
@@ -409,14 +381,7 @@ pub fn create_dash_boundary_archive(temp: &Path) -> (PathBuf, PathBuf, Vec<u8>) 
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -429,11 +394,7 @@ pub fn create_plaintext_dash_archive(temp: &Path) -> (PathBuf, Vec<u8>) {
     let archive = temp.join("plain.tzap");
 
     fs::write(&input, b"hello plaintext stdin\n").unwrap();
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()]).assert().success();
 
     (archive.clone(), fs::read(archive).unwrap())
 }
@@ -460,9 +421,7 @@ pub fn test_ca_cert(cn: &str) -> (X509, PKey<Private>) {
     builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
     builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
     builder.append_extension(BasicConstraints::new().critical().ca().build().unwrap()).unwrap();
-    builder
-        .append_extension(KeyUsage::new().critical().key_cert_sign().crl_sign().build().unwrap())
-        .unwrap();
+    builder.append_extension(KeyUsage::new().critical().key_cert_sign().crl_sign().build().unwrap()).unwrap();
     builder.sign(&key, MessageDigest::sha256()).unwrap();
     (builder.build(), key)
 }
@@ -481,9 +440,7 @@ pub fn test_leaf_cert(cn: &str, ca_cert: &X509Ref, ca_key: &PKeyRef<Private>) ->
     builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
     builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
     builder.append_extension(BasicConstraints::new().build().unwrap()).unwrap();
-    builder
-        .append_extension(KeyUsage::new().critical().digital_signature().build().unwrap())
-        .unwrap();
+    builder.append_extension(KeyUsage::new().critical().digital_signature().build().unwrap()).unwrap();
     builder.sign(ca_key, MessageDigest::sha256()).unwrap();
     (builder.build(), key)
 }

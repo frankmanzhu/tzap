@@ -218,21 +218,13 @@ impl ParsedTarMember<'_> {
             let mut stored_cursor = layout.map_and_padding_size;
             for extent in &layout.extents {
                 let extent_len = usize::try_from(extent.length).map_err(|_| FormatError::ReaderUnsupported("sparse extent exceeds platform limits"))?;
-                let stored_end = stored_cursor
-                    .checked_add(extent_len)
-                    .ok_or(FormatError::InvalidArchive("sparse stored range overflow"))?;
+                let stored_end = stored_cursor.checked_add(extent_len).ok_or(FormatError::InvalidArchive("sparse stored range overflow"))?;
                 let logical_start = usize::try_from(extent.offset).map_err(|_| FormatError::ReaderUnsupported("sparse offset exceeds platform limits"))?;
-                let logical_end = logical_start
-                    .checked_add(extent_len)
-                    .ok_or(FormatError::InvalidArchive("sparse logical range overflow"))?;
+                let logical_end = logical_start.checked_add(extent_len).ok_or(FormatError::InvalidArchive("sparse logical range overflow"))?;
                 logical
                     .get_mut(logical_start..logical_end)
                     .ok_or(FormatError::InvalidArchive("sparse logical range is invalid"))?
-                    .copy_from_slice(
-                        self.data
-                            .get(stored_cursor..stored_end)
-                            .ok_or(FormatError::InvalidArchive("sparse stored range is invalid"))?,
-                    );
+                    .copy_from_slice(self.data.get(stored_cursor..stored_end).ok_or(FormatError::InvalidArchive("sparse stored range is invalid"))?);
                 stored_cursor = stored_end;
             }
             logical
@@ -298,11 +290,7 @@ pub(crate) fn validate_symlink_target(link_path: &[u8], target: &[u8]) -> Result
     if target.starts_with('/') {
         return Ok(());
     }
-    let mut stack = link_path
-        .split('/')
-        .take(link_path.split('/').count().saturating_sub(1))
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
+    let mut stack = link_path.split('/').take(link_path.split('/').count().saturating_sub(1)).map(str::to_owned).collect::<Vec<_>>();
     for component in target.split('/') {
         if component.is_empty() || component == "." {
             return Err(FormatError::UnsafeArchivePath);
@@ -400,11 +388,7 @@ pub(super) fn padding_to_512_u64(len: u64) -> u64 {
 
 pub(super) fn slice(bytes: &[u8], offset: usize, len: usize) -> Result<&[u8], FormatError> {
     let end = checked_add(offset, len)?;
-    bytes.get(offset..end).ok_or(FormatError::InvalidLength {
-        structure: "tar member",
-        expected: end,
-        actual: bytes.len(),
-    })
+    bytes.get(offset..end).ok_or(FormatError::InvalidLength { structure: "tar member", expected: end, actual: bytes.len() })
 }
 
 pub(super) fn checked_add(lhs: usize, rhs: usize) -> Result<usize, FormatError> {

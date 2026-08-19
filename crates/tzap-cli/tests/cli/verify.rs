@@ -3,14 +3,7 @@ use super::*;
 
 #[test]
 fn cli_verify_help_includes_examples_and_flags() {
-    let output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["verify", "--help"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let output = Command::cargo_bin("tzap").unwrap().args(["verify", "--help"]).assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8_lossy(&output);
 
     assert!(stdout.contains("Verify archive signatures"));
@@ -41,15 +34,7 @@ fn cli_verify_fast_plaintext_zero_recovery_reports_payload_semantics_deferred() 
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "--bit-rot-buffer-pct",
-            "0",
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "--bit-rot-buffer-pct", "0", "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -71,15 +56,7 @@ fn cli_verify_fast_reports_distinct_stdout_and_json() {
     fs::write(&input, b"fast verify payload\n").unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "--bit-rot-buffer-pct",
-            "0",
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "--bit-rot-buffer-pct", "0", "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -91,14 +68,8 @@ fn cli_verify_fast_reports_distinct_stdout_and_json() {
         .stdout(predicate::str::contains("OK fast"))
         .stdout(predicate::str::contains("root-auth: OK").not());
 
-    let json_output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["verify", "--json", "--fast", output.to_str().unwrap()])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let json_output =
+        Command::cargo_bin("tzap").unwrap().args(["verify", "--json", "--fast", output.to_str().unwrap()]).assert().success().get_output().stdout.clone();
     let value: Value = serde_json::from_slice(&json_output).unwrap();
     assert_eq!(value.get("ok").unwrap().as_bool(), Some(true));
     assert_eq!(value.get("verification_mode").unwrap().as_str(), Some("fast"));
@@ -123,38 +94,17 @@ fn cli_verify_fast_signed_archive_reports_root_auth_deferred() {
     fs::write(&input, b"signed fast payload\n").unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "signing-keygen",
-            "--secret-output",
-            signing_secret.to_str().unwrap(),
-            "--public-output",
-            signing_public.to_str().unwrap(),
-        ])
+        .args(["signing-keygen", "--secret-output", signing_secret.to_str().unwrap(), "--public-output", signing_public.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "--signing-key",
-            signing_secret.to_str().unwrap(),
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "--signing-key", signing_secret.to_str().unwrap(), "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
-    let stdout = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["verify", "--fast", output.to_str().unwrap()])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let stdout = Command::cargo_bin("tzap").unwrap().args(["verify", "--fast", output.to_str().unwrap()]).assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8_lossy(&stdout);
     assert!(stdout.contains("OK fast"));
     assert!(stdout.contains("root_auth_deferred_full_archive_scan_required"));
@@ -181,29 +131,11 @@ fn cli_verify_fast_rejects_full_root_auth_and_repair_options() {
     fs::write(&public_key, "00".repeat(32)).unwrap();
 
     for args in [
-        vec![
-            "verify",
-            "--fast",
-            "--trusted-public-key",
-            public_key.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ],
-        vec![
-            "verify",
-            "--fast",
-            "--public-no-key",
-            "--trusted-public-key",
-            public_key.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ],
+        vec!["verify", "--fast", "--trusted-public-key", public_key.to_str().unwrap(), archive.to_str().unwrap()],
+        vec!["verify", "--fast", "--public-no-key", "--trusted-public-key", public_key.to_str().unwrap(), archive.to_str().unwrap()],
         vec!["verify", "--fast", "--write-repaired", archive.to_str().unwrap()],
     ] {
-        Command::cargo_bin("tzap")
-            .unwrap()
-            .args(args)
-            .assert()
-            .code(2)
-            .stderr(predicate::str::contains("--fast cannot be combined"));
+        Command::cargo_bin("tzap").unwrap().args(args).assert().code(2).stderr(predicate::str::contains("--fast cannot be combined"));
     }
 }
 
@@ -214,11 +146,7 @@ fn cli_verify_reads_unencrypted_archive_without_key_source() {
     let archive = temp.path().join("sample.tzap");
     fs::write(&input, b"plaintext v45\n").unwrap();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()]).assert().success();
 
     Command::cargo_bin("tzap")
         .unwrap()
@@ -230,19 +158,9 @@ fn cli_verify_reads_unencrypted_archive_without_key_source() {
 
 #[test]
 fn cli_verify_key_mode_and_archive_input_are_required() {
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["verify"])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("required"));
+    Command::cargo_bin("tzap").unwrap().args(["verify"]).assert().code(2).stderr(predicate::str::contains("required"));
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["verify", "--keyfile", "key.hex"])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("required"));
+    Command::cargo_bin("tzap").unwrap().args(["verify", "--keyfile", "key.hex"]).assert().code(2).stderr(predicate::str::contains("required"));
 }
 
 #[test]
@@ -257,14 +175,7 @@ fn cli_verify_json_success_reports_machine_readable_summary() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -325,14 +236,7 @@ fn cli_verify_write_repaired_writes_sibling_for_crc_erased_payload_block() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -372,14 +276,7 @@ fn cli_verify_write_repaired_writes_sibling_for_malformed_payload_block_slot() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -417,14 +314,7 @@ fn cli_verify_recovers_malformed_volume_header_from_cmra() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -452,14 +342,7 @@ fn cli_verify_quiet_conflicts_with_json_mode() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -483,14 +366,7 @@ fn cli_verify_quiet_suppress_success_output_only() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -570,14 +446,7 @@ fn cli_verify_with_stripped_dictionary_sidecar_uses_terminal_archive_metadata() 
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bootstrap",
-            stripped_bootstrap.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), "--bootstrap", stripped_bootstrap.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(1 volume(s), 1 file(s))"));
@@ -726,29 +595,14 @@ fn cli_verify_missing_recoverable_volume_is_recovered_with_tolerance() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--volumes",
-            "3",
-            "-o",
-            output_base.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "--volumes", "3", "-o", output_base.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
     fs::remove_file(&volume_1).unwrap();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            volume_0.to_str().unwrap(),
-            volume_2.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), volume_0.to_str().unwrap(), volume_2.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("(3 volume(s), 1 file(s))"));
@@ -826,14 +680,7 @@ fn cli_verify_with_bootstrap_sidecar_succeeds() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bootstrap",
-            bootstrap.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), "--bootstrap", bootstrap.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("OK"));
@@ -851,14 +698,7 @@ fn cli_verify_one_volume_archive_with_keyfile_reports_summary_with_counts() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 

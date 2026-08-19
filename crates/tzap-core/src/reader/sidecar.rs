@@ -9,9 +9,7 @@ use crate::wire::{BlockRecord, BootstrapSidecarHeader, CryptoHeaderFixed, Manife
 
 pub(crate) fn validate_bootstrap_single_volume_input(volume_header: &VolumeHeader, crypto_header: &CryptoHeaderFixed) -> Result<(), FormatError> {
     if volume_header.stripe_width != 1 || volume_header.volume_index != 0 {
-        return Err(FormatError::ReaderUnsupported(
-            "bootstrap sidecar reader supports only single-volume archive input",
-        ));
+        return Err(FormatError::ReaderUnsupported("bootstrap sidecar reader supports only single-volume archive input"));
     }
     if crypto_header.stripe_width != volume_header.stripe_width {
         return Err(FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ"));
@@ -41,9 +39,7 @@ impl ParsedBootstrapSidecar {
     pub(crate) fn require_sections_for(&self, sidecar_use: BootstrapSidecarUse, crypto_header: &CryptoHeaderFixed) -> Result<(), FormatError> {
         if sidecar_use == BootstrapSidecarUse::NonSeekableRandomAccess {
             if self.manifest_footer.is_none() || self.index_root_records_section.is_none() {
-                return Err(FormatError::ReaderUnsupported(
-                    "non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections",
-                ));
+                return Err(FormatError::ReaderUnsupported("non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections"));
             }
             if crypto_header.has_dictionary != 0 && self.dictionary_records_section.is_none() {
                 return Err(FormatError::ReaderUnsupported("dictionary bootstrap required"));
@@ -62,14 +58,15 @@ pub(crate) fn parse_non_seekable_bootstrap_material(
     validate_bootstrap_single_volume_input(volume_header, crypto_header)?;
     let sidecar = parse_bootstrap_sidecar(bootstrap_sidecar, volume_header, crypto_header, subkeys)?;
     sidecar.require_sections_for(BootstrapSidecarUse::NonSeekableRandomAccess, crypto_header)?;
-    let manifest_footer = sidecar.manifest_footer.clone().ok_or(FormatError::ReaderUnsupported(
-        "non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections",
-    ))?;
+    let manifest_footer = sidecar
+        .manifest_footer
+        .clone()
+        .ok_or(FormatError::ReaderUnsupported("non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections"))?;
 
     let mut blocks = BTreeMap::new();
-    let (offset, length) = sidecar.index_root_records_section.ok_or(FormatError::ReaderUnsupported(
-        "non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections",
-    ))?;
+    let (offset, length) = sidecar
+        .index_root_records_section
+        .ok_or(FormatError::ReaderUnsupported("non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections"))?;
     let index_root_records = parse_sidecar_block_records(
         bootstrap_sidecar,
         crypto_header.block_size as usize,
@@ -93,9 +90,7 @@ pub(crate) fn parse_non_seekable_bootstrap_material(
     let index_root = IndexRoot::parse(&index_root_plaintext, crypto_header.has_dictionary != 0, limits)?;
 
     if crypto_header.has_dictionary != 0 {
-        let (offset, length) = sidecar
-            .dictionary_records_section
-            .ok_or(FormatError::ReaderUnsupported("dictionary bootstrap required"))?;
+        let (offset, length) = sidecar.dictionary_records_section.ok_or(FormatError::ReaderUnsupported("dictionary bootstrap required"))?;
         let dictionary_records = parse_sidecar_block_records(
             bootstrap_sidecar,
             crypto_header.block_size as usize,
@@ -112,10 +107,7 @@ pub(crate) fn parse_non_seekable_bootstrap_material(
     }
     let payload_dictionary = load_archive_dictionary(&blocks, subkeys, volume_header, crypto_header, &index_root)?;
 
-    Ok(NonSeekableBootstrapMaterial {
-        manifest_footer,
-        payload_dictionary,
-    })
+    Ok(NonSeekableBootstrapMaterial { manifest_footer, payload_dictionary })
 }
 
 pub(crate) fn parse_bootstrap_sidecar(
@@ -143,23 +135,14 @@ pub(crate) fn parse_bootstrap_sidecar(
     validate_sidecar_size_cap(&header, crypto_header, bytes.len() as u64)?;
 
     if header.has_dictionary_records() && crypto_header.has_dictionary == 0 {
-        return Err(FormatError::InvalidArchive(
-            "bootstrap sidecar has dictionary records while has_dictionary is false",
-        ));
+        return Err(FormatError::InvalidArchive("bootstrap sidecar has dictionary records while has_dictionary is false"));
     }
 
     let manifest_footer = if header.has_manifest_footer() {
         let manifest_offset = to_usize(header.manifest_footer_offset, "BootstrapSidecarHeader")?;
         let manifest_bytes = slice(bytes, manifest_offset, MANIFEST_FOOTER_LEN, "ManifestFooter")?;
         let manifest_footer = ManifestFooter::parse(manifest_bytes)?;
-        validate_sidecar_manifest_footer(
-            volume_header,
-            crypto_header,
-            &manifest_footer,
-            subkeys,
-            volume_header.volume_format_rev,
-            manifest_bytes,
-        )?;
+        validate_sidecar_manifest_footer(volume_header, crypto_header, &manifest_footer, subkeys, volume_header.volume_format_rev, manifest_bytes)?;
         manifest_footer.validate_index_root_extent(crypto_header.block_size)?;
         Some(manifest_footer)
     } else {
@@ -168,12 +151,8 @@ pub(crate) fn parse_bootstrap_sidecar(
 
     Ok(ParsedBootstrapSidecar {
         manifest_footer,
-        index_root_records_section: header
-            .has_index_root_records()
-            .then_some((header.index_root_records_offset, header.index_root_records_length)),
-        dictionary_records_section: header
-            .has_dictionary_records()
-            .then_some((header.dictionary_records_offset, header.dictionary_records_length)),
+        index_root_records_section: header.has_index_root_records().then_some((header.index_root_records_offset, header.index_root_records_length)),
+        dictionary_records_section: header.has_dictionary_records().then_some((header.dictionary_records_offset, header.dictionary_records_length)),
     })
 }
 
@@ -230,11 +209,7 @@ pub(crate) fn validate_sidecar_manifest_footer(
 }
 
 pub(crate) fn validate_sidecar_size_cap(header: &BootstrapSidecarHeader, crypto_header: &CryptoHeaderFixed, file_size: u64) -> Result<(), FormatError> {
-    let record_len = checked_u64_add(
-        crypto_header.block_size as u64,
-        BLOCK_RECORD_FRAMING_LEN as u64,
-        "bootstrap sidecar cap overflow",
-    )?;
+    let record_len = checked_u64_add(crypto_header.block_size as u64, BLOCK_RECORD_FRAMING_LEN as u64, "bootstrap sidecar cap overflow")?;
     let max_index_records = crypto_header.index_root_fec_data_shards as u64 + crypto_header.index_root_fec_parity_shards as u64;
     let max_record_section_bytes = checked_u64_mul(max_index_records, record_len, "bootstrap sidecar cap overflow")?;
     if header.index_root_records_length % record_len != 0 {
@@ -252,9 +227,7 @@ pub(crate) fn validate_sidecar_size_cap(header: &BootstrapSidecarHeader, crypto_
 
     let mut cap = BOOTSTRAP_SIDECAR_HEADER_LEN as u64;
     if header.has_manifest_footer() {
-        cap = cap
-            .checked_add(MANIFEST_FOOTER_LEN as u64)
-            .ok_or(FormatError::InvalidArchive("bootstrap sidecar cap overflow"))?;
+        cap = cap.checked_add(MANIFEST_FOOTER_LEN as u64).ok_or(FormatError::InvalidArchive("bootstrap sidecar cap overflow"))?;
     }
     if header.has_index_root_records() {
         cap = checked_u64_add(cap, max_record_section_bytes, "bootstrap sidecar cap overflow")?;
@@ -283,9 +256,7 @@ pub(crate) fn parse_sidecar_block_records(
     block_size: usize,
     section: SidecarBlockRecordsSection,
 ) -> Result<Vec<BlockRecord>, FormatError> {
-    let record_len = block_size
-        .checked_add(BLOCK_RECORD_FRAMING_LEN)
-        .ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let record_len = block_size.checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
     if section.length % record_len as u64 != 0 {
         return Err(FormatError::InvalidArchive("sidecar BlockRecord section is not aligned"));
     }
@@ -295,12 +266,7 @@ pub(crate) fn parse_sidecar_block_records(
         return Err(FormatError::InvalidArchive("sidecar BlockRecord section does not match declared extent"));
     }
     let start = to_usize(section.offset, "BootstrapSidecarHeader")?;
-    let raw = slice(
-        sidecar_bytes,
-        start,
-        to_usize(section.length, "BootstrapSidecarHeader")?,
-        "BootstrapSidecarHeader",
-    )?;
+    let raw = slice(sidecar_bytes, start, to_usize(section.length, "BootstrapSidecarHeader")?, "BootstrapSidecarHeader")?;
     let mut records = Vec::with_capacity(expected_count);
 
     for idx in 0..expected_count {
@@ -309,11 +275,7 @@ pub(crate) fn parse_sidecar_block_records(
         if record.block_index != expected_block_index {
             return Err(FormatError::InvalidArchive("sidecar BlockRecord section has missing or duplicate blocks"));
         }
-        let expected_kind = if idx < section.extent.data_block_count as usize {
-            section.data_kind
-        } else {
-            section.parity_kind
-        };
+        let expected_kind = if idx < section.extent.data_block_count as usize { section.data_kind } else { section.parity_kind };
         if record.kind != expected_kind {
             return Err(FormatError::InvalidArchive("sidecar BlockRecord section has wrong kind"));
         }

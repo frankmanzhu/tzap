@@ -77,13 +77,7 @@ pub(crate) fn run_extract(quiet: bool, args: ExtractArgs) -> Result<()> {
                     options,
                 )
             } else {
-                extract_non_seekable_stream_to_dir(
-                    stdin.lock(),
-                    &master_key,
-                    Path::new(&directory),
-                    non_seekable_reader_options(reader_options),
-                    options,
-                )
+                extract_non_seekable_stream_to_dir(stdin.lock(), &master_key, Path::new(&directory), non_seekable_reader_options(reader_options), options)
             }
         } else if let Some(recipient_key) = recipient_key.as_deref() {
             let lookup = load_recipient_private_key_lookup(recipient_key)?;
@@ -137,11 +131,8 @@ pub(crate) fn run_extract(quiet: bool, args: ExtractArgs) -> Result<()> {
         open_selection_maybe_bootstrap(&selection, &master_key, bootstrap.as_deref(), reader_options)
     }
     .with_context(|| format!("failed to open archive {archive}"))?;
-    let (requested_entries, missing_paths) = if stdout || dry_run || !paths.is_empty() {
-        resolve_extract_index_entries(&opened, &paths)?
-    } else {
-        (Vec::new(), Vec::new())
-    };
+    let (requested_entries, missing_paths) =
+        if stdout || dry_run || !paths.is_empty() { resolve_extract_index_entries(&opened, &paths)? } else { (Vec::new(), Vec::new()) };
     if !missing_paths.is_empty() {
         for missing in missing_paths {
             eprintln!("missing archive path: {missing}");
@@ -192,18 +183,10 @@ pub(crate) fn run_extract(quiet: bool, args: ExtractArgs) -> Result<()> {
     };
     for (path, diagnostics) in diagnostics {
         extracted_count = extracted_count.checked_add(1).ok_or_else(|| anyhow!("extracted path count overflow"))?;
-        degraded_metadata_count = degraded_metadata_count
-            .checked_add(diagnostics.len() as u64)
-            .ok_or_else(|| anyhow!("degraded metadata count overflow"))?;
+        degraded_metadata_count = degraded_metadata_count.checked_add(diagnostics.len() as u64).ok_or_else(|| anyhow!("degraded metadata count overflow"))?;
         emit_member_metadata_diagnostics(quiet, &path, &diagnostics)?;
     }
-    emit_success_summary(
-        quiet,
-        &format!(
-            "extracted {extracted_count} file(s), {degraded_metadata_count} degraded metadata items to {}",
-            root.display()
-        ),
-    )?;
+    emit_success_summary(quiet, &format!("extracted {extracted_count} file(s), {degraded_metadata_count} degraded metadata items to {}", root.display()))?;
     Ok(())
 }
 

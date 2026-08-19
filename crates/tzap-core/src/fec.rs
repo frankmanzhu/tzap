@@ -54,10 +54,7 @@ pub fn repair_data_gf16(data_shards: &[Option<Vec<u8>>], parity_shards: &[Option
     }
 
     if data_shards.iter().all(Option::is_some) {
-        return data_shards
-            .iter()
-            .map(|shard| validate_available_shard(shard.as_ref().unwrap(), shard_size))
-            .collect();
+        return data_shards.iter().map(|shard| validate_available_shard(shard.as_ref().unwrap(), shard_size)).collect();
     }
 
     // Bound the O(n³) Gauss-Jordan inversion before building the matrix: this path runs
@@ -270,9 +267,7 @@ fn validate_fec_counts(data_shard_count: usize, parity_shard_count: usize) -> Re
     if data_shard_count == 0 {
         return Err(FormatError::FecZeroDataShards);
     }
-    let total = data_shard_count
-        .checked_add(parity_shard_count)
-        .ok_or(FormatError::FecTooManyShards(usize::MAX))?;
+    let total = data_shard_count.checked_add(parity_shard_count).ok_or(FormatError::FecTooManyShards(usize::MAX))?;
     if total > GF16_MAX_TOTAL_SHARDS {
         return Err(FormatError::FecTooManyShards(total));
     }
@@ -380,12 +375,7 @@ mod tests {
     fn repairs_missing_data_from_data_and_parity_rows() {
         let data = vec![vec![0x01, 0x00, 0x02, 0x00], vec![0x03, 0x00, 0x04, 0x00], vec![0x05, 0x00, 0x06, 0x00]];
         let parity = encode_parity_gf16(&data, 2).unwrap();
-        let repaired = repair_data_gf16(
-            &[Some(data[0].clone()), None, Some(data[2].clone())],
-            &[Some(parity[0].clone()), Some(parity[1].clone())],
-            4,
-        )
-        .unwrap();
+        let repaired = repair_data_gf16(&[Some(data[0].clone()), None, Some(data[2].clone())], &[Some(parity[0].clone()), Some(parity[1].clone())], 4).unwrap();
         assert_eq!(repaired, data);
     }
 
@@ -393,10 +383,7 @@ mod tests {
     fn concatenates_complete_data_shards_without_repair() {
         let shards = vec![Some(vec![0x01, 0x00]), Some(vec![0x02, 0x00])];
         assert_eq!(recover_data_bytes_gf16(&shards, &[], 2).unwrap(), vec![0x01, 0x00, 0x02, 0x00]);
-        assert_eq!(
-            recover_data_bytes_gf16(&[Some(vec![0; 1])], &[], 2).unwrap_err(),
-            FormatError::FecInconsistentShardSize
-        );
+        assert_eq!(recover_data_bytes_gf16(&[Some(vec![0; 1])], &[], 2).unwrap_err(), FormatError::FecInconsistentShardSize);
     }
 
     #[test]
@@ -404,9 +391,7 @@ mod tests {
         // Regression: the O(n³) inversion is bounded by READER_MAX_REPAIR_TOTAL_SHARDS;
         // a crafted archive with an erased shard among a huge stripe must fail with a
         // clean resource-limit diagnostic instead of burning minutes of CPU.
-        let shards = (0..READER_MAX_REPAIR_TOTAL_SHARDS as usize + 1)
-            .map(|index| if index == 0 { None } else { Some(vec![0u8; 2]) })
-            .collect::<Vec<_>>();
+        let shards = (0..READER_MAX_REPAIR_TOTAL_SHARDS as usize + 1).map(|index| if index == 0 { None } else { Some(vec![0u8; 2]) }).collect::<Vec<_>>();
         assert_eq!(
             repair_data_gf16(&shards, &[], 2).unwrap_err(),
             FormatError::ReaderResourceLimitExceeded {
@@ -425,12 +410,7 @@ mod tests {
     fn repairs_when_only_parity_and_one_data_row_remain() {
         let data = vec![vec![0x10, 0x00, 0x20, 0x00], vec![0x30, 0x00, 0x40, 0x00], vec![0x50, 0x00, 0x60, 0x00]];
         let parity = encode_parity_gf16(&data, 3).unwrap();
-        let repaired = repair_data_gf16(
-            &[None, Some(data[1].clone()), None],
-            &[Some(parity[0].clone()), None, Some(parity[2].clone())],
-            4,
-        )
-        .unwrap();
+        let repaired = repair_data_gf16(&[None, Some(data[1].clone()), None], &[Some(parity[0].clone()), None, Some(parity[2].clone())], 4).unwrap();
         assert_eq!(repaired, data);
     }
 
@@ -439,10 +419,7 @@ mod tests {
         assert_eq!(encode_parity_gf16(&[], 1).unwrap_err(), FormatError::FecZeroDataShards);
         assert_eq!(encode_parity_gf16(&[vec![0; 3]], 1).unwrap_err(), FormatError::FecOddShardSize);
         assert_eq!(encode_parity_gf16(&[vec![0; 4]], 65_535).unwrap_err(), FormatError::FecTooManyShards(65_536));
-        assert_eq!(
-            repair_data_gf16(&[None, None], &[Some(vec![0; 4])], 4).unwrap_err(),
-            FormatError::FecTooFewAvailableShards
-        );
+        assert_eq!(repair_data_gf16(&[None, None], &[Some(vec![0; 4])], 4).unwrap_err(), FormatError::FecTooFewAvailableShards);
     }
 
     #[test]
@@ -453,9 +430,7 @@ mod tests {
         let shard_size = 1024;
         let mut data = Vec::with_capacity(data_shard_count);
         for i in 0..data_shard_count {
-            let shard = (0..shard_size)
-                .map(|b| ((i * 37 + b * 13 + 7) & 0xff) as u8)
-                .collect::<Vec<u8>>();
+            let shard = (0..shard_size).map(|b| ((i * 37 + b * 13 + 7) & 0xff) as u8).collect::<Vec<u8>>();
             data.push(shard);
         }
 
@@ -475,4 +450,3 @@ mod tests {
         assert_eq!(repaired, data);
     }
 }
-

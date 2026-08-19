@@ -131,10 +131,7 @@ pub(crate) fn resolve_archive_input_paths(primary: &str, additional: &[String], 
     if discovered.is_empty() {
         return Ok(ArchiveInputSelection { paths, autodiscovered: false });
     }
-    Ok(ArchiveInputSelection {
-        paths: discovered,
-        autodiscovered: true,
-    })
+    Ok(ArchiveInputSelection { paths: discovered, autodiscovered: true })
 }
 
 pub(crate) enum MappedVolumeInput {
@@ -167,10 +164,7 @@ pub(crate) fn map_volume_inputs_from_paths(paths: &[String]) -> Result<Vec<Mappe
 }
 
 pub(crate) fn open_volume_inputs_from_paths(paths: &[String]) -> Result<Vec<File>> {
-    paths
-        .iter()
-        .map(|path| File::open(path).with_context(|| format!("failed to read archive {path}")))
-        .collect()
+    paths.iter().map(|path| File::open(path).with_context(|| format!("failed to read archive {path}"))).collect()
 }
 
 pub(crate) fn write_repaired_archive_copies(paths: &[String], opened: &OpenedArchive) -> Result<Vec<RepairedArchiveOutput>> {
@@ -194,26 +188,17 @@ pub(crate) fn write_repaired_archive_copies(paths: &[String], opened: &OpenedArc
 
     let mut jobs = Vec::new();
     for (volume_index, volume_patches) in patches_by_volume {
-        let input_path = path_by_volume
-            .get(&volume_index)
-            .ok_or_else(|| anyhow!("repair output references unavailable volume index {volume_index}"))?;
+        let input_path = path_by_volume.get(&volume_index).ok_or_else(|| anyhow!("repair output references unavailable volume index {volume_index}"))?;
         let output_path = repaired_archive_output_path(input_path)?;
         if output_path.exists() {
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                format!("repaired output already exists: {}", output_path.display()),
-            )
-            .into());
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("repaired output already exists: {}", output_path.display())).into());
         }
         jobs.push((volume_index, input_path.clone(), output_path, volume_patches));
     }
 
     let mut outputs: Vec<RepairedArchiveOutput> = Vec::new();
     for (volume_index, input_path, output_path, volume_patches) in jobs {
-        let parent = output_path
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
+        let parent = output_path.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
         let mut temp = tempfile::Builder::new()
             .prefix(".tzap-repaired-")
             .suffix(".partial")
@@ -230,12 +215,8 @@ pub(crate) fn write_repaired_archive_copies(paths: &[String], opened: &OpenedArc
                 .write_all(&patch.record_bytes)
                 .with_context(|| format!("failed to write repaired block {} to {}", patch.block_index, output_path.display()))?;
         }
-        temp.as_file_mut()
-            .flush()
-            .with_context(|| format!("failed to flush repaired output {}", output_path.display()))?;
-        temp.as_file_mut()
-            .sync_all()
-            .with_context(|| format!("failed to sync repaired output {}", output_path.display()))?;
+        temp.as_file_mut().flush().with_context(|| format!("failed to flush repaired output {}", output_path.display()))?;
+        temp.as_file_mut().sync_all().with_context(|| format!("failed to sync repaired output {}", output_path.display()))?;
 
         if let Err(error) = temp.persist_noclobber(&output_path) {
             for output in &outputs {
@@ -243,11 +224,7 @@ pub(crate) fn write_repaired_archive_copies(paths: &[String], opened: &OpenedArc
             }
             return Err(error.error).with_context(|| format!("failed to publish repaired output {}", output_path.display()));
         }
-        outputs.push(RepairedArchiveOutput {
-            path: output_path.to_string_lossy().into_owned(),
-            volume_index,
-            repaired_block_count: volume_patches.len(),
-        });
+        outputs.push(RepairedArchiveOutput { path: output_path.to_string_lossy().into_owned(), volume_index, repaired_block_count: volume_patches.len() });
     }
 
     Ok(outputs)
@@ -257,17 +234,12 @@ pub(crate) fn read_volume_index_from_path(path: &str) -> Result<u32> {
     let mut file = File::open(path).with_context(|| format!("failed to read archive {path}"))?;
     let mut header = [0u8; VOLUME_HEADER_LEN];
     file.read_exact(&mut header).with_context(|| format!("failed to read archive header {path}"))?;
-    Ok(VolumeHeader::parse(&header)
-        .with_context(|| format!("failed to parse archive header {path}"))?
-        .volume_index)
+    Ok(VolumeHeader::parse(&header).with_context(|| format!("failed to parse archive header {path}"))?.volume_index)
 }
 
 pub(crate) fn repaired_archive_output_path(input: &str) -> Result<PathBuf> {
     let path = Path::new(input);
-    let file_name = path
-        .file_name()
-        .and_then(|file_name| file_name.to_str())
-        .ok_or_else(|| anyhow!("archive path has no UTF-8 file name: {input}"))?;
+    let file_name = path.file_name().and_then(|file_name| file_name.to_str()).ok_or_else(|| anyhow!("archive path has no UTF-8 file name: {input}"))?;
     let repaired_name = if let Some(pattern) = volume_file::parse_volume_file_name(file_name) {
         volume_file::volume_file_name(&format!("{}.repaired", pattern.base), pattern.volume_index)
     } else {
@@ -293,9 +265,7 @@ pub(crate) fn discover_volume_siblings(primary: &Path, base: &str) -> Result<Vec
 
 pub(crate) fn reject_multi_volume_bootstrap(volume_count: usize, bootstrap: Option<&str>) -> Result<()> {
     if volume_count > 1 && bootstrap.is_some() {
-        return Err(anyhow!(FormatError::ReaderUnsupported(
-            "multi-volume inputs with --bootstrap are not supported; pass volume files without --bootstrap",
-        )));
+        return Err(anyhow!(FormatError::ReaderUnsupported("multi-volume inputs with --bootstrap are not supported; pass volume files without --bootstrap",)));
     }
     Ok(())
 }
@@ -316,22 +286,12 @@ pub(crate) fn reject_archive_stdin_open_options(options: ArchiveStdinOpenOptions
         return Err(anyhow!(FormatError::ReaderUnsupported("archive stdin must be the only archive input",)));
     }
     if options.stdout {
-        return Err(anyhow!(FormatError::ReaderUnsupported(
-            "--stdout is not supported for archive stdin extraction",
-        )));
+        return Err(anyhow!(FormatError::ReaderUnsupported("--stdout is not supported for archive stdin extraction",)));
     }
     if !options.paths.is_empty() {
-        return Err(anyhow!(FormatError::ReaderUnsupported(
-            "selected-path extraction is not supported for archive stdin",
-        )));
+        return Err(anyhow!(FormatError::ReaderUnsupported("selected-path extraction is not supported for archive stdin",)));
     }
-    reject_archive_stdin_key_options(
-        options.password_stdin,
-        options.password,
-        options.keyfile,
-        options.recipient_key,
-        options.insecure_zero_key,
-    )
+    reject_archive_stdin_key_options(options.password_stdin, options.password, options.keyfile, options.recipient_key, options.insecure_zero_key)
 }
 
 pub(crate) fn reject_archive_stdin_list_options(
@@ -375,8 +335,7 @@ pub(crate) fn load_archive_stdin_key(keyfile: Option<&str>, password_stdin: bool
 }
 
 pub(crate) fn read_optional_bootstrap_sidecar(path: Option<&str>) -> Result<Option<Vec<u8>>> {
-    path.map(|path| fs::read(path).with_context(|| format!("failed to read bootstrap sidecar {path}")))
-        .transpose()
+    path.map(|path| fs::read(path).with_context(|| format!("failed to read bootstrap sidecar {path}"))).transpose()
 }
 
 pub(crate) fn open_inputs_maybe_bootstrap(
@@ -389,10 +348,7 @@ pub(crate) fn open_inputs_maybe_bootstrap(
         reject_multi_volume_bootstrap(volume_files.len(), bootstrap)?;
         return OpenedArchive::open_seekable_volumes_with_options(volume_files, master_key, options).map_err(Into::into);
     }
-    let volume_file = volume_files
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow!("at least one archive volume is required"))?;
+    let volume_file = volume_files.into_iter().next().ok_or_else(|| anyhow!("at least one archive volume is required"))?;
     if let Some(path) = bootstrap {
         let sidecar = fs::read(path).with_context(|| format!("failed to read bootstrap sidecar {path}"))?;
         open_seekable_archive_with_bootstrap_sidecar_options(volume_file, &sidecar, master_key, options).map_err(Into::into)
@@ -418,10 +374,7 @@ pub(crate) fn open_selection_maybe_bootstrap_resolved(
 ) -> Result<OpenedArchiveSelection> {
     let volume_files = open_volume_inputs_from_paths(&selection.paths)?;
     match open_inputs_maybe_bootstrap(volume_files, master_key, bootstrap, options) {
-        Ok(opened) => Ok(OpenedArchiveSelection {
-            paths: selection.paths.clone(),
-            opened,
-        }),
+        Ok(opened) => Ok(OpenedArchiveSelection { paths: selection.paths.clone(), opened }),
         Err(err) if selection.autodiscovered && bootstrap.is_none() && selection.paths.len() > 1 => {
             let usable_paths =
                 filter_usable_autodiscovered_volume_paths(&selection.paths, master_key).with_context(|| "failed to filter autodiscovered archive volumes")?;
@@ -443,9 +396,7 @@ pub(crate) fn open_selection_with_recipient_key(
     options: ReaderOptions,
 ) -> Result<OpenedArchiveSelection> {
     if bootstrap.is_some() {
-        return Err(anyhow!(FormatError::ReaderUnsupported(
-            "--recipient-key is not currently supported with --bootstrap",
-        )));
+        return Err(anyhow!(FormatError::ReaderUnsupported("--recipient-key is not currently supported with --bootstrap",)));
     }
     let volume_files = open_volume_inputs_from_paths(&selection.paths)?;
     let lookup = load_recipient_private_key_lookup(recipient_key)?;
@@ -457,10 +408,7 @@ pub(crate) fn open_selection_with_recipient_key(
     )
     .map_err(|err| recipient_wrap_open_error(err, &stats))
     .with_context(|| "failed to open RecipientWrap archive")?;
-    Ok(OpenedArchiveSelection {
-        paths: selection.paths.clone(),
-        opened,
-    })
+    Ok(OpenedArchiveSelection { paths: selection.paths.clone(), opened })
 }
 
 pub(crate) fn recipient_wrap_candidates_for_record(
@@ -670,24 +618,16 @@ pub(crate) fn load_single_x509_certificate_file(label: &'static str, path: &str)
 pub(crate) fn load_recipient_private_key_lookup(path: &str) -> Result<CliRecipientPrivateKeyLookup> {
     let bytes = fs::read(path).with_context(|| format!("failed to read recipient key {path}"))?;
     if bytes.len() == 32 {
-        return Ok(CliRecipientPrivateKeyLookup {
-            private_key_bytes: bytes,
-            private_key_spki_der: None,
-        });
+        return Ok(CliRecipientPrivateKeyLookup { private_key_bytes: bytes, private_key_spki_der: None });
     }
     let private_key = if bytes.starts_with(b"-----BEGIN") {
         PKey::private_key_from_pem(&bytes).with_context(|| format!("failed to parse recipient private key {path}"))?
     } else {
         PKey::private_key_from_der(&bytes).with_context(|| format!("failed to parse recipient private key {path}"))?
     };
-    let private_key_bytes = private_key
-        .private_key_to_der()
-        .with_context(|| format!("failed to normalize recipient private key {path}"))?;
+    let private_key_bytes = private_key.private_key_to_der().with_context(|| format!("failed to normalize recipient private key {path}"))?;
     let private_key_spki_der = private_key.public_key_to_der().ok();
-    Ok(CliRecipientPrivateKeyLookup {
-        private_key_bytes,
-        private_key_spki_der,
-    })
+    Ok(CliRecipientPrivateKeyLookup { private_key_bytes, private_key_spki_der })
 }
 
 pub(crate) fn generate_random_master_key() -> Result<MasterKey> {
@@ -711,20 +651,13 @@ pub(crate) fn build_recipient_wrap_record(
             Err(outcome) => return Err(key_wrap_outcome_error(outcome)),
         }
     }
-    Err(anyhow!(FormatError::WriterUnsupported(
-        "recipient certificate is not supported by keywrap-v1 suites",
-    )))
+    Err(anyhow!(FormatError::WriterUnsupported("recipient certificate is not supported by keywrap-v1 suites",)))
 }
 
 pub(crate) fn recipient_wrap_archive_identity_for_writer(options: &mut WriterOptions) -> KeyWrapArchiveIdentity {
     let archive_uuid = *options.archive_uuid.get_or_insert_with(random_16_bytes);
     let session_id = *options.session_id.get_or_insert_with(random_16_bytes);
-    KeyWrapArchiveIdentity {
-        archive_uuid,
-        session_id,
-        format_version: FORMAT_VERSION,
-        volume_format_rev: VOLUME_FORMAT_REV_45,
-    }
+    KeyWrapArchiveIdentity { archive_uuid, session_id, format_version: FORMAT_VERSION, volume_format_rev: VOLUME_FORMAT_REV_45 }
 }
 
 pub(crate) fn random_16_bytes() -> [u8; 16] {
@@ -747,10 +680,7 @@ pub(crate) fn key_wrap_outcome_error(outcome: KeyWrapOutcome) -> anyhow::Error {
 }
 
 pub(crate) fn current_unix_seconds() -> Result<i64> {
-    let seconds = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock is before the Unix epoch")?
-        .as_secs();
+    let seconds = SystemTime::now().duration_since(UNIX_EPOCH).context("system clock is before the Unix epoch")?.as_secs();
     i64::try_from(seconds).context("current Unix timestamp exceeds i64")
 }
 
@@ -762,9 +692,7 @@ pub(crate) fn load_32_byte_key_file(label: &'static str, path: &str) -> Result<[
         return Ok(out);
     }
 
-    let hex = std::str::from_utf8(&bytes)
-        .with_context(|| format!("{label} must contain either 32 raw bytes or 64 hex characters"))?
-        .trim();
+    let hex = std::str::from_utf8(&bytes).with_context(|| format!("{label} must contain either 32 raw bytes or 64 hex characters"))?.trim();
     if hex.len() != 64 {
         bail!("{label} must contain either 32 raw bytes or 64 hex characters");
     }
@@ -791,12 +719,7 @@ pub(crate) fn load_create_key(
         validate_argon2_params(t_cost, m_cost_kib, parallelism)?;
         let mut salt = vec![0u8; DEFAULT_ARGON2_SALT_LEN];
         rand::thread_rng().fill_bytes(&mut salt);
-        let kdf_params = KdfParams::Argon2id {
-            t_cost,
-            m_cost_kib,
-            parallelism,
-            salt,
-        };
+        let kdf_params = KdfParams::Argon2id { t_cost, m_cost_kib, parallelism, salt };
         let master_key = MasterKey::derive_from_passphrase(&kdf_params, &passphrase)?;
         return Ok(CreateKey { master_key, kdf_params });
     }
@@ -805,28 +728,17 @@ pub(crate) fn load_create_key(
         validate_argon2_params(t_cost, m_cost_kib, parallelism)?;
         let mut salt = vec![0u8; DEFAULT_ARGON2_SALT_LEN];
         rand::thread_rng().fill_bytes(&mut salt);
-        let kdf_params = KdfParams::Argon2id {
-            t_cost,
-            m_cost_kib,
-            parallelism,
-            salt,
-        };
+        let kdf_params = KdfParams::Argon2id { t_cost, m_cost_kib, parallelism, salt };
         let master_key = MasterKey::derive_from_passphrase(&kdf_params, &passphrase)?;
         return Ok(CreateKey { master_key, kdf_params });
     }
     if no_encryption {
-        return Ok(CreateKey {
-            master_key: insecure_zero_master_key()?,
-            kdf_params: KdfParams::None,
-        });
+        return Ok(CreateKey { master_key: insecure_zero_master_key()?, kdf_params: KdfParams::None });
     }
     if insecure_zero_key {
         return Err(removed_insecure_zero_key_error().into());
     }
-    Ok(CreateKey {
-        master_key: load_raw_master_key(keyfile)?,
-        kdf_params: KdfParams::Raw,
-    })
+    Ok(CreateKey { master_key: load_raw_master_key(keyfile)?, kdf_params: KdfParams::Raw })
 }
 
 pub(crate) fn load_open_key_from_paths(
@@ -890,9 +802,7 @@ pub(crate) fn validate_argon2_params(t_cost: u32, m_cost_kib: u32, parallelism: 
     if m_cost_kib > READER_MAX_ARGON2ID_M_COST_KIB {
         return Err(anyhow!(FormatError::InvalidKdfParams("argon2 memory cost exceeds reader maximum",)));
     }
-    let min_memory = parallelism
-        .checked_mul(8)
-        .ok_or_else(|| anyhow!(FormatError::InvalidKdfParams("argon2 memory per lane computation overflows",)))?;
+    let min_memory = parallelism.checked_mul(8).ok_or_else(|| anyhow!(FormatError::InvalidKdfParams("argon2 memory per lane computation overflows",)))?;
     if m_cost_kib < min_memory {
         return Err(anyhow!(FormatError::InvalidKdfParams("argon2 memory must be at least 8 KiB per lane",)));
     }
@@ -908,9 +818,7 @@ pub(crate) fn load_raw_master_key(keyfile: Option<&str>) -> Result<MasterKey> {
         return MasterKey::from_raw_key(&bytes).map_err(Into::into);
     }
 
-    let hex = std::str::from_utf8(&bytes)
-        .context("keyfile must contain either 32 raw bytes or 64 hex characters")?
-        .trim();
+    let hex = std::str::from_utf8(&bytes).context("keyfile must contain either 32 raw bytes or 64 hex characters")?.trim();
     if hex.len() != 64 {
         bail!("keyfile must contain either 32 raw bytes or 64 hex characters");
     }
@@ -995,18 +903,12 @@ pub(crate) fn read_passphrase_stdin_fallback() -> Result<String> {
 
 #[cfg(test)]
 pub(crate) fn read_kdf_params_from_volume(bytes: &[u8]) -> Result<KdfParams> {
-    let header_bytes = bytes
-        .get(..VOLUME_HEADER_LEN)
-        .ok_or_else(|| anyhow!(FormatError::InvalidArchive("volume is too short for VolumeHeader")))?;
+    let header_bytes = bytes.get(..VOLUME_HEADER_LEN).ok_or_else(|| anyhow!(FormatError::InvalidArchive("volume is too short for VolumeHeader")))?;
     let volume_header = VolumeHeader::parse(header_bytes)?;
     let offset = volume_header.crypto_header_offset as usize;
     let length = volume_header.crypto_header_length as usize;
-    let end = offset
-        .checked_add(length)
-        .ok_or_else(|| anyhow!(FormatError::InvalidArchive("CryptoHeader range overflow")))?;
-    let crypto_header_bytes = bytes
-        .get(offset..end)
-        .ok_or_else(|| anyhow!(FormatError::InvalidArchive("volume is too short for CryptoHeader")))?;
+    let end = offset.checked_add(length).ok_or_else(|| anyhow!(FormatError::InvalidArchive("CryptoHeader range overflow")))?;
+    let crypto_header_bytes = bytes.get(offset..end).ok_or_else(|| anyhow!(FormatError::InvalidArchive("volume is too short for CryptoHeader")))?;
     Ok(read_archive_protection_from_headers(header_bytes, crypto_header_bytes)?.kdf_params)
 }
 
@@ -1024,16 +926,13 @@ pub(crate) struct ArchiveProtection {
 pub(crate) fn read_archive_protection_from_volume_path(path: &str) -> Result<ArchiveProtection> {
     let mut file = File::open(path).with_context(|| format!("failed to open archive {path}"))?;
     let mut header_bytes = vec![0u8; VOLUME_HEADER_LEN];
-    file.read_exact(&mut header_bytes)
-        .with_context(|| format!("failed to read VolumeHeader from {path}"))?;
+    file.read_exact(&mut header_bytes).with_context(|| format!("failed to read VolumeHeader from {path}"))?;
     let volume_header = VolumeHeader::parse(&header_bytes)?;
     let offset = volume_header.crypto_header_offset as u64;
     let length = volume_header.crypto_header_length as usize;
-    file.seek(SeekFrom::Start(offset))
-        .with_context(|| format!("failed to seek to CryptoHeader in {path}"))?;
+    file.seek(SeekFrom::Start(offset)).with_context(|| format!("failed to seek to CryptoHeader in {path}"))?;
     let mut crypto_header_bytes = vec![0u8; length];
-    file.read_exact(&mut crypto_header_bytes)
-        .with_context(|| format!("failed to read CryptoHeader from {path}"))?;
+    file.read_exact(&mut crypto_header_bytes).with_context(|| format!("failed to read CryptoHeader from {path}"))?;
     read_archive_protection_from_headers(&header_bytes, &crypto_header_bytes)
 }
 
@@ -1070,22 +969,14 @@ pub(crate) fn read_archive_protection_from_any_volume_path(paths: &[String]) -> 
 pub(crate) fn read_archive_protection_from_headers(header_bytes: &[u8], crypto_header_bytes: &[u8]) -> Result<ArchiveProtection> {
     let volume_header = VolumeHeader::parse(header_bytes)?;
     let fixed_bytes = crypto_header_bytes.get(..CRYPTO_HEADER_FIXED_LEN).ok_or_else(|| {
-        anyhow!(FormatError::InvalidLength {
-            structure: "CryptoHeaderFixed",
-            expected: CRYPTO_HEADER_FIXED_LEN,
-            actual: crypto_header_bytes.len(),
-        })
+        anyhow!(FormatError::InvalidLength { structure: "CryptoHeaderFixed", expected: CRYPTO_HEADER_FIXED_LEN, actual: crypto_header_bytes.len() })
     })?;
     let fixed = CryptoHeaderFixed::parse(fixed_bytes, volume_header.crypto_header_length)?;
     if fixed.stripe_width != volume_header.stripe_width {
         return Err(anyhow!(FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ")));
     }
     let crypto_header = CryptoHeader::parse(crypto_header_bytes, volume_header.crypto_header_length)?;
-    Ok(ArchiveProtection {
-        aead_algo: fixed.aead_algo,
-        kdf_algo: fixed.kdf_algo,
-        kdf_params: crypto_header.kdf_params,
-    })
+    Ok(ArchiveProtection { aead_algo: fixed.aead_algo, kdf_algo: fixed.kdf_algo, kdf_params: crypto_header.kdf_params })
 }
 
 pub(crate) fn decode_hex_byte(bytes: &[u8]) -> Result<u8> {
@@ -1123,12 +1014,8 @@ pub(crate) fn ensure_distinct_output_paths(left_label: &str, left: &Path, right_
 }
 pub(crate) fn output_identity_path(path: &Path) -> Result<PathBuf> {
     let parent = path.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| anyhow!("output path must include a file name: {}", path.display()))?;
-    let parent = parent
-        .canonicalize()
-        .with_context(|| format!("failed to inspect output directory {}", parent.display()))?;
+    let file_name = path.file_name().ok_or_else(|| anyhow!("output path must include a file name: {}", path.display()))?;
+    let parent = parent.canonicalize().with_context(|| format!("failed to inspect output directory {}", parent.display()))?;
     Ok(parent.join(file_name))
 }
 pub(crate) fn check_output_path_free(label: &str, path: &Path) -> Result<()> {
@@ -1144,16 +1031,10 @@ pub(crate) fn removed_insecure_zero_key_error() -> UsageError {
     UsageError("--insecure-zero-key was removed in v43; use --no-encryption for plaintext archives")
 }
 pub(crate) fn reader_options(jobs: usize) -> ReaderOptions {
-    ReaderOptions {
-        jobs,
-        ..ReaderOptions::default()
-    }
+    ReaderOptions { jobs, ..ReaderOptions::default() }
 }
 pub(crate) fn non_seekable_reader_options(reader: ReaderOptions) -> NonSeekableReaderOptions {
-    NonSeekableReaderOptions {
-        reader,
-        ..NonSeekableReaderOptions::default()
-    }
+    NonSeekableReaderOptions { reader, ..NonSeekableReaderOptions::default() }
 }
 pub(crate) fn archive_path_to_string(path: &Path) -> Result<String> {
     let mut parts = Vec::new();
@@ -1188,36 +1069,22 @@ pub(crate) fn write_atomic_output_files(outputs: &[AtomicOutput<'_>], force: boo
 
     let mut temps = Vec::with_capacity(outputs.len());
     for output in outputs {
-        let parent = output
-            .path
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
+        let parent = output.path.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
         let mut temp = tempfile::Builder::new()
             .prefix(".tzap-write-")
             .suffix(".partial")
             .tempfile_in(parent)
             .with_context(|| format!("failed to create temporary {} in {}", output.label, parent.display()))?;
-        temp.as_file_mut()
-            .write_all(output.bytes)
-            .with_context(|| format!("failed to write temporary {} {}", output.label, output.path.display()))?;
-        temp.as_file_mut()
-            .flush()
-            .with_context(|| format!("failed to flush temporary {} {}", output.label, output.path.display()))?;
-        temp.as_file_mut()
-            .sync_all()
-            .with_context(|| format!("failed to sync temporary {} {}", output.label, output.path.display()))?;
+        temp.as_file_mut().write_all(output.bytes).with_context(|| format!("failed to write temporary {} {}", output.label, output.path.display()))?;
+        temp.as_file_mut().flush().with_context(|| format!("failed to flush temporary {} {}", output.label, output.path.display()))?;
+        temp.as_file_mut().sync_all().with_context(|| format!("failed to sync temporary {} {}", output.label, output.path.display()))?;
         temps.push(Some(temp));
     }
 
     let mut persisted_paths = Vec::new();
     for (index, output) in outputs.iter().enumerate() {
         let temp = temps[index].take().ok_or_else(|| anyhow!("missing temporary {}", output.label))?;
-        let publish_result = if force {
-            temp.persist(output.path)
-        } else {
-            temp.persist_noclobber(output.path)
-        };
+        let publish_result = if force { temp.persist(output.path) } else { temp.persist_noclobber(output.path) };
         match publish_result {
             Ok(_) => persisted_paths.push(output.path.to_path_buf()),
             Err(error) if !force && error.error.kind() == io::ErrorKind::AlreadyExists => {

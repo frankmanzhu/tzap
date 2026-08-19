@@ -84,10 +84,7 @@ impl OrderedParallelState {
             next_frame_result_index: 0,
             next_frame_metadata_index: 0,
             frame_buffer: std::collections::BTreeMap::new(),
-            envelope: PayloadEnvelopeBuilder {
-                envelope_index: 0,
-                plaintext: Vec::new(),
-            },
+            envelope: PayloadEnvelopeBuilder { envelope_index: 0, plaintext: Vec::new() },
             next_payload_block_index: 0,
             next_envelope_result_index: 0,
             envelope_buffer: std::collections::BTreeMap::new(),
@@ -111,23 +108,13 @@ where
     S: RegularFileSource,
     O: ArchiveWriteSink,
 {
-    write_ordered_parallel_stream_archive_to_sink(
-        master_key,
-        options,
-        kdf_params,
-        root_auth,
-        authenticator,
-        key_wrap_records,
-        sink,
-        progress,
-        |writer| {
-            writer.reserve_member_capacity(files.len());
-            for file in files {
-                writer.write_regular_member_from_source(file)?;
-            }
-            Ok(())
-        },
-    )
+    write_ordered_parallel_stream_archive_to_sink(master_key, options, kdf_params, root_auth, authenticator, key_wrap_records, sink, progress, |writer| {
+        writer.reserve_member_capacity(files.len());
+        for file in files {
+            writer.write_regular_member_from_source(file)?;
+        }
+        Ok(())
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -259,16 +246,7 @@ where
 
         drop(frame_job_tx);
         while ordered.next_frame_result_index < ordered.next_frame_job_index {
-            receive_ordered_frame_result(
-                &frame_result_rx,
-                &envelope_job_tx,
-                &envelope_result_rx,
-                &mut ordered,
-                sink,
-                options,
-                &mut emission_state,
-                true,
-            )?;
+            receive_ordered_frame_result(&frame_result_rx, &envelope_job_tx, &envelope_result_rx, &mut ordered, sink, options, &mut emission_state, true)?;
         }
         flush_ordered_parallel_envelope(&envelope_job_tx, &envelope_result_rx, &mut ordered, sink, options, &mut emission_state)?;
         drop(envelope_job_tx);
@@ -342,12 +320,8 @@ impl<O: ArchiveWriteSink> OrderedParallelArchiveWriter<'_, O> {
         if member.entry_kind != SourceEntryKind::Regular && member.file_data_size != 0 {
             return Err(FormatError::WriterInvariant("non-regular source has non-zero file data size").into());
         }
-        let source_payload_size = member
-            .sparse_extents
-            .as_deref()
-            .map(|extents| sparse_extent_bytes(extents, member.file_data_size))
-            .transpose()?
-            .unwrap_or(member.file_data_size);
+        let source_payload_size =
+            member.sparse_extents.as_deref().map(|extents| sparse_extent_bytes(extents, member.file_data_size)).transpose()?.unwrap_or(member.file_data_size);
         let prefix = build_primary_member_prefix(
             path,
             member.entry_kind,
@@ -358,11 +332,8 @@ impl<O: ArchiveWriteSink> OrderedParallelArchiveWriter<'_, O> {
             member.mtime,
             &member.portable_metadata,
         )?;
-        let member_group_size = checked_u64_add(
-            prefix.len() as u64,
-            checked_u64_add(source_payload_size, padding_to_512_u64(source_payload_size), "tar member")?,
-            "tar member",
-        )?;
+        let member_group_size =
+            checked_u64_add(prefix.len() as u64, checked_u64_add(source_payload_size, padding_to_512_u64(source_payload_size), "tar member")?, "tar member")?;
         let mut reader = StreamingMemberReader::new(Box::new(payload), prefix, source_payload_size);
         self.write_prebuilt_member(member, &mut reader, member_group_size)
     }
@@ -381,12 +352,8 @@ impl<O: ArchiveWriteSink> OrderedParallelArchiveWriter<'_, O> {
         if member.entry_kind != SourceEntryKind::Regular && member.file_data_size != 0 {
             return Err(FormatError::WriterInvariant("non-regular source has non-zero file data size").into());
         }
-        let source_payload_size = member
-            .sparse_extents
-            .as_deref()
-            .map(|extents| sparse_extent_bytes(extents, member.file_data_size))
-            .transpose()?
-            .unwrap_or(member.file_data_size);
+        let source_payload_size =
+            member.sparse_extents.as_deref().map(|extents| sparse_extent_bytes(extents, member.file_data_size)).transpose()?.unwrap_or(member.file_data_size);
         let layout = build_primary_member_layout(
             &member.archive_path,
             member.entry_kind,
@@ -432,14 +399,7 @@ impl<O: ArchiveWriteSink> OrderedParallelArchiveWriter<'_, O> {
             let frame_index = self.ordered.next_frame_job_index;
             self.ordered.next_frame_job_index = checked_u64_add(self.ordered.next_frame_job_index, 1, "PayloadFrame.frame_index")?;
             send_ordered_frame_job(
-                OrderedFrameJob {
-                    frame_index,
-                    member_index,
-                    member_start,
-                    member_offset,
-                    member_group_size,
-                    plaintext,
-                },
+                OrderedFrameJob { frame_index, member_index, member_start, member_offset, member_group_size, plaintext },
                 self.frame_job_tx,
                 self.frame_result_rx,
                 self.envelope_job_tx,
@@ -476,16 +436,7 @@ pub(crate) fn send_ordered_frame_job<O: ArchiveWriteSink>(
             }
             Err(std::sync::mpsc::TrySendError::Full(returned)) => {
                 job = returned;
-                receive_ordered_frame_result(
-                    frame_result_rx,
-                    envelope_job_tx,
-                    envelope_result_rx,
-                    ordered,
-                    sink,
-                    options,
-                    emission_state,
-                    true,
-                )?;
+                receive_ordered_frame_result(frame_result_rx, envelope_job_tx, envelope_result_rx, ordered, sink, options, emission_state, true)?;
             }
             Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
                 return Err(FormatError::WriterInvariant("ordered frame worker stopped").into());
@@ -504,16 +455,7 @@ pub(crate) fn drain_ordered_frame_results<O: ArchiveWriteSink>(
     options: WriterOptions,
     emission_state: &mut WriterEmissionState,
 ) -> Result<(), ArchiveWriteError> {
-    while receive_ordered_frame_result(
-        frame_result_rx,
-        envelope_job_tx,
-        envelope_result_rx,
-        ordered,
-        sink,
-        options,
-        emission_state,
-        false,
-    )? {}
+    while receive_ordered_frame_result(frame_result_rx, envelope_job_tx, envelope_result_rx, ordered, sink, options, emission_state, false)? {}
     Ok(())
 }
 
@@ -598,11 +540,7 @@ pub(crate) fn flush_ordered_parallel_envelope<O: ArchiveWriteSink>(
     let extent = ObjectExtent::new(ordered.next_payload_block_index, object_plan)?;
     ordered.next_payload_block_index = extent.next_block_index()?;
     ordered.payload_block_count = checked_u64_add(ordered.payload_block_count, extent.data_block_count as u64, "payload")?;
-    ordered.payload_objects.push(PayloadObject {
-        envelope_index: ordered.envelope.envelope_index,
-        plaintext_size,
-        object: extent,
-    });
+    ordered.payload_objects.push(PayloadObject { envelope_index: ordered.envelope.envelope_index, plaintext_size, object: extent });
     let mut job = OrderedEnvelopeJob {
         envelope_index: ordered.envelope.envelope_index,
         plaintext: std::mem::take(&mut ordered.envelope.plaintext),
@@ -710,10 +648,7 @@ pub(crate) fn build_ordered_envelope_result(
     let mut local_next_block_index = job.extent.first_block_index;
     let object = encrypt_object(&job.plaintext, context, &mut local_next_block_index, options)?;
     validate_planned_extent(&object, job.extent)?;
-    Ok(OrderedEnvelopeResult {
-        envelope_index: job.envelope_index,
-        records: OrderedEnvelopeRecords::Materialized(object.records),
-    })
+    Ok(OrderedEnvelopeResult { envelope_index: job.envelope_index, records: OrderedEnvelopeRecords::Materialized(object.records) })
 }
 
 pub(crate) fn emit_ordered_envelope_result<O: ArchiveWriteSink>(

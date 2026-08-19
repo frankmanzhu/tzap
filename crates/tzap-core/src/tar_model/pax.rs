@@ -35,14 +35,7 @@ pub(crate) struct StreamingSparsePrimary {
 
 impl StreamingSparsePrimary {
     fn new(logical_size: u64) -> Self {
-        Self {
-            validator: SparseStreamValidator::new(logical_size),
-            layout: None,
-            extent_index: 0,
-            extent_consumed: 0,
-            logical_cursor: 0,
-            native_output: None,
-        }
+        Self { validator: SparseStreamValidator::new(logical_size), layout: None, extent_index: 0, extent_consumed: 0, logical_cursor: 0, native_output: None }
     }
 
     fn observe<O: TarStreamObserver>(&mut self, bytes: &[u8], observer: &mut O) -> Result<(), FormatError> {
@@ -70,10 +63,7 @@ impl StreamingSparsePrimary {
         };
         let mut data = &bytes[data_offset..];
         while !data.is_empty() {
-            let extent = layout
-                .extents
-                .get(self.extent_index)
-                .ok_or(FormatError::InvalidArchive("sparse primary has trailing extent bytes"))?;
+            let extent = layout.extents.get(self.extent_index).ok_or(FormatError::InvalidArchive("sparse primary has trailing extent bytes"))?;
             if self.extent_consumed == 0 && !native_output {
                 observer_write_zeros(observer, extent.offset - self.logical_cursor)?;
             }
@@ -164,9 +154,7 @@ pub fn parse_tar_member_group<'a>(group: &'a [u8], max_path_length: u32) -> Resu
                     return Err(FormatError::InvalidArchive("PAX header is not immediately consumed"));
                 }
                 validate_v45_metadata_header(header)?;
-                aggregate_pax_bytes = aggregate_pax_bytes
-                    .checked_add(payload.len())
-                    .ok_or(FormatError::InvalidArchive("aggregate PAX size overflow"))?;
+                aggregate_pax_bytes = aggregate_pax_bytes.checked_add(payload.len()).ok_or(FormatError::InvalidArchive("aggregate PAX size overflow"))?;
                 if aggregate_pax_bytes > MAX_AGGREGATE_PAX_PAYLOAD {
                     return Err(FormatError::ReaderResourceLimitExceeded {
                         field: "aggregate local PAX payload bytes per member group",
@@ -236,21 +224,15 @@ pub fn parse_tar_member_group<'a>(group: &'a [u8], max_path_length: u32) -> Resu
                 } else {
                     None
                 };
-                let logical_size = if kind == TarEntryKind::Regular && !reparse_placeholder {
-                    primary.sparse_logical_size.unwrap_or(effective_size)
-                } else {
-                    0
-                };
+                let logical_size =
+                    if kind == TarEntryKind::Regular && !reparse_placeholder { primary.sparse_logical_size.unwrap_or(effective_size) } else { 0 };
                 let (file_entry_flags, capture_report) = v45_group_flags(&primary, &auxiliary, kind)?;
                 validate_v45_primary_cross_fields(
                     kind,
                     &records,
                     &primary,
                     &auxiliary,
-                    V45PrimaryLink {
-                        path: &path,
-                        target: link_target.as_deref(),
-                    },
+                    V45PrimaryLink { path: &path, target: link_target.as_deref() },
                     is_sparse,
                     capture_report.as_deref(),
                 )?;
@@ -413,10 +395,7 @@ pub(super) fn validate_v45_primary_header(
 pub(super) fn decoded_mtime(primary: &PrimaryMetadata, header: &[u8]) -> Result<ArchiveTimestamp, FormatError> {
     let (seconds, nanoseconds) = match primary.mtime {
         Some(value) => value,
-        None => (
-            i64::try_from(parse_tar_octal(&header[136..148])?).map_err(|_| FormatError::InvalidArchive("ustar mtime exceeds i64"))?,
-            0,
-        ),
+        None => (i64::try_from(parse_tar_octal(&header[136..148])?).map_err(|_| FormatError::InvalidArchive("ustar mtime exceeds i64"))?, 0),
     };
     Ok(ArchiveTimestamp::new(seconds, nanoseconds))
 }
@@ -442,10 +421,7 @@ pub(super) fn portable_metadata_mirror(header: &[u8], records: &PaxRecords, prim
     let mtime = if let Some(value) = primary.mtime {
         value
     } else {
-        (
-            i64::try_from(parse_tar_octal(&header[136..148])?).map_err(|_| FormatError::InvalidArchive("ustar mtime exceeds i64"))?,
-            0,
-        )
+        (i64::try_from(parse_tar_octal(&header[136..148])?).map_err(|_| FormatError::InvalidArchive("ustar mtime exceeds i64"))?, 0)
     };
     Ok(PortableMetadataMirror {
         owner_kind_posix: primary.declaration.owner_kind_posix,
@@ -467,10 +443,7 @@ fn validate_numeric_pax_header_match(records: &PaxRecords, key: &'static str, he
     let pax = parse_minimal_decimal_u64(value, key)?;
     let header = parse_tar_octal(header_field)?;
     if header != 0 && header != pax {
-        return Err(FormatError::InvalidMetadata {
-            structure: label,
-            reason: "ustar field conflicts with PAX value",
-        });
+        return Err(FormatError::InvalidMetadata { structure: label, reason: "ustar field conflicts with PAX value" });
     }
     Ok(())
 }
@@ -479,10 +452,7 @@ fn validate_string_pax_header_match(records: &PaxRecords, key: &'static str, hea
     if let Some(value) = records.get(key) {
         let header = nul_trimmed(header_field);
         if !header.is_empty() && header != value {
-            return Err(FormatError::InvalidMetadata {
-                structure: label,
-                reason: "ustar field conflicts with PAX value",
-            });
+            return Err(FormatError::InvalidMetadata { structure: label, reason: "ustar field conflicts with PAX value" });
         }
     }
     Ok(())
@@ -578,14 +548,8 @@ pub(super) fn validate_v45_primary_cross_fields(
         return Err(FormatError::InvalidArchive("special POSIX primary lacks posix-backup-v1"));
     }
     if records.contains_key("TZAP.linux.whiteout") {
-        let major = records
-            .get("TZAP.posix.device-major")
-            .map(|value| parse_minimal_decimal_u64(value, "device major"))
-            .transpose()?;
-        let minor = records
-            .get("TZAP.posix.device-minor")
-            .map(|value| parse_minimal_decimal_u64(value, "device minor"))
-            .transpose()?;
+        let major = records.get("TZAP.posix.device-major").map(|value| parse_minimal_decimal_u64(value, "device major")).transpose()?;
+        let minor = records.get("TZAP.posix.device-minor").map(|value| parse_minimal_decimal_u64(value, "device minor")).transpose()?;
         if kind != TarEntryKind::CharacterDevice || major != Some(0) || minor != Some(0) {
             return Err(FormatError::InvalidArchive("Linux whiteout is not a character device with major/minor zero"));
         }
@@ -606,9 +570,7 @@ pub(super) fn validate_v45_primary_cross_fields(
         }
     }
     if records.contains_key("TZAP.windows.directory-case-sensitive") && kind != TarEntryKind::Directory {
-        return Err(FormatError::InvalidArchive(
-            "Windows directory case-sensitive state is attached to a non-directory",
-        ));
+        return Err(FormatError::InvalidArchive("Windows directory case-sensitive state is attached to a non-directory"));
     }
     if records.contains_key("SCHILY.acl.default") && kind != TarEntryKind::Directory {
         return Err(FormatError::InvalidArchive("default POSIX ACL is attached to a non-directory"));
@@ -623,25 +585,18 @@ pub(super) fn validate_v45_primary_cross_fields(
     if (!has_textual_acl && has_native_macos_acl) != acl_projection_none {
         return Err(FormatError::InvalidArchive("native-only ACL declaration and projection=none disagree"));
     }
-    if auxiliary
-        .iter()
-        .any(|record| record.kind == "generic.xattr" && primary.xattr_names.iter().any(|name| name == &record.decoded_name))
-    {
+    if auxiliary.iter().any(|record| record.kind == "generic.xattr" && primary.xattr_names.iter().any(|name| name == &record.decoded_name)) {
         return Err(FormatError::InvalidArchive("xattr is duplicated in primary and auxiliary metadata"));
     }
     if has_textual_acl
-        && (primary.xattr_names.iter().any(|name| {
-            matches!(
-                name.as_slice(),
-                b"system.posix_acl_access" | b"system.posix_acl_default" | b"com.apple.system.Security"
-            )
-        }) || auxiliary.iter().any(|record| {
-            record.kind == "generic.xattr"
-                && matches!(
-                    record.decoded_name.as_slice(),
-                    b"system.posix_acl_access" | b"system.posix_acl_default" | b"com.apple.system.Security"
-                )
-        }))
+        && (primary
+            .xattr_names
+            .iter()
+            .any(|name| matches!(name.as_slice(), b"system.posix_acl_access" | b"system.posix_acl_default" | b"com.apple.system.Security"))
+            || auxiliary.iter().any(|record| {
+                record.kind == "generic.xattr"
+                    && matches!(record.decoded_name.as_slice(), b"system.posix_acl_access" | b"system.posix_acl_default" | b"com.apple.system.Security")
+            }))
     {
         return Err(FormatError::InvalidArchive("filesystem ACL backing xattr duplicates declared ACL metadata"));
     }
@@ -710,9 +665,7 @@ pub(super) fn validate_windows_essential_reparse_data(data: &[u8]) -> Result<u32
     let path_buffer = &data[8 + fixed_len..];
     let decode = |offset: usize, len: usize| -> Result<String, FormatError> {
         let end = offset.checked_add(len).ok_or(FormatError::InvalidArchive("reparse path range overflows"))?;
-        let bytes = path_buffer
-            .get(offset..end)
-            .ok_or(FormatError::InvalidArchive("reparse path range exceeds payload"))?;
+        let bytes = path_buffer.get(offset..end).ok_or(FormatError::InvalidArchive("reparse path range exceeds payload"))?;
         let units = bytes.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect::<Vec<_>>();
         let text = String::from_utf16(&units).map_err(|_| FormatError::InvalidArchive("reparse path is not valid UTF-16"))?;
         if text.contains('\0') {
@@ -746,14 +699,9 @@ fn validate_windows_cross_fields(
     capture_report: Option<&[CaptureReportRow]>,
 ) -> Result<(), FormatError> {
     let selected = primary.declaration.profile_selected("windows-backup-v1");
-    let file_attributes = records
-        .get("TZAP.windows.file-attributes")
-        .map(|value| parse_lower_hex_u32(value, "Windows file attributes"))
-        .transpose()?;
-    let stream_attributes = records
-        .get("TZAP.windows.data-stream-attributes")
-        .map(|value| parse_lower_hex_u32(value, "Windows data-stream attributes"))
-        .transpose()?;
+    let file_attributes = records.get("TZAP.windows.file-attributes").map(|value| parse_lower_hex_u32(value, "Windows file attributes")).transpose()?;
+    let stream_attributes =
+        records.get("TZAP.windows.data-stream-attributes").map(|value| parse_lower_hex_u32(value, "Windows data-stream attributes")).transpose()?;
     let placeholder = records.contains_key("TZAP.windows.reparse-placeholder");
     let reparse_count = auxiliary.iter().filter(|record| record.kind == "windows.reparse-data").count();
     let security_descriptor_count = auxiliary.iter().filter(|record| record.kind == "windows.security-descriptor").count();
@@ -768,14 +716,10 @@ fn validate_windows_cross_fields(
 
     let complete = primary.declaration.capture_status == CaptureStatus::Complete;
     if file_attributes.is_none() && (complete || !has_capture_omission(capture_report, "windows-backup-v1", "file-attributes")) {
-        return Err(FormatError::InvalidArchive(
-            "windows-backup-v1 lacks exact file attributes or a matching omission",
-        ));
+        return Err(FormatError::InvalidArchive("windows-backup-v1 lacks exact file attributes or a matching omission"));
     }
     if security_descriptor_count == 0 && (complete || !has_capture_omission(capture_report, "windows-backup-v1", "security-descriptor")) {
-        return Err(FormatError::InvalidArchive(
-            "windows-backup-v1 lacks a security descriptor or a matching omission",
-        ));
+        return Err(FormatError::InvalidArchive("windows-backup-v1 lacks a security descriptor or a matching omission"));
     }
     if let Some(attributes) = file_attributes {
         let is_directory = kind == TarEntryKind::Directory;
@@ -790,14 +734,10 @@ fn validate_windows_cross_fields(
             && reparse_count == 0
             && (complete || !has_capture_omission(capture_report, "windows-backup-v1", "reparse-data") || (kind != TarEntryKind::Symlink && !placeholder))
         {
-            return Err(FormatError::InvalidArchive(
-                "Windows reparse attribute lacks exact data or a safe partial placeholder",
-            ));
+            return Err(FormatError::InvalidArchive("Windows reparse attribute lacks exact data or a safe partial placeholder"));
         }
         if placeholder && (!is_reparse || !matches!(kind, TarEntryKind::Regular | TarEntryKind::Directory)) {
-            return Err(FormatError::InvalidArchive(
-                "Windows reparse placeholder has invalid attributes or primary type",
-            ));
+            return Err(FormatError::InvalidArchive("Windows reparse placeholder has invalid attributes or primary type"));
         }
         if attributes & FILE_ATTRIBUTE_ENCRYPTED != 0 && efs_count == 0 && (complete || !has_capture_omission(capture_report, "windows-backup-v1", "efs-raw")) {
             return Err(FormatError::InvalidArchive("encrypted Windows entry lacks raw EFS data or a matching omission"));
@@ -811,9 +751,7 @@ fn validate_windows_cross_fields(
         return Err(FormatError::InvalidArchive("Windows default-data-stream attributes disagree with primary type"));
     }
     if ordinary_regular && stream_attributes.is_none() && (complete || !has_capture_omission(capture_report, "windows-backup-v1", "data-stream-attributes")) {
-        return Err(FormatError::InvalidArchive(
-            "Windows regular primary lacks default-data-stream attributes or an omission",
-        ));
+        return Err(FormatError::InvalidArchive("Windows regular primary lacks default-data-stream attributes or an omission"));
     }
     if let Some(attributes) = stream_attributes {
         if (attributes & STREAM_SPARSE_ATTRIBUTE != 0) != sparse {
@@ -837,18 +775,12 @@ fn has_capture_omission(report: Option<&[CaptureReportRow]>, profile: &str, meta
 
 pub(super) fn parse_lower_hex_u32(value: &[u8], structure: &'static str) -> Result<u32, FormatError> {
     if value.len() != 8 || !value.iter().all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')) {
-        return Err(FormatError::InvalidMetadata {
-            structure,
-            reason: "value is not eight lowercase hexadecimal digits",
-        });
+        return Err(FormatError::InvalidMetadata { structure, reason: "value is not eight lowercase hexadecimal digits" });
     }
     std::str::from_utf8(value)
         .ok()
         .and_then(|text| u32::from_str_radix(text, 16).ok())
-        .ok_or(FormatError::InvalidMetadata {
-            structure,
-            reason: "hexadecimal value exceeds u32",
-        })
+        .ok_or(FormatError::InvalidMetadata { structure, reason: "hexadecimal value exceeds u32" })
 }
 
 pub(super) fn v45_group_flags(
@@ -865,18 +797,9 @@ pub(super) fn v45_group_flags(
 
 pub(super) fn parse_minimal_decimal_u64(value: &[u8], structure: &'static str) -> Result<u64, FormatError> {
     if value.is_empty() || !value.iter().all(u8::is_ascii_digit) || (value.len() > 1 && value[0] == b'0') {
-        return Err(FormatError::InvalidMetadata {
-            structure,
-            reason: "value is not minimal unsigned decimal",
-        });
+        return Err(FormatError::InvalidMetadata { structure, reason: "value is not minimal unsigned decimal" });
     }
-    std::str::from_utf8(value)
-        .ok()
-        .and_then(|text| text.parse().ok())
-        .ok_or(FormatError::InvalidMetadata {
-            structure,
-            reason: "value exceeds u64",
-        })
+    std::str::from_utf8(value).ok().and_then(|text| text.parse().ok()).ok_or(FormatError::InvalidMetadata { structure, reason: "value exceeds u64" })
 }
 
 pub fn validate_tar_stream_total_extraction_size(stream: &[u8], max_path_length: u32, cap: u64) -> Result<(), FormatError> {
@@ -890,9 +813,7 @@ pub fn validate_tar_stream_total_extraction_size(stream: &[u8], max_path_length:
         let group_end = tar_member_group_end(stream, cursor)?;
         let member = parse_tar_member_group(&stream[cursor..group_end], max_path_length)?;
         if member.kind == TarEntryKind::Regular {
-            total = total
-                .checked_add(member.logical_size)
-                .ok_or(FormatError::InvalidArchive("total extraction size overflow"))?;
+            total = total.checked_add(member.logical_size).ok_or(FormatError::InvalidArchive("total extraction size overflow"))?;
             if total > cap {
                 return Err(FormatError::ReaderUnsupported("total extraction size exceeds configured cap"));
             }
@@ -911,12 +832,7 @@ pub(crate) struct TarStreamTotalExtractionSizeValidator {
 
 impl TarStreamTotalExtractionSizeValidator {
     pub(crate) fn new(max_path_length: u32, cap: u64) -> Self {
-        Self {
-            cursor: 0,
-            total: 0,
-            max_path_length,
-            cap,
-        }
+        Self { cursor: 0, total: 0, max_path_length, cap }
     }
 
     pub(crate) fn observe(&mut self, stream: &[u8]) -> Result<(), FormatError> {
@@ -926,10 +842,7 @@ impl TarStreamTotalExtractionSizeValidator {
             };
             let member = parse_tar_member_group(&stream[self.cursor..group_end], self.max_path_length)?;
             if member.kind == TarEntryKind::Regular {
-                self.total = self
-                    .total
-                    .checked_add(member.logical_size)
-                    .ok_or(FormatError::InvalidArchive("total extraction size overflow"))?;
+                self.total = self.total.checked_add(member.logical_size).ok_or(FormatError::InvalidArchive("total extraction size overflow"))?;
                 if self.total > self.cap {
                     return Err(FormatError::ReaderUnsupported("total extraction size exceeds configured cap"));
                 }
@@ -977,12 +890,7 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
 
     fn consume_state(&mut self, state: StreamingTarState, input: &[u8]) -> Result<(usize, StreamingTarState), FormatError> {
         match state {
-            StreamingTarState::Header {
-                metadata,
-                group_start,
-                mut group_size,
-                mut header,
-            } => {
+            StreamingTarState::Header { metadata, group_start, mut group_size, mut header } => {
                 let needed = TAR_BLOCK_LEN - header.len();
                 let take = needed.min(input.len());
                 header.extend_from_slice(&input[..take]);
@@ -993,23 +901,11 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
                     header_bytes.copy_from_slice(&header);
                     self.state_after_header(metadata, group_start, group_size, header_bytes)?
                 } else {
-                    StreamingTarState::Header {
-                        metadata,
-                        group_start,
-                        group_size,
-                        header,
-                    }
+                    StreamingTarState::Header { metadata, group_start, group_size, header }
                 };
                 Ok((take, next))
             }
-            StreamingTarState::Payload {
-                metadata,
-                group_start,
-                mut group_size,
-                mut entry,
-                mut remaining,
-                padding_remaining,
-            } => {
+            StreamingTarState::Payload { metadata, group_start, mut group_size, mut entry, mut remaining, padding_remaining } => {
                 let take = remaining.min(input.len() as u64) as usize;
                 match &mut entry {
                     PendingTarEntry::LocalPax { payload, .. } => {
@@ -1039,32 +935,13 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
                 group_size = checked_u64_add(group_size, take as u64)?;
                 checked_u64_add(group_start, group_size)?;
                 let next = if remaining == 0 {
-                    StreamingTarState::Padding {
-                        metadata,
-                        group_start,
-                        group_size,
-                        entry,
-                        remaining: padding_remaining,
-                    }
+                    StreamingTarState::Padding { metadata, group_start, group_size, entry, remaining: padding_remaining }
                 } else {
-                    StreamingTarState::Payload {
-                        metadata,
-                        group_start,
-                        group_size,
-                        entry,
-                        remaining,
-                        padding_remaining,
-                    }
+                    StreamingTarState::Payload { metadata, group_start, group_size, entry, remaining, padding_remaining }
                 };
                 Ok((take, next))
             }
-            StreamingTarState::Padding {
-                metadata,
-                group_start,
-                mut group_size,
-                entry,
-                mut remaining,
-            } => {
+            StreamingTarState::Padding { metadata, group_start, mut group_size, entry, mut remaining } => {
                 let take = remaining.min(input.len() as u64) as usize;
                 if input[..take].iter().any(|byte| *byte != 0) {
                     return Err(FormatError::InvalidArchive("tar member padding is non-zero"));
@@ -1075,13 +952,7 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
                 let next = if remaining == 0 {
                     self.finish_entry_parts(metadata, group_start, group_size, entry)?
                 } else {
-                    StreamingTarState::Padding {
-                        metadata,
-                        group_start,
-                        group_size,
-                        entry,
-                        remaining,
-                    }
+                    StreamingTarState::Padding { metadata, group_start, group_size, entry, remaining }
                 };
                 Ok((take, next))
             }
@@ -1091,27 +962,12 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
     fn resolve_ready_state(&mut self, mut state: StreamingTarState) -> Result<StreamingTarState, FormatError> {
         loop {
             state = match state {
-                StreamingTarState::Payload {
-                    metadata,
-                    group_start,
-                    group_size,
-                    entry,
-                    remaining: 0,
-                    padding_remaining,
-                } => StreamingTarState::Padding {
-                    metadata,
-                    group_start,
-                    group_size,
-                    entry,
-                    remaining: padding_remaining,
-                },
-                StreamingTarState::Padding {
-                    metadata,
-                    group_start,
-                    group_size,
-                    entry,
-                    remaining: 0,
-                } => self.finish_entry_parts(metadata, group_start, group_size, entry)?,
+                StreamingTarState::Payload { metadata, group_start, group_size, entry, remaining: 0, padding_remaining } => {
+                    StreamingTarState::Padding { metadata, group_start, group_size, entry, remaining: padding_remaining }
+                }
+                StreamingTarState::Padding { metadata, group_start, group_size, entry, remaining: 0 } => {
+                    self.finish_entry_parts(metadata, group_start, group_size, entry)?
+                }
                 other => return Ok(other),
             };
         }
@@ -1139,11 +995,7 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
                         .ok_or(FormatError::InvalidArchive("archive-finalization diagnostic path is missing"))?;
                     member.diagnostics.push(diagnostic);
                 }
-                Ok(TarStreamSummary {
-                    members: self.members,
-                    tar_total_size,
-                    total_extraction_size: self.total_extraction_size,
-                })
+                Ok(TarStreamSummary { members: self.members, tar_total_size, total_extraction_size: self.total_extraction_size })
             }
             _ => Err(FormatError::InvalidArchive("tar stream ended inside member group")),
         }
@@ -1230,29 +1082,21 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
                 if reparse_placeholder && effective_size != 0 {
                     return Err(FormatError::InvalidArchive("reparse placeholder has non-zero primary payload"));
                 }
-                let logical_size = if kind == TarEntryKind::Regular && !reparse_placeholder {
-                    primary.sparse_logical_size.unwrap_or(effective_size)
-                } else {
-                    0
-                };
+                let logical_size =
+                    if kind == TarEntryKind::Regular && !reparse_placeholder { primary.sparse_logical_size.unwrap_or(effective_size) } else { 0 };
                 let (file_entry_flags, capture_report) = v45_group_flags(&primary, &metadata.auxiliary, kind)?;
                 validate_v45_primary_cross_fields(
                     kind,
                     &records,
                     &primary,
                     &metadata.auxiliary,
-                    V45PrimaryLink {
-                        path: &path,
-                        target: link_target.as_deref(),
-                    },
+                    V45PrimaryLink { path: &path, target: link_target.as_deref() },
                     is_sparse,
                     capture_report.as_deref(),
                 )?;
                 if kind == TarEntryKind::Regular {
-                    self.total_extraction_size = self
-                        .total_extraction_size
-                        .checked_add(logical_size)
-                        .ok_or(FormatError::InvalidArchive("total extraction size overflow"))?;
+                    self.total_extraction_size =
+                        self.total_extraction_size.checked_add(logical_size).ok_or(FormatError::InvalidArchive("total extraction size overflow"))?;
                     if self.total_extraction_size > self.extraction_cap {
                         return Err(FormatError::ReaderUnsupported("total extraction size exceeds configured cap"));
                     }
@@ -1282,25 +1126,14 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
                     diagnostics,
                 };
                 self.observer.on_member_start(&member)?;
-                PendingTarEntry::Main {
-                    member,
-                    group_start,
-                    sparse: primary.sparse_logical_size.map(StreamingSparsePrimary::new),
-                }
+                PendingTarEntry::Main { member, group_start, sparse: primary.sparse_logical_size.map(StreamingSparsePrimary::new) }
             }
             _ => {
                 return Err(FormatError::InvalidArchive("unsupported revision-45 tar entry type"));
             }
         };
 
-        self.resolve_ready_state(StreamingTarState::Payload {
-            metadata,
-            group_start,
-            group_size,
-            entry,
-            remaining: effective_size,
-            padding_remaining,
-        })
+        self.resolve_ready_state(StreamingTarState::Payload { metadata, group_start, group_size, entry, remaining: effective_size, padding_remaining })
     }
 
     fn finish_entry_parts(
@@ -1312,10 +1145,8 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
     ) -> Result<StreamingTarState, FormatError> {
         match entry {
             PendingTarEntry::LocalPax { kind, payload } => {
-                metadata.aggregate_pax_bytes = metadata
-                    .aggregate_pax_bytes
-                    .checked_add(payload.len())
-                    .ok_or(FormatError::InvalidArchive("aggregate PAX size overflow"))?;
+                metadata.aggregate_pax_bytes =
+                    metadata.aggregate_pax_bytes.checked_add(payload.len()).ok_or(FormatError::InvalidArchive("aggregate PAX size overflow"))?;
                 if metadata.aggregate_pax_bytes > MAX_AGGREGATE_PAX_PAYLOAD {
                     return Err(FormatError::ReaderResourceLimitExceeded {
                         field: "aggregate local PAX payload bytes per member group",
@@ -1324,12 +1155,7 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
                     });
                 }
                 metadata.pending = Some((kind, parse_canonical_pax(&payload)?));
-                Ok(StreamingTarState::Header {
-                    metadata,
-                    group_start,
-                    group_size,
-                    header: Vec::new(),
-                })
+                Ok(StreamingTarState::Header { metadata, group_start, group_size, header: Vec::new() })
             }
             PendingTarEntry::Auxiliary { validator, stream_to_observer } => {
                 let record = validator.finish()?;
@@ -1337,12 +1163,7 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
                     self.observer.on_auxiliary_complete(&record)?;
                 }
                 metadata.auxiliary.push(record);
-                Ok(StreamingTarState::Header {
-                    metadata,
-                    group_start,
-                    group_size,
-                    header: Vec::new(),
-                })
+                Ok(StreamingTarState::Header { metadata, group_start, group_size, header: Vec::new() })
             }
             PendingTarEntry::Main { member, group_start, sparse } => {
                 if self.members.len() as u64 >= self.max_member_count {
@@ -1375,9 +1196,7 @@ impl<O: TarStreamObserver> TarStreamSummaryValidator<O> {
 pub(crate) fn validate_v45_member_graph(members: &[TarStreamMemberSummary]) -> Result<(), FormatError> {
     let mut selected = BTreeMap::<&[u8], &TarStreamMemberSummary>::new();
     for member in members {
-        let replace = selected
-            .get(member.path.as_slice())
-            .is_none_or(|existing| existing.group_start < member.group_start);
+        let replace = selected.get(member.path.as_slice()).is_none_or(|existing| existing.group_start < member.group_start);
         if replace {
             selected.insert(member.path.as_slice(), member);
         }
@@ -1385,9 +1204,7 @@ pub(crate) fn validate_v45_member_graph(members: &[TarStreamMemberSummary]) -> R
     for member in selected.values() {
         if member.kind == TarEntryKind::Hardlink {
             let target_path = member.link_target.as_deref().ok_or(FormatError::InvalidArchive("hardlink target is missing"))?;
-            let target = selected
-                .get(target_path)
-                .ok_or(FormatError::InvalidArchive("hardlink target is not present in the selected archive graph"))?;
+            let target = selected.get(target_path).ok_or(FormatError::InvalidArchive("hardlink target is not present in the selected archive graph"))?;
             if target.kind != TarEntryKind::Regular || target.reparse_placeholder {
                 return Err(FormatError::InvalidArchive("hardlink target is not a canonical regular primary"));
             }
@@ -1427,9 +1244,7 @@ pub(crate) fn validate_owned_restore_plan(members: &[&OwnedTarMember], options: 
     for member in selected.values() {
         if member.kind == TarEntryKind::Hardlink {
             let target_path = member.link_target.as_deref().ok_or(FormatError::InvalidArchive("hardlink target is missing"))?;
-            let target = selected
-                .get(target_path)
-                .ok_or(FormatError::InvalidArchive("hardlink target is not present in the selected restore graph"))?;
+            let target = selected.get(target_path).ok_or(FormatError::InvalidArchive("hardlink target is not present in the selected restore graph"))?;
             if target.kind != TarEntryKind::Regular || target.reparse_placeholder {
                 return Err(FormatError::InvalidArchive("hardlink target is not a canonical regular primary"));
             }
@@ -1461,10 +1276,7 @@ pub(crate) fn validate_owned_restore_plan(members: &[&OwnedTarMember], options: 
 }
 
 pub(crate) fn plan_owned_member_restore(member: &OwnedTarMember, options: SafeExtractionOptions) -> Result<Vec<MetadataDiagnostic>, FormatError> {
-    let metadata = member
-        .v45_metadata
-        .as_ref()
-        .ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
+    let metadata = member.v45_metadata.as_ref().ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
     plan_restore(&member.path, metadata, member.kind, member.reparse_placeholder, options)
 }
 

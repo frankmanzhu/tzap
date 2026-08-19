@@ -55,16 +55,7 @@ pub(crate) fn emit_create_timing_report(
     total: Duration,
     writer: WriterTimings,
 ) -> io::Result<()> {
-    emit_create_timing_report_with_labels(
-        scan_inputs,
-        read_inputs,
-        core_writer,
-        write_outputs,
-        total,
-        writer,
-        "core writer",
-        "write outputs",
-    )
+    emit_create_timing_report_with_labels(scan_inputs, read_inputs, core_writer, write_outputs, total, writer, "core writer", "write outputs")
 }
 
 pub(crate) fn emit_sink_backed_create_timing_report(
@@ -156,10 +147,7 @@ pub(crate) fn emit_member_metadata_diagnostics(quiet: bool, path: &str, diagnost
 }
 
 pub(crate) fn metadata_diagnostic_lines_for_entries(entries: &[ArchiveEntry]) -> Vec<String> {
-    entries
-        .iter()
-        .flat_map(|entry| entry.diagnostics.iter().map(|diagnostic| metadata_diagnostic_line(&entry.path, diagnostic)))
-        .collect()
+    entries.iter().flat_map(|entry| entry.diagnostics.iter().map(|diagnostic| metadata_diagnostic_line(&entry.path, diagnostic))).collect()
 }
 
 #[cfg(test)]
@@ -238,18 +226,9 @@ pub(crate) fn metadata_verification_stdout_lines(report: &MetadataVerificationRe
         let complete = report
             .entries
             .iter()
-            .filter(|entry| {
-                entry
-                    .policy_capabilities
-                    .iter()
-                    .any(|capability| capability.policy == policy && capability.policy_complete)
-            })
+            .filter(|entry| entry.policy_capabilities.iter().any(|capability| capability.policy == policy && capability.policy_complete))
             .count();
-        lines.push(format!(
-            "metadata-policy {}: {complete}/{} entries policy-complete",
-            restore_policy_label(policy),
-            report.entries.len()
-        ));
+        lines.push(format!("metadata-policy {}: {complete}/{} entries policy-complete", restore_policy_label(policy), report.entries.len()));
     }
     lines
 }
@@ -348,11 +327,7 @@ pub(crate) fn unsupported_revision_error_json(err: &anyhow::Error, action: &'sta
                     "action": action,
                     });
                 }
-                FormatError::UnsupportedVolumeFormatRevision {
-                    format_version,
-                    volume_format_rev,
-                    reader_max_supported_revision,
-                } => {
+                FormatError::UnsupportedVolumeFormatRevision { format_version, volume_format_rev, reader_max_supported_revision } => {
                     return json!({
                     "label": "unsupported-revision",
                     "observed": {
@@ -418,19 +393,11 @@ pub(crate) fn classify_error(err: &anyhow::Error) -> Diagnostic {
     // wrapper, so checking the outer error first is what actually finds
     // UsageErrors attached with `with_context` (e.g. invalid stdin-size).
     if err.downcast_ref::<UsageError>().is_some() {
-        return Diagnostic {
-            label: "invalid-arguments",
-            exit_code: EXIT_USAGE,
-            action: "check command arguments",
-        };
+        return Diagnostic { label: "invalid-arguments", exit_code: EXIT_USAGE, action: "check command arguments" };
     }
     for cause in err.chain() {
         if cause.downcast_ref::<UsageError>().is_some() {
-            return Diagnostic {
-                label: "invalid-arguments",
-                exit_code: EXIT_USAGE,
-                action: "check command arguments",
-            };
+            return Diagnostic { label: "invalid-arguments", exit_code: EXIT_USAGE, action: "check command arguments" };
         }
         if let Some(write_error) = cause.downcast_ref::<ArchiveWriteError>() {
             return match write_error {
@@ -451,25 +418,15 @@ pub(crate) fn classify_error(err: &anyhow::Error) -> Diagnostic {
             return classify_io_error(io_error);
         }
     }
-    Diagnostic {
-        label: "error",
-        exit_code: EXIT_GENERIC,
-        action: "",
-    }
+    Diagnostic { label: "error", exit_code: EXIT_GENERIC, action: "" }
 }
 
 pub(crate) fn classify_io_error(err: &io::Error) -> Diagnostic {
     match err.kind() {
-        io::ErrorKind::PermissionDenied | io::ErrorKind::NotFound | io::ErrorKind::AlreadyExists => Diagnostic {
-            label: "io-error",
-            exit_code: EXIT_IO,
-            action: "check file paths and permissions",
-        },
-        _ => Diagnostic {
-            label: "io-error",
-            exit_code: EXIT_IO,
-            action: "check filesystem state",
-        },
+        io::ErrorKind::PermissionDenied | io::ErrorKind::NotFound | io::ErrorKind::AlreadyExists => {
+            Diagnostic { label: "io-error", exit_code: EXIT_IO, action: "check file paths and permissions" }
+        }
+        _ => Diagnostic { label: "io-error", exit_code: EXIT_IO, action: "check filesystem state" },
     }
 }
 

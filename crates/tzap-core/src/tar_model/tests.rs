@@ -186,10 +186,7 @@ fn canonicalizes_one_directory_trailing_slash_only_for_directories() {
 #[test]
 fn rejects_global_pax_headers() {
     let bytes = member(b"pax", b'g', b"11 path=x\n", b"");
-    assert_eq!(
-        parse_tar_member_group(&bytes, 4096).unwrap_err(),
-        FormatError::InvalidArchive("global or GNU tar metadata is forbidden in revision 45")
-    );
+    assert_eq!(parse_tar_member_group(&bytes, 4096).unwrap_err(), FormatError::InvalidArchive("global or GNU tar metadata is forbidden in revision 45"));
 }
 
 #[test]
@@ -198,10 +195,7 @@ fn rejects_global_pax_before_main_entry() {
     let mut bytes = member(b"GlobalHead/path", b'g', &global_pax, b"");
     bytes.extend_from_slice(&member(b"safe.txt", b'0', b"abc", b""));
 
-    assert_eq!(
-        parse_tar_member_group(&bytes, 4096).unwrap_err(),
-        FormatError::InvalidArchive("global or GNU tar metadata is forbidden in revision 45")
-    );
+    assert_eq!(parse_tar_member_group(&bytes, 4096).unwrap_err(), FormatError::InvalidArchive("global or GNU tar metadata is forbidden in revision 45"));
 }
 
 #[test]
@@ -221,10 +215,7 @@ fn rejects_global_gnu_headers() {
 fn rejects_unsupported_gnu_sparse_entry_type() {
     let bytes = member(b"sparse.bin", b'S', b"", b"");
 
-    assert_eq!(
-        parse_tar_member_group(&bytes, 4096).unwrap_err(),
-        FormatError::InvalidArchive("global or GNU tar metadata is forbidden in revision 45")
-    );
+    assert_eq!(parse_tar_member_group(&bytes, 4096).unwrap_err(), FormatError::InvalidArchive("global or GNU tar metadata is forbidden in revision 45"));
 }
 
 #[test]
@@ -307,12 +298,8 @@ fn supported_tar_metadata_profile_matrix_matches_buffered_and_streaming_parsers(
         assert_eq!(parsed.logical_size, case.expected_logical_size, "{}", case.name);
 
         let mut streaming = TarStreamSummaryValidator::with_observer(4096, u64::MAX, 4096, 16, NoopTarStreamObserver);
-        streaming
-            .observe(&case.bytes)
-            .unwrap_or_else(|err| panic!("{} should parse in streaming tar parser: {err:?}", case.name));
-        let summary = streaming
-            .finish()
-            .unwrap_or_else(|err| panic!("{} should finish in streaming tar parser: {err:?}", case.name));
+        streaming.observe(&case.bytes).unwrap_or_else(|err| panic!("{} should parse in streaming tar parser: {err:?}", case.name));
+        let summary = streaming.finish().unwrap_or_else(|err| panic!("{} should finish in streaming tar parser: {err:?}", case.name));
         assert_eq!(summary.members.len(), 1, "{}", case.name);
         let member = &summary.members[0];
         assert_eq!(member.path, case.expected_path, "{}", case.name);
@@ -384,10 +371,7 @@ fn malformed_pax_record_matrix_rejects_before_metadata_is_trusted() {
         let mut bytes = member(b"PaxHeaders/file", b'x', &payload, b"");
         bytes.extend_from_slice(&member(b"file", b'0', b"abc", b""));
 
-        assert!(
-            matches!(parse_tar_member_group(&bytes, 4096).unwrap_err(), FormatError::InvalidArchive(_)),
-            "{name}"
-        );
+        assert!(matches!(parse_tar_member_group(&bytes, 4096).unwrap_err(), FormatError::InvalidArchive(_)), "{name}");
 
         let mut streaming = TarStreamSummaryValidator::with_observer(4096, u64::MAX, 4096, 16, NoopTarStreamObserver);
         assert!(matches!(streaming.observe(&bytes).unwrap_err(), FormatError::InvalidArchive(_)), "{name}");
@@ -446,14 +430,7 @@ fn rejects_mixed_unregistered_local_pax_keys() {
 
 #[test]
 fn rejects_platform_escape_paths() {
-    for path in [
-        b"/abs".as_slice(),
-        b"../up".as_slice(),
-        b"a//b".as_slice(),
-        b"a\\b".as_slice(),
-        b"a:b".as_slice(),
-        b"CON".as_slice(),
-    ] {
+    for path in [b"/abs".as_slice(), b"../up".as_slice(), b"a//b".as_slice(), b"a\\b".as_slice(), b"a:b".as_slice(), b"CON".as_slice()] {
         let bytes = member(path, b'0', b"", b"");
         assert_eq!(parse_tar_member_group(&bytes, 4096).unwrap_err(), FormatError::UnsafeArchivePath);
     }
@@ -479,10 +456,7 @@ fn safe_restore_rejects_symlink_parent() {
         diagnostics: Vec::new(),
     };
 
-    assert_eq!(
-        restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap_err(),
-        FormatError::UnsafeArchivePath
-    );
+    assert_eq!(restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap_err(), FormatError::UnsafeArchivePath);
 }
 
 #[cfg(unix)]
@@ -514,17 +488,11 @@ fn directory_sync_tolerates_filesystems_that_reject_dir_fsync() {
     // tmpfs and overlay lower layers on older kernels reject fsync on directories with
     // EINVAL/EOPNOTSUPP/ENOTSUP; those errors must not fail an otherwise-good restore.
     for code in [libc::EINVAL, libc::ENOTSUP, libc::EOPNOTSUPP] {
-        assert!(
-            benign_directory_sync_error(&std::io::Error::from_raw_os_error(code)),
-            "errno {code} should be tolerated"
-        );
+        assert!(benign_directory_sync_error(&std::io::Error::from_raw_os_error(code)), "errno {code} should be tolerated");
     }
     // Real failures (I/O error, out of space, bad fd) must still surface.
     for code in [libc::EIO, libc::ENOSPC, libc::EBADF] {
-        assert!(
-            !benign_directory_sync_error(&std::io::Error::from_raw_os_error(code)),
-            "errno {code} must remain a hard failure"
-        );
+        assert!(!benign_directory_sync_error(&std::io::Error::from_raw_os_error(code)), "errno {code} must remain a hard failure");
     }
     assert!(!benign_directory_sync_error(&std::io::Error::other("no errno attached")));
 }
@@ -622,13 +590,7 @@ fn restore_applies_regular_file_mtime_metadata() {
     let diagnostics = restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap();
 
     assert!(diagnostics.is_empty());
-    let modified = fs::metadata(tmp.path().join("dated.txt"))
-        .unwrap()
-        .modified()
-        .unwrap()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let modified = fs::metadata(tmp.path().join("dated.txt")).unwrap().modified().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
     assert_eq!(modified, 1_700_000_000);
 }
 
@@ -648,20 +610,16 @@ fn restore_revalidates_symlink_targets_from_owned_members() {
         diagnostics: Vec::new(),
     };
 
-    assert_eq!(
-        restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap_err(),
-        FormatError::UnsafeArchivePath
-    );
+    assert_eq!(restore_tar_member(tmp.path(), &member, SafeExtractionOptions::default()).unwrap_err(), FormatError::UnsafeArchivePath);
     assert!(!tmp.path().join("link").exists());
 }
 
 #[test]
 fn skipped_entries_do_not_create_destination_parents() {
     let tmp = tempdir().unwrap();
-    for (path, kind, target) in [
-        (b"symlink-parent/link".as_slice(), TarEntryKind::Symlink, Some(b"target".to_vec())),
-        (b"special-parent/fifo".as_slice(), TarEntryKind::Fifo, None),
-    ] {
+    for (path, kind, target) in
+        [(b"symlink-parent/link".as_slice(), TarEntryKind::Symlink, Some(b"target".to_vec())), (b"special-parent/fifo".as_slice(), TarEntryKind::Fifo, None)]
+    {
         let member = OwnedTarMember {
             path: path.to_vec(),
             kind,
@@ -674,15 +632,7 @@ fn skipped_entries_do_not_create_destination_parents() {
             v45_metadata: None,
             diagnostics: Vec::new(),
         };
-        restore_tar_member(
-            tmp.path(),
-            &member,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::Content,
-                ..SafeExtractionOptions::default()
-            },
-        )
-        .unwrap();
+        restore_tar_member(tmp.path(), &member, SafeExtractionOptions { restore_policy: RestorePolicy::Content, ..SafeExtractionOptions::default() }).unwrap();
     }
 
     assert!(!tmp.path().join("symlink-parent").exists());
@@ -708,15 +658,7 @@ fn safe_restore_rejects_directory_over_existing_file_even_with_overwrite() {
     };
 
     assert_eq!(
-        restore_tar_member(
-            tmp.path(),
-            &member,
-            SafeExtractionOptions {
-                overwrite_existing: true,
-                ..SafeExtractionOptions::default()
-            }
-        )
-        .unwrap_err(),
+        restore_tar_member(tmp.path(), &member, SafeExtractionOptions { overwrite_existing: true, ..SafeExtractionOptions::default() }).unwrap_err(),
         FormatError::UnsafeOverwrite
     );
     assert!(conflict.is_file());
@@ -811,17 +753,9 @@ fn partial_capture_diagnostics_preserve_authenticated_omission_details() {
         encoded_detail: "extent%20map%20changed".into(),
     }]);
 
-    let diagnostics = plan_restore(
-        b"file.txt",
-        &metadata,
-        TarEntryKind::Regular,
-        false,
-        SafeExtractionOptions {
-            allow_degraded: true,
-            ..SafeExtractionOptions::default()
-        },
-    )
-    .unwrap();
+    let diagnostics =
+        plan_restore(b"file.txt", &metadata, TarEntryKind::Regular, false, SafeExtractionOptions { allow_degraded: true, ..SafeExtractionOptions::default() })
+            .unwrap();
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.profile == "portable-v1"
@@ -842,10 +776,7 @@ fn content_restore_reports_portable_mode_and_mtime_as_skipped() {
         &parsed.v45_metadata,
         TarEntryKind::Regular,
         false,
-        SafeExtractionOptions {
-            restore_policy: RestorePolicy::Content,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { restore_policy: RestorePolicy::Content, ..SafeExtractionOptions::default() },
     )
     .unwrap();
 
@@ -871,17 +802,9 @@ fn unsupported_required_profile_needs_explicit_degraded_restore() {
         plan_restore(b"file.txt", &metadata, TarEntryKind::Regular, false, SafeExtractionOptions::default(),).unwrap_err(),
         FormatError::ReaderUnsupported("requested restore policy requires an unsupported required profile")
     );
-    let diagnostics = plan_restore(
-        b"file.txt",
-        &metadata,
-        TarEntryKind::Regular,
-        false,
-        SafeExtractionOptions {
-            allow_degraded: true,
-            ..SafeExtractionOptions::default()
-        },
-    )
-    .unwrap();
+    let diagnostics =
+        plan_restore(b"file.txt", &metadata, TarEntryKind::Regular, false, SafeExtractionOptions { allow_degraded: true, ..SafeExtractionOptions::default() })
+            .unwrap();
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.profile == "x.com.example.test-v1"
             && diagnostic.metadata_class == "required-profile"
@@ -921,11 +844,7 @@ fn exact_linux_restore_rejects_unrecognized_inode_flag_bits() {
             &metadata,
             TarEntryKind::Regular,
             false,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                system_authorized: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, system_authorized: true, ..SafeExtractionOptions::default() },
         )
         .unwrap_err(),
         FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
@@ -938,35 +857,24 @@ fn linux_restore_creationtime_supported_under_same_os() {
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     let mut metadata = parsed.v45_metadata;
     metadata.declaration.source_os = "linux".into();
-    metadata
-        .declaration
-        .required_profiles
-        .extend(["linux-backup-v1".into(), "posix-backup-v1".into()]);
+    metadata.declaration.required_profiles.extend(["linux-backup-v1".into(), "posix-backup-v1".into()]);
     metadata.declaration.required_profiles.sort();
     metadata.declaration.required_profiles.dedup();
     metadata.primary_has_native_scalar = true;
-    metadata
-        .primary_records
-        .insert("LIBARCHIVE.creationtime".into(), b"1700000000.000000000".to_vec());
+    metadata.primary_records.insert("LIBARCHIVE.creationtime".into(), b"1700000000.000000000".to_vec());
 
     let plan_res = plan_restore(
         b"file.txt",
         &metadata,
         TarEntryKind::Regular,
         false,
-        SafeExtractionOptions {
-            restore_policy: RestorePolicy::SameOs,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, ..SafeExtractionOptions::default() },
     );
 
     if cfg!(target_os = "linux") {
         assert!(plan_res.is_ok());
     } else {
-        assert_eq!(
-            plan_res.unwrap_err(),
-            FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
-        );
+        assert_eq!(plan_res.unwrap_err(), FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class"));
     }
 }
 
@@ -977,10 +885,7 @@ fn macos_restore_plans_unknown_and_system_flags_without_silently_applying_them()
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     let mut metadata = parsed.v45_metadata;
     metadata.declaration.source_os = "macos".into();
-    metadata
-        .declaration
-        .required_profiles
-        .extend(["macos-backup-v1".into(), "posix-backup-v1".into()]);
+    metadata.declaration.required_profiles.extend(["macos-backup-v1".into(), "posix-backup-v1".into()]);
     metadata.declaration.required_profiles.sort();
     metadata.declaration.required_profiles.dedup();
     metadata.primary_has_native_scalar = true;
@@ -993,10 +898,7 @@ fn macos_restore_plans_unknown_and_system_flags_without_silently_applying_them()
         &metadata,
         TarEntryKind::Regular,
         false,
-        SafeExtractionOptions {
-            restore_policy: RestorePolicy::SameOs,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, ..SafeExtractionOptions::default() },
     )
     .unwrap();
     assert!(diagnostics
@@ -1014,10 +916,7 @@ fn macos_required_unknown_ordinary_flag_needs_explicit_degraded_restore() {
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     let mut metadata = parsed.v45_metadata;
     metadata.declaration.source_os = "macos".into();
-    metadata
-        .declaration
-        .required_profiles
-        .extend(["macos-backup-v1".into(), "posix-backup-v1".into()]);
+    metadata.declaration.required_profiles.extend(["macos-backup-v1".into(), "posix-backup-v1".into()]);
     metadata.declaration.required_profiles.sort();
     metadata.declaration.required_profiles.dedup();
     metadata.primary_has_native_scalar = true;
@@ -1028,25 +927,15 @@ fn macos_required_unknown_ordinary_flag_needs_explicit_degraded_restore() {
         &metadata,
         TarEntryKind::Regular,
         false,
-        SafeExtractionOptions {
-            restore_policy: RestorePolicy::SameOs,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, ..SafeExtractionOptions::default() },
     );
-    assert_eq!(
-        strict.unwrap_err(),
-        FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
-    );
+    assert_eq!(strict.unwrap_err(), FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class"));
     let degraded = plan_restore(
         b"file.txt",
         &metadata,
         TarEntryKind::Regular,
         false,
-        SafeExtractionOptions {
-            restore_policy: RestorePolicy::SameOs,
-            allow_degraded: true,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, allow_degraded: true, ..SafeExtractionOptions::default() },
     )
     .unwrap();
     assert!(degraded
@@ -1061,10 +950,7 @@ fn macos_unregistered_superuser_flag_stays_system_class() {
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     let mut metadata = parsed.v45_metadata;
     metadata.declaration.source_os = "macos".into();
-    metadata
-        .declaration
-        .required_profiles
-        .extend(["macos-backup-v1".into(), "posix-backup-v1".into()]);
+    metadata.declaration.required_profiles.extend(["macos-backup-v1".into(), "posix-backup-v1".into()]);
     metadata.declaration.required_profiles.sort();
     metadata.declaration.required_profiles.dedup();
     metadata.primary_has_native_scalar = true;
@@ -1076,26 +962,17 @@ fn macos_unregistered_superuser_flag_stays_system_class() {
         &metadata,
         TarEntryKind::Regular,
         false,
-        SafeExtractionOptions {
-            restore_policy: RestorePolicy::SameOs,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, ..SafeExtractionOptions::default() },
     )
     .unwrap();
-    assert!(same_os
-        .iter()
-        .any(|diagnostic| { diagnostic.metadata_class == "system-file-flags" && diagnostic.status == MetadataDiagnosticStatus::Skipped }));
+    assert!(same_os.iter().any(|diagnostic| { diagnostic.metadata_class == "system-file-flags" && diagnostic.status == MetadataDiagnosticStatus::Skipped }));
     assert_eq!(
         plan_restore(
             b"file.txt",
             &metadata,
             TarEntryKind::Regular,
             false,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                system_authorized: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, system_authorized: true, ..SafeExtractionOptions::default() },
         )
         .unwrap_err(),
         FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
@@ -1112,10 +989,7 @@ fn macos_system_file_flags_fail_preflight_without_superuser_privilege() {
     let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     let mut metadata = parsed.v45_metadata;
     metadata.declaration.source_os = "macos".into();
-    metadata
-        .declaration
-        .required_profiles
-        .extend(["macos-backup-v1".into(), "posix-backup-v1".into()]);
+    metadata.declaration.required_profiles.extend(["macos-backup-v1".into(), "posix-backup-v1".into()]);
     metadata.declaration.required_profiles.sort();
     metadata.declaration.required_profiles.dedup();
     metadata.primary_has_native_scalar = true;
@@ -1127,11 +1001,7 @@ fn macos_system_file_flags_fail_preflight_without_superuser_privilege() {
             &metadata,
             TarEntryKind::Regular,
             false,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                system_authorized: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, system_authorized: true, ..SafeExtractionOptions::default() },
         )
         .unwrap_err(),
         FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
@@ -1153,11 +1023,7 @@ fn macos_device_restore_fails_preflight_without_superuser_privilege() {
             &parsed.v45_metadata,
             TarEntryKind::CharacterDevice,
             false,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                system_authorized: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, system_authorized: true, ..SafeExtractionOptions::default() },
         )
         .unwrap_err(),
         FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class")
@@ -1229,11 +1095,7 @@ fn generic_xattr_auxiliary_failure_is_bound_to_pinned_special_object() {
         true,
         b"events.fifo",
         &mut staged,
-        SafeExtractionOptions {
-            restore_policy: RestorePolicy::SameOs,
-            allow_degraded: true,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, allow_degraded: true, ..SafeExtractionOptions::default() },
         &mut diagnostics,
     )
     .unwrap();
@@ -1251,30 +1113,18 @@ fn sparse_layout_materialization_requires_explicit_degraded_portable_restore() {
     let mut parsed = parse_tar_member_group(&bytes, 4096).unwrap();
     parsed.v45_metadata.file_entry_flags |= HAS_SPARSE_EXTENTS;
 
-    let strict = plan_restore(
-        b"sparse.bin",
-        &parsed.v45_metadata,
-        TarEntryKind::Regular,
-        false,
-        SafeExtractionOptions::default(),
-    );
+    let strict = plan_restore(b"sparse.bin", &parsed.v45_metadata, TarEntryKind::Regular, false, SafeExtractionOptions::default());
     #[cfg(any(windows, target_os = "linux"))]
     assert!(strict.unwrap().is_empty());
     #[cfg(not(any(windows, target_os = "linux")))]
-    assert_eq!(
-        strict.unwrap_err(),
-        FormatError::ReaderUnsupported("sparse layout materialization needs explicit degraded restore")
-    );
+    assert_eq!(strict.unwrap_err(), FormatError::ReaderUnsupported("sparse layout materialization needs explicit degraded restore"));
 
     let degraded = plan_restore(
         b"sparse.bin",
         &parsed.v45_metadata,
         TarEntryKind::Regular,
         false,
-        SafeExtractionOptions {
-            allow_degraded: true,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { allow_degraded: true, ..SafeExtractionOptions::default() },
     )
     .unwrap();
     #[cfg(any(windows, target_os = "linux"))]
@@ -1291,15 +1141,10 @@ fn sparse_layout_materialization_requires_explicit_degraded_portable_restore() {
         &parsed.v45_metadata,
         TarEntryKind::Regular,
         false,
-        SafeExtractionOptions {
-            restore_policy: RestorePolicy::Content,
-            ..SafeExtractionOptions::default()
-        },
+        SafeExtractionOptions { restore_policy: RestorePolicy::Content, ..SafeExtractionOptions::default() },
     )
     .unwrap();
-    assert!(content
-        .iter()
-        .any(|diagnostic| { diagnostic.metadata_class == "sparse-layout" && diagnostic.restore_policy == Some(RestorePolicy::Content) }));
+    assert!(content.iter().any(|diagnostic| { diagnostic.metadata_class == "sparse-layout" && diagnostic.restore_policy == Some(RestorePolicy::Content) }));
 }
 
 #[test]

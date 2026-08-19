@@ -245,14 +245,7 @@ fn readme_passphrase_quickstart_commands_execute() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--password-stdin",
-            "--directory",
-            restored.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "project",
-        ])
+        .args(["extract", "--password-stdin", "--directory", restored.to_str().unwrap(), archive.to_str().unwrap(), "project"])
         .write_stdin(PASS_PHRASE)
         .assert()
         .success()
@@ -270,22 +263,11 @@ fn readme_raw_key_workflow_commands_execute() {
 
     write_file(&source, b"raw key payload\n");
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["keygen", "--output", keyfile.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["keygen", "--output", keyfile.to_str().unwrap()]).assert().success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            source.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), source.to_str().unwrap()])
         .assert()
         .success();
 
@@ -305,14 +287,7 @@ fn readme_raw_key_workflow_commands_execute() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            restored.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "-C", restored.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success();
     assert_eq!(fs::read(restored.join("payload.txt")).unwrap(), b"raw key payload\n");
@@ -327,11 +302,7 @@ fn readme_multivolume_recovery_example_executes() {
     let extract_dir = temp.path().join("restored");
 
     write_file(&source, b"recovery payload\n");
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["keygen", "--output", keyfile.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["keygen", "--output", keyfile.to_str().unwrap()]).assert().success();
 
     Command::cargo_bin("tzap")
         .unwrap()
@@ -362,23 +333,11 @@ fn readme_multivolume_recovery_example_executes() {
 
     fs::remove_file(&volume_1).unwrap();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), volume_0.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["verify", "--keyfile", keyfile.to_str().unwrap(), volume_0.to_str().unwrap()]).assert().success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            extract_dir.to_str().unwrap(),
-            volume_0.to_str().unwrap(),
-            "project.bin",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", extract_dir.to_str().unwrap(), volume_0.to_str().unwrap(), "project.bin"])
         .assert()
         .success()
         .stderr(predicate::str::contains("extracted 1 file(s)"));
@@ -414,18 +373,10 @@ fn public_docs_keep_boundaries_out_of_readme_marketing() {
     assert!(reference.contains("append-only sink or multipart-upload create mode is exposed"));
 
     let readme_lower = readme.to_lowercase();
-    for phrase in [
-        "archive stdin",
-        "live stdout streaming",
-        "append-only sink",
-        "multipart sink",
-        "cloud/object-store optimized",
-        "writer layouts not emitted yet",
-    ] {
-        assert!(
-            !readme_lower.contains(phrase),
-            "README must keep operational boundary details out of marketing copy via {phrase:?}"
-        );
+    for phrase in
+        ["archive stdin", "live stdout streaming", "append-only sink", "multipart sink", "cloud/object-store optimized", "writer layouts not emitted yet"]
+    {
+        assert!(!readme_lower.contains(phrase), "README must keep operational boundary details out of marketing copy via {phrase:?}");
     }
 }
 
@@ -494,13 +445,7 @@ fn traceability_materials_live_under_requested_folder_and_cover_claim_gates() {
         assert!(signing.contains(required), "missing signing traceability marker {required}");
     }
 
-    for required in [
-        "Required local gate",
-        "Bounded fuzz extension",
-        "Dependency audit",
-        "Traceability audit",
-        "Current record",
-    ] {
+    for required in ["Required local gate", "Bounded fuzz extension", "Dependency audit", "Traceability audit", "Current record"] {
         assert!(runbook.contains(required), "missing runbook traceability marker {required}");
     }
 }

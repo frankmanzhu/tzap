@@ -31,14 +31,7 @@ fn cli_reports_wrong_key_with_stable_category_and_exit_code() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -62,16 +55,7 @@ fn cli_reports_corrupt_header_magic() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bit-rot-buffer-pct",
-            "0",
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "--bit-rot-buffer-pct", "0", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -99,14 +83,7 @@ fn cli_reports_corrupt_archive_after_header_authentication_succeeds() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -134,14 +111,7 @@ fn cli_reports_wrong_key_for_password_mode_on_raw_key_archive() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -204,16 +174,7 @@ fn cli_reports_unsupported_revision_with_stable_category_and_exit_code() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bit-rot-buffer-pct",
-            "0",
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "--bit-rot-buffer-pct", "0", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -271,16 +232,7 @@ fn cli_reports_invalid_size_suffix_with_bad_value_in_message() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--volume-size",
-            "10Q",
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "--volume-size", "10Q", "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("invalid-arguments"))
@@ -300,16 +252,7 @@ fn cli_reports_invalid_layout_size_flags_with_usage_exit_code() {
     for flag in ["--block-size", "--envelope-size", "--chunk-size"] {
         Command::cargo_bin("tzap")
             .unwrap()
-            .args([
-                "create",
-                "--keyfile",
-                keyfile.to_str().unwrap(),
-                flag,
-                "10Q",
-                "-o",
-                output.to_str().unwrap(),
-                input.to_str().unwrap(),
-            ])
+            .args(["create", "--keyfile", keyfile.to_str().unwrap(), flag, "10Q", "-o", output.to_str().unwrap(), input.to_str().unwrap()])
             .assert()
             .code(2)
             .stderr(predicate::str::contains("invalid-arguments"))
@@ -370,16 +313,7 @@ fn cli_verify_json_failure_reports_unsupported_revision_shape() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bit-rot-buffer-pct",
-            "0",
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "--bit-rot-buffer-pct", "0", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -403,12 +337,6 @@ fn cli_verify_json_failure_reports_unsupported_revision_shape() {
     let error = value.get("error").unwrap();
     assert_eq!(error.get("label").unwrap().as_str().unwrap(), "unsupported-revision");
     assert_eq!(error.get("observed").unwrap().get("volume_format_rev").unwrap().as_u64().unwrap(), 35);
-    assert_eq!(
-        error.get("supported").unwrap().get("max_volume_format_rev").unwrap().as_u64().unwrap(),
-        u64::from(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
-    );
-    assert!(
-        !error.get("action").unwrap().as_str().unwrap().is_empty(),
-        "unsupported-revision JSON must carry an action"
-    );
+    assert_eq!(error.get("supported").unwrap().get("max_volume_format_rev").unwrap().as_u64().unwrap(), u64::from(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV));
+    assert!(!error.get("action").unwrap().as_str().unwrap().is_empty(), "unsupported-revision JSON must carry an action");
 }

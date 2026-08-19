@@ -15,10 +15,7 @@ fn read_workspace_file(path: &str) -> String {
 
 fn manifest_string_value(manifest: &str, key: &str) -> String {
     let prefix = format!("{key} = ");
-    let line = manifest
-        .lines()
-        .find(|line| line.trim_start().starts_with(&prefix))
-        .unwrap_or_else(|| panic!("missing manifest key `{key}`"));
+    let line = manifest.lines().find(|line| line.trim_start().starts_with(&prefix)).unwrap_or_else(|| panic!("missing manifest key `{key}`"));
     line.trim_start().strip_prefix(&prefix).unwrap().trim().trim_matches('"').to_string()
 }
 
@@ -27,12 +24,7 @@ fn manifest_array_values(manifest: &str, key: &str) -> Vec<String> {
     let start = manifest.find(&prefix).unwrap_or_else(|| panic!("missing manifest array `{key}`")) + prefix.len();
     let end = manifest[start..].find(']').unwrap_or_else(|| panic!("unterminated manifest array `{key}`")) + start;
 
-    manifest[start..end]
-        .split(',')
-        .map(|item| item.trim().trim_matches('"'))
-        .filter(|item| !item.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
+    manifest[start..end].split(',').map(|item| item.trim().trim_matches('"')).filter(|item| !item.is_empty()).map(ToOwned::to_owned).collect()
 }
 
 fn workspace_version() -> String {
@@ -53,14 +45,8 @@ fn assert_package_metadata(manifest_path: &str, crate_name: &str, expected_versi
     assert_eq!(manifest_string_value(&manifest, "readme"), "README.md");
 
     let description = manifest_string_value(&manifest, "description");
-    assert!(
-        description.contains(expected_description_fragment),
-        "description `{description}` should mention `{expected_description_fragment}`"
-    );
-    assert!(
-        !manifest.contains("description.workspace = true"),
-        "{crate_name} must use a package-specific description"
-    );
+    assert!(description.contains(expected_description_fragment), "description `{description}` should mention `{expected_description_fragment}`");
+    assert!(!manifest.contains("description.workspace = true"), "{crate_name} must use a package-specific description");
 
     let readme = workspace_file(manifest_path).parent().unwrap().join("README.md");
     assert!(readme.is_file(), "{crate_name} readme should exist");
@@ -71,20 +57,8 @@ fn manifests_have_crates_io_metadata() {
     let ver = workspace_version();
     assert_package_metadata("crates/tzap-core/Cargo.toml", "tzap-core", &ver, "https://docs.rs/tzap-core", "Core library");
     assert_package_metadata("crates/tzap-cli/Cargo.toml", "tzap", &ver, "https://docs.rs/tzap", "Fast encrypted archive CLI");
-    assert_package_metadata(
-        "crates/tzap-plugin-signing/Cargo.toml",
-        "tzap-plugin-signing",
-        &ver,
-        "https://docs.rs/tzap-plugin-signing",
-        "Signing profiles",
-    );
-    assert_package_metadata(
-        "crates/tzap-plugin-keywrap/Cargo.toml",
-        "tzap-plugin-keywrap",
-        &ver,
-        "https://docs.rs/tzap-plugin-keywrap",
-        "HPKE key-wrap",
-    );
+    assert_package_metadata("crates/tzap-plugin-signing/Cargo.toml", "tzap-plugin-signing", &ver, "https://docs.rs/tzap-plugin-signing", "Signing profiles");
+    assert_package_metadata("crates/tzap-plugin-keywrap/Cargo.toml", "tzap-plugin-keywrap", &ver, "https://docs.rs/tzap-plugin-keywrap", "HPKE key-wrap");
 }
 
 #[test]
@@ -100,18 +74,12 @@ fn publish_dependencies_are_versioned() {
     assert!(
         manifest.contains("tzap-plugin-signing.workspace = true")
             || manifest.contains(r#"tzap-plugin-signing = { path = "../tzap-plugin-signing", version.workspace = true }"#)
-            || manifest.contains(&format!(
-                r#"tzap-plugin-signing = {{ path = "../tzap-plugin-signing", version = "{}" }}"#,
-                workspace_version()
-            ))
+            || manifest.contains(&format!(r#"tzap-plugin-signing = {{ path = "../tzap-plugin-signing", version = "{}" }}"#, workspace_version()))
     );
     assert!(
         manifest.contains("tzap-plugin-keywrap.workspace = true")
             || manifest.contains(r#"tzap-plugin-keywrap = { path = "../tzap-plugin-keywrap", version.workspace = true }"#)
-            || manifest.contains(&format!(
-                r#"tzap-plugin-keywrap = {{ path = "../tzap-plugin-keywrap", version = "{}" }}"#,
-                workspace_version()
-            ))
+            || manifest.contains(&format!(r#"tzap-plugin-keywrap = {{ path = "../tzap-plugin-keywrap", version = "{}" }}"#, workspace_version()))
     );
     assert!(
         plugin_manifest.contains("tzap-core.workspace = true")
@@ -141,14 +109,8 @@ fn keywords_and_categories_fit_crates_io_limits() {
         let keywords = manifest_array_values(&manifest, "keywords");
         let categories = manifest_array_values(&manifest, "categories");
 
-        assert!(
-            !keywords.is_empty() && keywords.len() <= 5,
-            "{manifest_path} should define one to five keywords"
-        );
-        assert!(
-            !categories.is_empty() && categories.len() <= 5,
-            "{manifest_path} should define one to five categories"
-        );
+        assert!(!keywords.is_empty() && keywords.len() <= 5, "{manifest_path} should define one to five keywords");
+        assert!(!categories.is_empty() && categories.len() <= 5, "{manifest_path} should define one to five categories");
 
         for keyword in keywords {
             assert!(
@@ -187,21 +149,13 @@ fn package_readmes_render_without_workspace_paths() {
 
     for readme in [cli_readme, core_readme, signing_readme, keywrap_readme] {
         assert!(!readme.contains("../"), "package README should use publish-safe links");
-        assert!(
-            readme.contains("https://github.com/tzap-org/tzap"),
-            "package README should link to the repository"
-        );
+        assert!(readme.contains("https://github.com/tzap-org/tzap"), "package README should link to the repository");
     }
 }
 
 #[test]
 fn package_trees_are_small_and_focused() {
-    for package_dir in [
-        "crates/tzap-core",
-        "crates/tzap-cli",
-        "crates/tzap-plugin-signing",
-        "crates/tzap-plugin-keywrap",
-    ] {
+    for package_dir in ["crates/tzap-core", "crates/tzap-cli", "crates/tzap-plugin-signing", "crates/tzap-plugin-keywrap"] {
         let package_dir = workspace_file(package_dir);
         let mut pending = vec![package_dir.clone()];
         while let Some(path) = pending.pop() {
@@ -211,11 +165,7 @@ fn package_trees_are_small_and_focused() {
                 let relative = path.strip_prefix(&package_dir).unwrap();
                 let root_name = relative.components().next().unwrap().as_os_str().to_string_lossy();
 
-                assert!(
-                    ["Cargo.toml", "README.md", "src", "tests"].contains(&root_name.as_ref()),
-                    "unexpected package file: {}",
-                    relative.display()
-                );
+                assert!(["Cargo.toml", "README.md", "src", "tests"].contains(&root_name.as_ref()), "unexpected package file: {}", relative.display());
 
                 if path.is_dir() {
                     pending.push(path);

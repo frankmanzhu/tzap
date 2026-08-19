@@ -38,10 +38,7 @@ pub fn parse_volume_file_name(file_name: &str) -> Option<VolumeFileName> {
     if base.is_empty() || digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    Some(VolumeFileName {
-        base: base.to_owned(),
-        volume_index: digits.parse().ok()?,
-    })
+    Some(VolumeFileName { base: base.to_owned(), volume_index: digits.parse().ok()? })
 }
 
 /// Returns the volume base name for a file name: the `.tzap` suffix is

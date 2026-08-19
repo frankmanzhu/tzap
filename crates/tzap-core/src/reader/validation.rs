@@ -36,9 +36,7 @@ pub(crate) fn parse_block_region(
     if end < start {
         return Err(FormatError::InvalidArchive("ManifestFooter starts before BlockRecord region"));
     }
-    let record_len = block_size
-        .checked_add(BLOCK_RECORD_FRAMING_LEN)
-        .ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let record_len = block_size.checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
     let region_len = end - start;
     if region_len % record_len != 0 {
         return Err(FormatError::InvalidArchive("BlockRecord region length is not aligned"));
@@ -117,9 +115,7 @@ pub(crate) fn parse_public_block_observation(
     if scan_limit < start {
         return Err(FormatError::InvalidArchive("public BlockRecord observation limit before start"));
     }
-    let record_len = block_size
-        .checked_add(BLOCK_RECORD_FRAMING_LEN)
-        .ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let record_len = block_size.checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
     let region_len = scan_limit - start;
     if region_len % record_len != 0 {
         return Err(FormatError::InvalidArchive("public BlockRecord observation window is not aligned"));
@@ -154,11 +150,7 @@ pub(crate) fn parse_public_block_observation(
         observed_slot = observed_slot.checked_add(1).ok_or(FormatError::InvalidArchive("BlockRecord count overflow"))?;
     }
 
-    let mut scan = if offset < scan_limit {
-        checked_add(offset, record_len, "BlockRecord")?
-    } else {
-        scan_limit
-    };
+    let mut scan = if offset < scan_limit { checked_add(offset, record_len, "BlockRecord")? } else { scan_limit };
     while scan < scan_limit {
         let magic_end = checked_add(scan, 4, "BlockRecord")?;
         let record_end = checked_add(scan, record_len, "BlockRecord")?;
@@ -184,9 +176,7 @@ pub(crate) fn block_record_error_is_recoverable_erasure(error: &FormatError) -> 
 }
 
 pub(crate) fn block_record_len(block_size: usize) -> Result<u64, FormatError> {
-    let len = block_size
-        .checked_add(BLOCK_RECORD_FRAMING_LEN)
-        .ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let len = block_size.checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
     u64::try_from(len).map_err(|_| FormatError::InvalidArchive("BlockRecord length overflow"))
 }
 
@@ -200,9 +190,7 @@ pub(crate) fn parse_stream_block_prefix(
     block_size: usize,
     volume_header: &VolumeHeader,
 ) -> Result<(BTreeMap<u64, BlockRecord>, usize, u64), FormatError> {
-    let record_len = block_size
-        .checked_add(BLOCK_RECORD_FRAMING_LEN)
-        .ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let record_len = block_size.checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
     let mut blocks = BTreeMap::new();
     let mut offset = start;
     let mut observed_block_count = 0u64;
@@ -223,9 +211,7 @@ pub(crate) fn parse_stream_block_prefix(
             Err(err) => return Err(err),
         }
         offset = checked_add(offset, record_len, "BlockRecord")?;
-        observed_block_count = observed_block_count
-            .checked_add(1)
-            .ok_or(FormatError::InvalidArchive("BlockRecord count overflow"))?;
+        observed_block_count = observed_block_count.checked_add(1).ok_or(FormatError::InvalidArchive("BlockRecord count overflow"))?;
     }
 
     Ok((blocks, offset, observed_block_count))
@@ -274,9 +260,7 @@ pub(crate) fn parse_terminal_material(
     }
     let terminal = candidate.terminal;
     if terminal.image.manifest_footer_offset != manifest_offset as u64 {
-        return Err(FormatError::InvalidArchive(
-            "VolumeTrailer ManifestFooter offset does not match observed stream offset",
-        ));
+        return Err(FormatError::InvalidArchive("VolumeTrailer ManifestFooter offset does not match observed stream offset"));
     }
     if terminal.volume_trailer.block_count != observed_block_count {
         return Err(FormatError::InvalidArchive("VolumeTrailer block_count does not match observed stream"));
@@ -306,32 +290,20 @@ pub(crate) fn parse_terminal_material_read_at(
     }
     let terminal = candidate.terminal;
     if terminal.image.manifest_footer_offset != manifest_offset {
-        return Err(FormatError::InvalidArchive(
-            "VolumeTrailer ManifestFooter offset does not match observed stream offset",
-        ));
+        return Err(FormatError::InvalidArchive("VolumeTrailer ManifestFooter offset does not match observed stream offset"));
     }
     if terminal.volume_trailer.block_count != observed_block_count {
         return Err(FormatError::InvalidArchive("VolumeTrailer block_count does not match observed stream"));
     }
     let manifest_footer = ManifestFooter::parse(&terminal.manifest_footer_bytes)?;
-    Ok(SequentialTerminalMaterial {
-        manifest_footer,
-        volume_trailer: terminal.volume_trailer,
-        root_auth_footer: terminal.root_auth_footer,
-    })
+    Ok(SequentialTerminalMaterial { manifest_footer, volume_trailer: terminal.volume_trailer, root_auth_footer: terminal.root_auth_footer })
 }
 
 pub(crate) fn terminal_candidate_reaches_eof(candidate: &TerminalCandidate, input_len: usize) -> Result<bool, FormatError> {
     let expected_end = match candidate.locator_sequence {
         Some(0) => candidate.anchor,
-        Some(1) => candidate
-            .anchor
-            .checked_add(CRITICAL_RECOVERY_LOCATOR_LEN)
-            .ok_or(FormatError::InvalidArchive("terminal EOF boundary overflow"))?,
-        None => candidate
-            .anchor
-            .checked_add(LOCATOR_PAIR_LEN)
-            .ok_or(FormatError::InvalidArchive("terminal EOF boundary overflow"))?,
+        Some(1) => candidate.anchor.checked_add(CRITICAL_RECOVERY_LOCATOR_LEN).ok_or(FormatError::InvalidArchive("terminal EOF boundary overflow"))?,
+        None => candidate.anchor.checked_add(LOCATOR_PAIR_LEN).ok_or(FormatError::InvalidArchive("terminal EOF boundary overflow"))?,
         Some(_) => return Err(FormatError::InvalidArchive("invalid terminal locator sequence")),
     };
     Ok(expected_end == input_len)
@@ -377,11 +349,7 @@ pub(crate) fn sequential_payload_parity_is_guaranteed(crypto_header: &CryptoHead
 pub(crate) fn sequential_extract_tar_stream_with_options(bytes: &[u8], master_key: &MasterKey, options: ReaderOptions) -> Result<Vec<u8>, FormatError> {
     validate_reader_options(options)?;
     if bytes.len() < VOLUME_HEADER_LEN {
-        return Err(FormatError::InvalidLength {
-            structure: "archive",
-            expected: VOLUME_HEADER_LEN,
-            actual: bytes.len(),
-        });
+        return Err(FormatError::InvalidLength { structure: "archive", expected: VOLUME_HEADER_LEN, actual: bytes.len() });
     }
 
     let volume_header = VolumeHeader::parse(slice(bytes, 0, VOLUME_HEADER_LEN, "archive")?)?;
@@ -389,12 +357,7 @@ pub(crate) fn sequential_extract_tar_stream_with_options(bytes: &[u8], master_ke
     let crypto_len = volume_header.crypto_header_length as usize;
     let crypto_bytes = slice(bytes, crypto_start, crypto_len, "CryptoHeader")?;
     let parsed_crypto = CryptoHeader::parse(crypto_bytes, volume_header.crypto_header_length)?;
-    let subkeys = subkeys_for_open(
-        Some(master_key),
-        parsed_crypto.fixed.aead_algo,
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )?;
+    let subkeys = subkeys_for_open(Some(master_key), parsed_crypto.fixed.aead_algo, &volume_header.archive_uuid, &volume_header.session_id)?;
     verify_integrity_tag(
         HmacDomain::CryptoHeader,
         parsed_crypto.fixed.aead_algo,
@@ -414,9 +377,7 @@ pub(crate) fn sequential_extract_tar_stream_with_options(bytes: &[u8], master_ke
     })?;
 
     let block_size = parsed_crypto.fixed.block_size as usize;
-    let record_len = block_size
-        .checked_add(BLOCK_RECORD_FRAMING_LEN)
-        .ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let record_len = block_size.checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
     let mut offset = to_usize(block_records_start, "BlockRecord")?;
     let mut observed_block_count = 0u64;
     let mut metadata_seen = false;
@@ -430,9 +391,7 @@ pub(crate) fn sequential_extract_tar_stream_with_options(bytes: &[u8], master_ke
 
     while bytes.get(offset..offset + 4) == Some(b"TZBK") {
         let record = parse_sequential_block_or_erasure(bytes, offset, record_len, block_size, &volume_header, observed_block_count)?;
-        observed_block_count = observed_block_count
-            .checked_add(1)
-            .ok_or(FormatError::InvalidArchive("BlockRecord count overflow"))?;
+        observed_block_count = observed_block_count.checked_add(1).ok_or(FormatError::InvalidArchive("BlockRecord count overflow"))?;
         let Some(record) = record else {
             handle_sequential_payload_erasure(&mut pending, &parsed_crypto.fixed, metadata_seen)?;
             offset = checked_add(offset, record_len, "BlockRecord")?;
@@ -445,9 +404,7 @@ pub(crate) fn sequential_extract_tar_stream_with_options(bytes: &[u8], master_ke
                     return Err(FormatError::InvalidArchive("payload BlockRecord appears after metadata"));
                 }
                 if pending.awaiting_tentative_parity {
-                    return Err(FormatError::InvalidArchive(
-                        "sequential payload envelope boundary is ambiguous after CRC erasure",
-                    ));
+                    return Err(FormatError::InvalidArchive("sequential payload envelope boundary is ambiguous after CRC erasure"));
                 }
                 if pending.saw_last_data {
                     finalize_sequential_envelope(
@@ -528,12 +485,7 @@ pub(crate) fn sequential_extract_tar_stream_with_options(bytes: &[u8], master_ke
         bytes,
         offset,
         observed_block_count,
-        KeyHoldingTerminalContext {
-            subkeys: &subkeys,
-            volume_header: &volume_header,
-            crypto_header: &parsed_crypto.fixed,
-            crypto_header_bytes: crypto_bytes,
-        },
+        KeyHoldingTerminalContext { subkeys: &subkeys, volume_header: &volume_header, crypto_header: &parsed_crypto.fixed, crypto_header_bytes: crypto_bytes },
         options,
     )?;
     // This public helper is intentionally whole-buffer: decoded payload bytes
@@ -555,9 +507,7 @@ pub(crate) fn validate_sequential_supported_volume(
         return Err(FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ"));
     }
     if crypto_header.has_dictionary != 0 {
-        return Err(FormatError::ReaderUnsupported(
-            "dictionary bootstrap required for non-seekable sequential extraction",
-        ));
+        return Err(FormatError::ReaderUnsupported("dictionary bootstrap required for non-seekable sequential extraction"));
     }
     Ok(())
 }
@@ -584,9 +534,7 @@ pub(crate) fn finalize_sequential_envelope(pending: &mut PendingSequentialEnvelo
     }
     let required_parity = required_object_parity(pending.data_shards.len() as u64, context.crypto_header)?;
     if pending.parity_shards.len() < required_parity as usize {
-        return Err(FormatError::InvalidArchive(
-            "sequential payload envelope has insufficient parity for recovery settings",
-        ));
+        return Err(FormatError::InvalidArchive("sequential payload envelope has insufficient parity for recovery settings"));
     }
 
     let block_size = context.crypto_header.block_size as usize;
@@ -603,16 +551,8 @@ pub(crate) fn finalize_sequential_envelope(pending: &mut PendingSequentialEnvelo
         },
         &encrypted,
     )?;
-    decode_concatenated_zstd_frames_with_cap(
-        &plaintext,
-        None,
-        context.tar_stream,
-        context.max_tar_stream_size,
-        Some(context.tar_stream_total_validator),
-    )?;
-    *context.next_envelope_index = (*context.next_envelope_index)
-        .checked_add(1)
-        .ok_or(FormatError::InvalidArchive("envelope counter overflow"))?;
+    decode_concatenated_zstd_frames_with_cap(&plaintext, None, context.tar_stream, context.max_tar_stream_size, Some(context.tar_stream_total_validator))?;
+    *context.next_envelope_index = (*context.next_envelope_index).checked_add(1).ok_or(FormatError::InvalidArchive("envelope counter overflow"))?;
     *pending = PendingSequentialEnvelope::default();
     Ok(())
 }
@@ -656,10 +596,7 @@ pub(crate) fn read_zstd_frame_to_capped_output<R: Read>(
         if read == 0 {
             return Ok(());
         }
-        let next_len = output
-            .len()
-            .checked_add(read)
-            .ok_or(FormatError::ReaderUnsupported("sequential tar stream exceeds configured verification cap"))?;
+        let next_len = output.len().checked_add(read).ok_or(FormatError::ReaderUnsupported("sequential tar stream exceeds configured verification cap"))?;
         if next_len > max_output_len {
             return Err(FormatError::ReaderUnsupported("sequential tar stream exceeds configured verification cap"));
         }
@@ -975,19 +912,11 @@ pub(crate) fn validate_object_extent(
     if extent.parity_block_count != required_parity {
         return Err(FormatError::InvalidArchive("encrypted object parity does not match v45 compute_parity"));
     }
-    let total = checked_u64_add(
-        extent.data_block_count as u64,
-        extent.parity_block_count as u64,
-        "encrypted object shard count overflow",
-    )?;
+    let total = checked_u64_add(extent.data_block_count as u64, extent.parity_block_count as u64, "encrypted object shard count overflow")?;
     if total > 65_535 {
         return Err(FormatError::FecTooManyShards(total as usize));
     }
-    let expected = checked_u64_mul(
-        extent.data_block_count as u64,
-        crypto_header.block_size as u64,
-        "encrypted object size overflow",
-    )?;
+    let expected = checked_u64_mul(extent.data_block_count as u64, crypto_header.block_size as u64, "encrypted object size overflow")?;
     if expected != extent.encrypted_size as u64 {
         return Err(FormatError::InvalidArchive("encrypted object size is not data_block_count * block_size"));
     }
@@ -998,26 +927,17 @@ pub(crate) fn validate_object_extent(
 }
 
 pub(crate) fn required_object_parity(data_block_count: u64, crypto_header: &CryptoHeaderFixed) -> Result<u32, FormatError> {
-    let min_parity = if crypto_header.volume_loss_tolerance > 0 || crypto_header.bit_rot_buffer_pct > 0 {
-        1
-    } else {
-        0
-    };
+    let min_parity = if crypto_header.volume_loss_tolerance > 0 || crypto_header.bit_rot_buffer_pct > 0 { 1 } else { 0 };
     let mut parity = 0u64;
     for _ in 0..100 {
-        let total = data_block_count
-            .checked_add(parity)
-            .ok_or(FormatError::InvalidArchive("parity total overflow"))?;
+        let total = data_block_count.checked_add(parity).ok_or(FormatError::InvalidArchive("parity total overflow"))?;
         let by_volume = checked_u64_mul(
             crypto_header.volume_loss_tolerance as u64,
             ceil_div_u64(total, crypto_header.stripe_width as u64)?,
             "volume-loss parity overflow",
         )?;
         let by_bitrot = ceil_div_u64(checked_u64_mul(total, crypto_header.bit_rot_buffer_pct as u64, "bit-rot parity overflow")?, 100)?;
-        let next = by_volume
-            .checked_add(by_bitrot)
-            .ok_or(FormatError::InvalidArchive("parity overflow"))?
-            .max(min_parity);
+        let next = by_volume.checked_add(by_bitrot).ok_or(FormatError::InvalidArchive("parity overflow"))?.max(min_parity);
         if next == parity {
             return u32::try_from(next).map_err(|_| FormatError::InvalidArchive("parity count overflow"));
         }
@@ -1030,10 +950,7 @@ pub(crate) fn ceil_div_u64(numerator: u64, denominator: u64) -> Result<u64, Form
     if denominator == 0 {
         return Err(FormatError::InvalidArchive("division by zero"));
     }
-    numerator
-        .checked_add(denominator - 1)
-        .ok_or(FormatError::InvalidArchive("ceiling division overflow"))
-        .map(|value| value / denominator)
+    numerator.checked_add(denominator - 1).ok_or(FormatError::InvalidArchive("ceiling division overflow")).map(|value| value / denominator)
 }
 
 pub(crate) fn frame_range_for_file<'b>(shard: &'b IndexShard, file: &FileEntry) -> Result<&'b [FrameEntry], FormatError> {
@@ -1043,15 +960,9 @@ pub(crate) fn frame_range_for_file<'b>(shard: &'b IndexShard, file: &FileEntry) 
         .map_err(|_| FormatError::InvalidArchive("FileEntry references missing FrameEntry"))?;
     let count = usize::try_from(file.frame_count).map_err(|_| FormatError::InvalidArchive("FileEntry frame count overflow"))?;
     let end = start.checked_add(count).ok_or(FormatError::InvalidArchive("FileEntry frame range overflow"))?;
-    let frames = shard
-        .frames
-        .get(start..end)
-        .ok_or(FormatError::InvalidArchive("FileEntry references missing FrameEntry"))?;
+    let frames = shard.frames.get(start..end).ok_or(FormatError::InvalidArchive("FileEntry references missing FrameEntry"))?;
     for (offset, frame) in frames.iter().enumerate() {
-        let expected = file
-            .first_frame_index
-            .checked_add(offset as u64)
-            .ok_or(FormatError::InvalidArchive("FileEntry frame range overflow"))?;
+        let expected = file.first_frame_index.checked_add(offset as u64).ok_or(FormatError::InvalidArchive("FileEntry frame range overflow"))?;
         if frame.frame_index != expected {
             return Err(FormatError::InvalidArchive("FileEntry references missing FrameEntry"));
         }
@@ -1079,10 +990,7 @@ pub(crate) fn verify_dense_keys<T>(entries: &BTreeMap<u64, T>, expected_count: u
     }
     for expected in 0..expected_count {
         if !entries.contains_key(&expected) {
-            return Err(FormatError::InvalidMetadata {
-                structure,
-                reason: "global index coverage has a gap",
-            });
+            return Err(FormatError::InvalidMetadata { structure, reason: "global index coverage has a gap" });
         }
     }
     Ok(())
@@ -1092,9 +1000,7 @@ pub(crate) fn validate_envelope_frame_coverage(frames: &BTreeMap<u64, FrameEntry
     let mut accounted_frames = BTreeSet::new();
     for envelope in envelopes.values() {
         let first = envelope.first_frame_index;
-        let end = first
-            .checked_add(envelope.frame_count as u64)
-            .ok_or(FormatError::InvalidArchive("EnvelopeEntry frame range overflow"))?;
+        let end = first.checked_add(envelope.frame_count as u64).ok_or(FormatError::InvalidArchive("EnvelopeEntry frame range overflow"))?;
         // Bound the allocation by the actual frame table before with_capacity: a crafted
         // frame_count far larger than the table would otherwise force a multi-GiB
         // allocation that the coverage loop below would only then reject.
@@ -1103,9 +1009,7 @@ pub(crate) fn validate_envelope_frame_coverage(frames: &BTreeMap<u64, FrameEntry
         }
         let mut ranges = Vec::with_capacity(envelope.frame_count as usize);
         for frame_index in first..end {
-            let frame = frames
-                .get(&frame_index)
-                .ok_or(FormatError::InvalidArchive("EnvelopeEntry references missing FrameEntry"))?;
+            let frame = frames.get(&frame_index).ok_or(FormatError::InvalidArchive("EnvelopeEntry references missing FrameEntry"))?;
             if frame.envelope_index != envelope.envelope_index {
                 return Err(FormatError::InvalidArchive("FrameEntry envelope_index does not match containing EnvelopeEntry"));
             }
@@ -1119,11 +1023,7 @@ pub(crate) fn validate_envelope_frame_coverage(frames: &BTreeMap<u64, FrameEntry
             }
             ranges.push((start, end));
         }
-        validate_exact_coverage_ranges(
-            &mut ranges,
-            envelope.plaintext_size as usize,
-            "EnvelopeEntry frame coverage has a gap or overlap",
-        )?;
+        validate_exact_coverage_ranges(&mut ranges, envelope.plaintext_size as usize, "EnvelopeEntry frame coverage has a gap or overlap")?;
     }
 
     for frame_index in frames.keys() {
@@ -1139,9 +1039,7 @@ pub(crate) fn validate_global_file_table_order(shards: &[IndexShard]) -> Result<
     for shard in shards {
         for (idx, file) in shard.files.iter().enumerate() {
             let path = shard.file_path(idx).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?.to_vec();
-            let start = shard
-                .tar_member_group_start(idx)
-                .ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing"))?;
+            let start = shard.tar_member_group_start(idx).ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing"))?;
             let key = (file.path_hash, path, start);
             validate_global_file_table_key_step(previous.as_ref(), &key)?;
             previous = Some(key);
@@ -1189,9 +1087,7 @@ pub(crate) fn validate_directory_hint_tables_against_expected(tables: &[Director
 
     for table in tables {
         for entry_index in 0..table.entries.len() {
-            let path = table
-                .entry_path(entry_index)
-                .ok_or(FormatError::InvalidArchive("DirectoryHintEntry path is missing"))?;
+            let path = table.entry_path(entry_index).ok_or(FormatError::InvalidArchive("DirectoryHintEntry path is missing"))?;
             let key = (hash_prefix(path), path.to_vec());
             if let Some(previous) = &previous_key {
                 if previous >= &key {
@@ -1200,9 +1096,7 @@ pub(crate) fn validate_directory_hint_tables_against_expected(tables: &[Director
             }
             previous_key = Some(key);
 
-            let rows = table
-                .shard_rows_for_entry(entry_index)
-                .ok_or(FormatError::InvalidArchive("DirectoryHintEntry shard rows are missing"))?;
+            let rows = table.shard_rows_for_entry(entry_index).ok_or(FormatError::InvalidArchive("DirectoryHintEntry shard rows are missing"))?;
             actual.push((path.to_vec(), rows.to_vec()));
         }
     }
@@ -1214,10 +1108,7 @@ pub(crate) fn validate_directory_hint_tables_against_expected(tables: &[Director
 }
 
 pub(crate) fn sorted_directory_hint_rows(map: &DirectoryHintMap) -> Vec<(Vec<u8>, Vec<u32>)> {
-    let mut rows = map
-        .iter()
-        .map(|(path, shard_rows)| (path.clone(), shard_rows.iter().copied().collect::<Vec<u32>>()))
-        .collect::<Vec<_>>();
+    let mut rows = map.iter().map(|(path, shard_rows)| (path.clone(), shard_rows.iter().copied().collect::<Vec<u32>>())).collect::<Vec<_>>();
     rows.sort_by(|(left_path, _), (right_path, _)| hash_prefix(left_path).cmp(&hash_prefix(right_path)).then_with(|| left_path.cmp(right_path)));
     rows
 }
@@ -1277,9 +1168,7 @@ pub(crate) fn validate_non_overlapping_object_ranges(ranges: &mut [(u64, u64)]) 
 }
 
 pub(crate) fn observed_archive_size(sizes: impl IntoIterator<Item = u64>) -> Result<u64, FormatError> {
-    sizes.into_iter().try_fold(0u64, |sum, size| {
-        sum.checked_add(size).ok_or(FormatError::InvalidArchive("observed archive size overflow"))
-    })
+    sizes.into_iter().try_fold(0u64, |sum, size| sum.checked_add(size).ok_or(FormatError::InvalidArchive("observed archive size overflow")))
 }
 
 pub(crate) fn total_extraction_size_cap(options: ReaderOptions, observed_archive_bytes: u64) -> u64 {
@@ -1287,9 +1176,7 @@ pub(crate) fn total_extraction_size_cap(options: ReaderOptions, observed_archive
 }
 
 pub(crate) fn utf8_path(bytes: &[u8]) -> Result<String, FormatError> {
-    std::str::from_utf8(bytes)
-        .map(|path| path.to_owned())
-        .map_err(|_| FormatError::UnsafeArchivePath)
+    std::str::from_utf8(bytes).map(|path| path.to_owned()).map_err(|_| FormatError::UnsafeArchivePath)
 }
 
 pub(crate) fn manifest_footer_global_pre_hmac_bytes(manifest_footer: &ManifestFooter) -> [u8; 104] {
@@ -1308,24 +1195,14 @@ pub(crate) fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
 
 pub(crate) fn slice<'b>(bytes: &'b [u8], offset: usize, len: usize, structure: &'static str) -> Result<&'b [u8], FormatError> {
     let end = checked_add(offset, len, structure)?;
-    bytes.get(offset..end).ok_or(FormatError::InvalidLength {
-        structure,
-        expected: end,
-        actual: bytes.len(),
-    })
+    bytes.get(offset..end).ok_or(FormatError::InvalidLength { structure, expected: end, actual: bytes.len() })
 }
 
 pub(crate) fn read_at_vec(reader: &dyn ArchiveReadAt, offset: u64, len: usize, structure: &'static str) -> Result<Vec<u8>, FormatError> {
-    let expected_end = offset
-        .checked_add(len as u64)
-        .ok_or(FormatError::InvalidArchive("archive read range overflow"))?;
+    let expected_end = offset.checked_add(len as u64).ok_or(FormatError::InvalidArchive("archive read range overflow"))?;
     let observed_len = reader.len()?;
     if expected_end > observed_len {
-        return Err(FormatError::InvalidLength {
-            structure,
-            expected: to_usize(expected_end, structure)?,
-            actual: to_usize(observed_len, structure)?,
-        });
+        return Err(FormatError::InvalidLength { structure, expected: to_usize(expected_end, structure)?, actual: to_usize(observed_len, structure)? });
     }
     let mut out = vec![0u8; len];
     reader.read_exact_at(offset, &mut out)?;
@@ -1351,10 +1228,7 @@ where
     let chunk_size = items.len().div_ceil(worker_count);
     let mut out = Vec::with_capacity(items.len());
     thread::scope(|scope| {
-        let handles = items
-            .chunks(chunk_size)
-            .map(|chunk| scope.spawn(|| chunk.iter().map(&f).collect::<Result<Vec<_>, _>>()))
-            .collect::<Vec<_>>();
+        let handles = items.chunks(chunk_size).map(|chunk| scope.spawn(|| chunk.iter().map(&f).collect::<Result<Vec<_>, _>>())).collect::<Vec<_>>();
         for handle in handles {
             let mut chunk = handle.join().map_err(|_| FormatError::InvalidArchive("reader worker panicked"))??;
             out.append(&mut chunk);

@@ -19,19 +19,9 @@ fn cli_subcommand_help_paths_are_available() {
 
 #[test]
 fn cli_aliases_for_command_shorthands_are_not_enabled() {
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .arg("c")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("error:"));
+    Command::cargo_bin("tzap").unwrap().arg("c").assert().failure().stderr(predicate::str::contains("error:"));
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .arg("x")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("error:"));
+    Command::cargo_bin("tzap").unwrap().arg("x").assert().failure().stderr(predicate::str::contains("error:"));
 }
 
 #[test]
@@ -59,14 +49,7 @@ fn cli_help_does_not_advertise_archive_stdin_or_create_stdout() {
     assert_no_archive_stream_claims(&String::from_utf8_lossy(&output));
 
     for command in ["create", "extract", "list", "verify"] {
-        let output = Command::cargo_bin("tzap")
-            .unwrap()
-            .args([command, "--help"])
-            .assert()
-            .success()
-            .get_output()
-            .stdout
-            .clone();
+        let output = Command::cargo_bin("tzap").unwrap().args([command, "--help"]).assert().success().get_output().stdout.clone();
         let help = String::from_utf8_lossy(&output);
         assert_no_archive_stream_claims(&help);
         match command {
@@ -88,38 +71,18 @@ fn cli_jobs_must_be_at_least_one() {
     let directory = temp.path().join("extract");
 
     for args in [
-        vec![
-            "create",
-            "--no-encryption",
-            "--jobs",
-            "0",
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ],
+        vec!["create", "--no-encryption", "--jobs", "0", "-o", output.to_str().unwrap(), input.to_str().unwrap()],
         vec!["extract", "--jobs", "0", "--directory", directory.to_str().unwrap(), archive.to_str().unwrap()],
         vec!["list", "--jobs", "0", archive.to_str().unwrap()],
         vec!["verify", "--jobs", "0", archive.to_str().unwrap()],
     ] {
-        Command::cargo_bin("tzap")
-            .unwrap()
-            .args(args)
-            .assert()
-            .code(2)
-            .stderr(predicate::str::contains("--jobs must be at least 1"));
+        Command::cargo_bin("tzap").unwrap().args(args).assert().code(2).stderr(predicate::str::contains("--jobs must be at least 1"));
     }
 }
 
 #[test]
 fn cli_list_help_includes_examples_and_flags() {
-    let output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["list", "--help"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let output = Command::cargo_bin("tzap").unwrap().args(["list", "--help"]).assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8_lossy(&output);
 
     assert!(stdout.contains("List archive members in plain format"));
@@ -138,28 +101,14 @@ fn cli_list_help_includes_examples_and_flags() {
 
 #[test]
 fn cli_trust_info_reports_embedded_official_root() {
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["trust-info"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("official-tzap-root-source: embedded").and(predicate::str::contains(
-            "official-tzap-root-sha256: sha256:d80d318f6cd6096dc791e314ec6f41434caa47feb75e85ad6f87d5bf72bbd53d",
-        )));
-
-    let output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["trust-info", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let value: Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(
-        value["official_tzap_root_certificate_sha256"],
-        "sha256:d80d318f6cd6096dc791e314ec6f41434caa47feb75e85ad6f87d5bf72bbd53d"
+    Command::cargo_bin("tzap").unwrap().args(["trust-info"]).assert().success().stdout(
+        predicate::str::contains("official-tzap-root-source: embedded")
+            .and(predicate::str::contains("official-tzap-root-sha256: sha256:d80d318f6cd6096dc791e314ec6f41434caa47feb75e85ad6f87d5bf72bbd53d")),
     );
+
+    let output = Command::cargo_bin("tzap").unwrap().args(["trust-info", "--json"]).assert().success().get_output().stdout.clone();
+    let value: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(value["official_tzap_root_certificate_sha256"], "sha256:d80d318f6cd6096dc791e314ec6f41434caa47feb75e85ad6f87d5bf72bbd53d");
     assert_eq!(value["official_tzap_root_source"], "embedded");
 }
 
@@ -178,15 +127,7 @@ fn cli_no_encryption_rejects_mixed_key_sources_and_public_no_key_rejects_keys() 
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "--keyfile", keyfile.to_str().unwrap(), "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("cannot be used with"));
@@ -215,18 +156,9 @@ fn cli_list_reads_unencrypted_archive_without_key_source() {
     let archive = temp.path().join("sample.tzap");
     fs::write(&input, b"plaintext v45\n").unwrap();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()]).assert().success();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["list", archive.to_str().unwrap()])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("sample.txt"));
+    Command::cargo_bin("tzap").unwrap().args(["list", archive.to_str().unwrap()]).assert().success().stdout(predicate::str::contains("sample.txt"));
 }
 
 #[test]
@@ -240,30 +172,13 @@ fn cli_no_key_does_not_open_encrypted_zero_key_archive() {
     fs::write(&input, b"encrypted zero key\n").unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["list", archive.to_str().unwrap()])
-        .assert()
-        .code(10)
-        .stderr(predicate::str::contains("wrong-key"));
+    Command::cargo_bin("tzap").unwrap().args(["list", archive.to_str().unwrap()]).assert().code(10).stderr(predicate::str::contains("wrong-key"));
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["verify", archive.to_str().unwrap()])
-        .assert()
-        .code(10)
-        .stderr(predicate::str::contains("wrong-key"));
+    Command::cargo_bin("tzap").unwrap().args(["verify", archive.to_str().unwrap()]).assert().code(10).stderr(predicate::str::contains("wrong-key"));
 }
 
 #[test]
@@ -275,15 +190,7 @@ fn cli_plaintext_header_digest_corruption_is_corrupt_archive_not_wrong_key() {
     fs::write(&input, b"plaintext v45\n").unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "--bit-rot-buffer-pct",
-            "0",
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "--bit-rot-buffer-pct", "0", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -385,14 +292,7 @@ fn cli_encrypted_zero_key_archive_stdin_without_key_is_rejected() {
     fs::write(&input, b"encrypted zero key\n").unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -459,14 +359,7 @@ fn cli_archive_stdin_uses_bootstrap_sidecar_for_dictionary_archive() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bootstrap",
-            bootstrap.to_str().unwrap(),
-            "-",
-        ])
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), "--bootstrap", bootstrap.to_str().unwrap(), "-"])
         .write_stdin(archive_bytes.clone())
         .assert()
         .success()
@@ -482,16 +375,7 @@ fn cli_archive_stdin_uses_bootstrap_sidecar_for_dictionary_archive() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bootstrap",
-            bootstrap.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            "-",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--bootstrap", bootstrap.to_str().unwrap(), "--directory", output.to_str().unwrap(), "-"])
         .write_stdin(archive_bytes)
         .assert()
         .success();
@@ -526,15 +410,7 @@ fn cli_commands_read_real_file_named_dash_with_explicit_relative_path() {
     Command::cargo_bin("tzap")
         .unwrap()
         .current_dir(temp.path())
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            "./-",
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), "./-", "hello.txt"])
         .assert()
         .success();
 
@@ -642,10 +518,7 @@ fn cli_verify_json_reports_multi_volume_bootstrap_boundary_before_archive_reads(
     let json: Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(json["ok"], false);
     assert_eq!(json["error"]["label"], "unsupported-feature");
-    assert!(json["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("multi-volume inputs with --bootstrap are not supported"));
+    assert!(json["error"]["message"].as_str().unwrap().contains("multi-volume inputs with --bootstrap are not supported"));
 }
 
 #[test]
@@ -662,37 +535,18 @@ fn cli_no_encryption_signed_archive_round_trips_and_publicly_verifies() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "signing-keygen",
-            "--secret-output",
-            signing_secret.to_str().unwrap(),
-            "--public-output",
-            signing_public.to_str().unwrap(),
-        ])
+        .args(["signing-keygen", "--secret-output", signing_secret.to_str().unwrap(), "--public-output", signing_public.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--no-encryption",
-            "--signing-key",
-            signing_secret.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--no-encryption", "--signing-key", signing_secret.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success()
         .stderr(predicate::str::contains("root auth: ed25519 signed"));
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["list", archive.to_str().unwrap()])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("public.txt"));
+    Command::cargo_bin("tzap").unwrap().args(["list", archive.to_str().unwrap()]).assert().success().stdout(predicate::str::contains("public.txt"));
 
     Command::cargo_bin("tzap")
         .unwrap()
@@ -703,22 +557,12 @@ fn cli_no_encryption_signed_archive_round_trips_and_publicly_verifies() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--public-no-key",
-            "--trusted-public-key",
-            signing_public.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["verify", "--public-no-key", "--trusted-public-key", signing_public.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("public_data_block_commitment_verified"));
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["extract", "-C", output.to_str().unwrap(), archive.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["extract", "-C", output.to_str().unwrap(), archive.to_str().unwrap()]).assert().success();
 
     assert_eq!(fs::read(output.join("public.txt")).unwrap(), payload);
 }
@@ -744,23 +588,13 @@ fn cli_directory_metadata_round_trips_after_children() {
     permissions.set_mode(0o751);
     fs::set_permissions(&nested, permissions).unwrap();
     let expected_time = UNIX_EPOCH + Duration::new(1_700_000_123, 456_789_000);
-    fs::File::open(&nested)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(expected_time))
-        .unwrap();
+    fs::File::open(&nested).unwrap().set_times(fs::FileTimes::new().set_modified(expected_time)).unwrap();
     xattr::set(&nested, "user.tzap-directory-test", b"directory-xattr").unwrap();
     let source = fs::metadata(&nested).unwrap();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
@@ -786,10 +620,7 @@ fn cli_directory_metadata_round_trips_after_children() {
     assert_eq!(restored.mtime_nsec(), source.mtime_nsec());
     assert_eq!(restored.uid(), source.uid());
     assert_eq!(restored.gid(), source.gid());
-    assert_eq!(
-        xattr::get(extract_dir.join("tree/nested"), "user.tzap-directory-test").unwrap().as_deref(),
-        Some(b"directory-xattr".as_slice())
-    );
+    assert_eq!(xattr::get(extract_dir.join("tree/nested"), "user.tzap-directory-test").unwrap().as_deref(), Some(b"directory-xattr".as_slice()));
     assert_eq!(fs::read(extract_dir.join("tree/nested/child.txt")).unwrap(), b"child");
 
     fs::create_dir_all(stream_extract_dir.join("tree/nested")).unwrap();
@@ -798,17 +629,7 @@ fn cli_directory_metadata_round_trips_after_children() {
     fs::set_permissions(stream_extract_dir.join("tree/nested"), wrong_permissions).unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--restore",
-            "same-os",
-            "--allow-degraded",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            stream_extract_dir.to_str().unwrap(),
-            "-",
-        ])
+        .args(["extract", "--restore", "same-os", "--allow-degraded", "--keyfile", keyfile.to_str().unwrap(), "-C", stream_extract_dir.to_str().unwrap(), "-"])
         .write_stdin(fs::read(&archive).unwrap())
         .assert()
         .success();
@@ -816,12 +637,7 @@ fn cli_directory_metadata_round_trips_after_children() {
     assert_eq!(stream_restored.mode() & 0o7777, 0o751);
     assert_eq!(stream_restored.mtime(), source.mtime());
     assert_eq!(stream_restored.mtime_nsec(), source.mtime_nsec());
-    assert_eq!(
-        xattr::get(stream_extract_dir.join("tree/nested"), "user.tzap-directory-test")
-            .unwrap()
-            .as_deref(),
-        Some(b"directory-xattr".as_slice())
-    );
+    assert_eq!(xattr::get(stream_extract_dir.join("tree/nested"), "user.tzap-directory-test").unwrap().as_deref(), Some(b"directory-xattr".as_slice()));
 }
 
 #[cfg(target_os = "linux")]
@@ -850,14 +666,8 @@ fn cli_linux_entry_kind_restore_policy_matrix() {
     fs::set_permissions(&file, fs::Permissions::from_mode(0o640)).unwrap();
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o750)).unwrap();
     let expected_mtime = UNIX_EPOCH + Duration::new(1_700_000_321, 654_321_000);
-    fs::File::open(&file)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(expected_mtime))
-        .unwrap();
-    fs::File::open(&directory)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(expected_mtime))
-        .unwrap();
+    fs::File::open(&file).unwrap().set_times(fs::FileTimes::new().set_modified(expected_mtime)).unwrap();
+    fs::File::open(&directory).unwrap().set_times(fs::FileTimes::new().set_modified(expected_mtime)).unwrap();
 
     let acl = [
         2, 0, 0, 0, // POSIX ACL xattr version
@@ -885,34 +695,15 @@ fn cli_linux_entry_kind_restore_policy_matrix() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
-    let policies: &[&str] = if unsafe { libc::geteuid() } == 0 {
-        &["portable", "same-os", "system"]
-    } else {
-        &["portable", "same-os"]
-    };
+    let policies: &[&str] = if unsafe { libc::geteuid() } == 0 { &["portable", "same-os", "system"] } else { &["portable", "same-os"] };
     for &policy in policies {
         let destination = temp.path().join(format!("extract-{policy}"));
         let mut command = Command::cargo_bin("tzap").unwrap();
-        command.args([
-            "extract",
-            "--restore",
-            policy,
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            destination.to_str().unwrap(),
-        ]);
+        command.args(["extract", "--restore", policy, "--keyfile", keyfile.to_str().unwrap(), "-C", destination.to_str().unwrap()]);
         if policy != "portable" {
             command.arg("--allow-degraded");
         }
@@ -930,14 +721,8 @@ fn cli_linux_entry_kind_restore_policy_matrix() {
         assert_eq!(fs::read_link(&restored_link).unwrap(), Path::new("directory/file.txt"));
         assert_eq!(file_metadata.mode() & 0o7777, source_file.mode() & 0o7777);
         assert_eq!(directory_metadata.mode() & 0o7777, source_directory.mode() & 0o7777);
-        assert_eq!(
-            (file_metadata.mtime(), file_metadata.mtime_nsec()),
-            (source_file.mtime(), source_file.mtime_nsec())
-        );
-        assert_eq!(
-            (directory_metadata.mtime(), directory_metadata.mtime_nsec()),
-            (source_directory.mtime(), source_directory.mtime_nsec())
-        );
+        assert_eq!((file_metadata.mtime(), file_metadata.mtime_nsec()), (source_file.mtime(), source_file.mtime_nsec()));
+        assert_eq!((directory_metadata.mtime(), directory_metadata.mtime_nsec()), (source_directory.mtime(), source_directory.mtime_nsec()));
 
         if policy == "portable" {
             assert_eq!(xattr::get(&restored_file, "user.tzap.matrix").unwrap(), None);
@@ -945,22 +730,10 @@ fn cli_linux_entry_kind_restore_policy_matrix() {
             continue;
         }
 
-        assert_eq!(
-            xattr::get(&restored_file, "user.tzap.matrix").unwrap().as_deref(),
-            Some(b"file metadata".as_slice())
-        );
-        assert_eq!(
-            xattr::get(&restored_directory, "user.tzap.matrix").unwrap().as_deref(),
-            Some(b"directory metadata".as_slice())
-        );
-        assert_eq!(
-            xattr::get(&restored_file, "system.posix_acl_access").unwrap().as_deref(),
-            Some(expected_file_acl.as_slice())
-        );
-        assert_eq!(
-            xattr::get(&restored_directory, "system.posix_acl_access").unwrap().as_deref(),
-            Some(expected_directory_acl.as_slice())
-        );
+        assert_eq!(xattr::get(&restored_file, "user.tzap.matrix").unwrap().as_deref(), Some(b"file metadata".as_slice()));
+        assert_eq!(xattr::get(&restored_directory, "user.tzap.matrix").unwrap().as_deref(), Some(b"directory metadata".as_slice()));
+        assert_eq!(xattr::get(&restored_file, "system.posix_acl_access").unwrap().as_deref(), Some(expected_file_acl.as_slice()));
+        assert_eq!(xattr::get(&restored_directory, "system.posix_acl_access").unwrap().as_deref(), Some(expected_directory_acl.as_slice()));
 
         if policy == "same-os" {
             assert!(!restored_fifo.exists());
@@ -1016,34 +789,15 @@ fn cli_windows_entry_kind_restore_policy_matrix() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
-    let policies: &[&str] = if windows_process_is_elevated() {
-        &["portable", "same-os", "system"]
-    } else {
-        &["portable", "same-os"]
-    };
+    let policies: &[&str] = if windows_process_is_elevated() { &["portable", "same-os", "system"] } else { &["portable", "same-os"] };
     for &policy in policies {
         let destination = temp.path().join(format!("extract-{policy}"));
         let mut extract = Command::cargo_bin("tzap").unwrap();
-        extract.args([
-            "extract",
-            "--restore",
-            policy,
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            destination.to_str().unwrap(),
-        ]);
+        extract.args(["extract", "--restore", policy, "--keyfile", keyfile.to_str().unwrap(), "-C", destination.to_str().unwrap()]);
         if policy == "portable" {
             // Portable restoration intentionally has no cross-platform
             // representation for Windows HIDDEN/SYSTEM/ARCHIVE bits.
@@ -1115,12 +869,7 @@ fn cli_macos_native_metadata_round_trips_for_files_and_directories() {
             fs::write(path.join("..namedfork/rsrc"), vec![marker; 2 * 1024 * 1024 + 31]).unwrap();
             assert_eq!(fs::metadata(path.join("..namedfork/rsrc")).unwrap().len(), 2 * 1024 * 1024 + 31);
         }
-        assert!(std::process::Command::new("chmod")
-            .args(["+a", "everyone deny delete"])
-            .arg(path)
-            .status()
-            .unwrap()
-            .success());
+        assert!(std::process::Command::new("chmod").args(["+a", "everyone deny delete"]).arg(path).status().unwrap().success());
         assert!(std::process::Command::new("chflags").arg("hidden").arg(path).status().unwrap().success());
     }
     let source_file = fs::metadata(&input_file).unwrap();
@@ -1128,36 +877,19 @@ fn cli_macos_native_metadata_round_trips_for_files_and_directories() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--restore",
-            "same-os",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            extract_dir.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--restore", "same-os", "--keyfile", keyfile.to_str().unwrap(), "-C", extract_dir.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success();
 
-    for (restored, source, marker) in [
-        (extract_dir.join("tree/nested/native.txt"), &source_file, 0x5au8),
-        (extract_dir.join("tree/nested"), &source_directory, 0x6bu8),
-    ] {
+    for (restored, source, marker) in
+        [(extract_dir.join("tree/nested/native.txt"), &source_file, 0x5au8), (extract_dir.join("tree/nested"), &source_directory, 0x6bu8)]
+    {
         let actual = fs::metadata(&restored).unwrap();
         assert_eq!(actual.st_flags(), source.st_flags());
         assert_eq!(actual.st_birthtime(), source.st_birthtime());
@@ -1202,41 +934,20 @@ fn cli_macos_entry_kind_restore_policy_matrix() {
     fs::set_permissions(&file, fs::Permissions::from_mode(0o640)).unwrap();
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o750)).unwrap();
     let expected_mtime = UNIX_EPOCH + Duration::new(1_700_000_321, 654_321_000);
-    fs::File::open(&file)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(expected_mtime))
-        .unwrap();
-    fs::File::open(&directory)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(expected_mtime))
-        .unwrap();
+    fs::File::open(&file).unwrap().set_times(fs::FileTimes::new().set_modified(expected_mtime)).unwrap();
+    fs::File::open(&directory).unwrap().set_times(fs::FileTimes::new().set_modified(expected_mtime)).unwrap();
 
     for (path, marker) in [(&file, 0x41u8), (&directory, 0x42), (&fifo, 0x43)] {
         xattr::set(path, "com.tzap.matrix", &[marker; 19]).unwrap();
-        assert!(std::process::Command::new("chmod")
-            .args(["+a", "everyone deny delete"])
-            .arg(path)
-            .status()
-            .unwrap()
-            .success());
+        assert!(std::process::Command::new("chmod").args(["+a", "everyone deny delete"]).arg(path).status().unwrap().success());
         assert!(std::process::Command::new("chflags").arg("hidden").arg(path).status().unwrap().success());
     }
     xattr::set(&file, "com.apple.FinderInfo", &[0x51; 32]).unwrap();
     xattr::set(&directory, "com.apple.FinderInfo", &[0x52; 32]).unwrap();
     fs::write(file.join("..namedfork/rsrc"), vec![0x61; 2 * 1024 * 1024 + 17]).unwrap();
     xattr::set(&link, "com.tzap.matrix-link", b"link metadata").unwrap();
-    assert!(std::process::Command::new("chmod")
-        .args(["-h", "+a", "everyone deny delete"])
-        .arg(&link)
-        .status()
-        .unwrap()
-        .success());
-    assert!(std::process::Command::new("chflags")
-        .args(["-h", "hidden"])
-        .arg(&link)
-        .status()
-        .unwrap()
-        .success());
+    assert!(std::process::Command::new("chmod").args(["-h", "+a", "everyone deny delete"]).arg(&link).status().unwrap().success());
+    assert!(std::process::Command::new("chflags").args(["-h", "hidden"]).arg(&link).status().unwrap().success());
 
     let source_file = fs::symlink_metadata(&file).unwrap();
     let source_directory = fs::symlink_metadata(&directory).unwrap();
@@ -1245,36 +956,16 @@ fn cli_macos_entry_kind_restore_policy_matrix() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
-    let policies: &[&str] = if unsafe { libc::geteuid() } == 0 {
-        &["portable", "same-os", "system"]
-    } else {
-        &["portable", "same-os"]
-    };
+    let policies: &[&str] = if unsafe { libc::geteuid() } == 0 { &["portable", "same-os", "system"] } else { &["portable", "same-os"] };
     for &policy in policies {
         let destination = temp.path().join(format!("extract-{policy}"));
         Command::cargo_bin("tzap")
             .unwrap()
-            .args([
-                "extract",
-                "--restore",
-                policy,
-                "--keyfile",
-                keyfile.to_str().unwrap(),
-                "-C",
-                destination.to_str().unwrap(),
-                archive.to_str().unwrap(),
-            ])
+            .args(["extract", "--restore", policy, "--keyfile", keyfile.to_str().unwrap(), "-C", destination.to_str().unwrap(), archive.to_str().unwrap()])
             .assert()
             .success();
 
@@ -1291,14 +982,8 @@ fn cli_macos_entry_kind_restore_policy_matrix() {
         assert_eq!(fs::read_link(&restored_link).unwrap(), Path::new("directory/file.txt"));
         assert_eq!(file_metadata.mode() & 0o7777, source_file.mode() & 0o7777);
         assert_eq!(directory_metadata.mode() & 0o7777, source_directory.mode() & 0o7777);
-        assert_eq!(
-            (file_metadata.mtime(), file_metadata.mtime_nsec()),
-            (source_file.mtime(), source_file.mtime_nsec())
-        );
-        assert_eq!(
-            (directory_metadata.mtime(), directory_metadata.mtime_nsec()),
-            (source_directory.mtime(), source_directory.mtime_nsec())
-        );
+        assert_eq!((file_metadata.mtime(), file_metadata.mtime_nsec()), (source_file.mtime(), source_file.mtime_nsec()));
+        assert_eq!((directory_metadata.mtime(), directory_metadata.mtime_nsec()), (source_directory.mtime(), source_directory.mtime_nsec()));
         assert!(link_metadata.file_type().is_symlink());
 
         if policy == "portable" {
@@ -1312,31 +997,16 @@ fn cli_macos_entry_kind_restore_policy_matrix() {
         assert_eq!(file_metadata.st_flags(), source_file.st_flags());
         assert_eq!(directory_metadata.st_flags(), source_directory.st_flags());
         assert_eq!(link_metadata.st_flags(), source_link.st_flags());
-        assert_eq!(
-            (file_metadata.st_birthtime(), file_metadata.st_birthtime_nsec()),
-            (source_file.st_birthtime(), source_file.st_birthtime_nsec())
-        );
+        assert_eq!((file_metadata.st_birthtime(), file_metadata.st_birthtime_nsec()), (source_file.st_birthtime(), source_file.st_birthtime_nsec()));
         assert_eq!(
             (directory_metadata.st_birthtime(), directory_metadata.st_birthtime_nsec(),),
             (source_directory.st_birthtime(), source_directory.st_birthtime_nsec(),)
         );
         assert_eq!(xattr::get(&restored_file, "com.tzap.matrix").unwrap().as_deref(), Some([0x41; 19].as_slice()));
-        assert_eq!(
-            xattr::get(&restored_directory, "com.tzap.matrix").unwrap().as_deref(),
-            Some([0x42; 19].as_slice())
-        );
-        assert_eq!(
-            xattr::get(&restored_link, "com.tzap.matrix-link").unwrap().as_deref(),
-            Some(b"link metadata".as_slice())
-        );
-        assert_eq!(
-            xattr::get(&restored_file, "com.apple.FinderInfo").unwrap().as_deref(),
-            Some([0x51; 32].as_slice())
-        );
-        assert_eq!(
-            xattr::get(&restored_directory, "com.apple.FinderInfo").unwrap().as_deref(),
-            Some([0x52; 32].as_slice())
-        );
+        assert_eq!(xattr::get(&restored_directory, "com.tzap.matrix").unwrap().as_deref(), Some([0x42; 19].as_slice()));
+        assert_eq!(xattr::get(&restored_link, "com.tzap.matrix-link").unwrap().as_deref(), Some(b"link metadata".as_slice()));
+        assert_eq!(xattr::get(&restored_file, "com.apple.FinderInfo").unwrap().as_deref(), Some([0x51; 32].as_slice()));
+        assert_eq!(xattr::get(&restored_directory, "com.apple.FinderInfo").unwrap().as_deref(), Some([0x52; 32].as_slice()));
         assert_eq!(fs::read(restored_file.join("..namedfork/rsrc")).unwrap(), vec![0x61; 2 * 1024 * 1024 + 17]);
         for restored in [&restored_file, &restored_directory, &restored_link] {
             let acl = std::process::Command::new("ls").args(["-lde"]).arg(restored).output().unwrap();
@@ -1377,44 +1047,18 @@ fn cli_macos_symlink_metadata_round_trips_without_touching_target() {
     fs::write(&keyfile, KEY_HEX).unwrap();
     xattr::set(&target, "com.tzap.target", b"unchanged").unwrap();
     xattr::set(&link, "com.tzap.link", b"link metadata").unwrap();
-    assert!(std::process::Command::new("chmod")
-        .args(["-h", "+a", "everyone deny delete"])
-        .arg(&link)
-        .status()
-        .unwrap()
-        .success());
-    assert!(std::process::Command::new("chflags")
-        .args(["-h", "hidden"])
-        .arg(&link)
-        .status()
-        .unwrap()
-        .success());
+    assert!(std::process::Command::new("chmod").args(["-h", "+a", "everyone deny delete"]).arg(&link).status().unwrap().success());
+    assert!(std::process::Command::new("chflags").args(["-h", "hidden"]).arg(&link).status().unwrap().success());
     let source_link = fs::symlink_metadata(&link).unwrap();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--restore",
-            "same-os",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            extract_dir.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--restore", "same-os", "--keyfile", keyfile.to_str().unwrap(), "-C", extract_dir.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1423,17 +1067,11 @@ fn cli_macos_symlink_metadata_round_trips_without_touching_target() {
     let actual_link = fs::symlink_metadata(&restored_link).unwrap();
     assert!(actual_link.file_type().is_symlink());
     assert_eq!(actual_link.st_flags(), source_link.st_flags());
-    assert_eq!(
-        xattr::get(&restored_link, "com.tzap.link").unwrap().as_deref(),
-        Some(b"link metadata".as_slice())
-    );
+    assert_eq!(xattr::get(&restored_link, "com.tzap.link").unwrap().as_deref(), Some(b"link metadata".as_slice()));
     let acl = std::process::Command::new("ls").args(["-lde"]).arg(&restored_link).output().unwrap();
     assert!(acl.status.success());
     assert!(String::from_utf8_lossy(&acl.stdout).contains("everyone deny delete"));
-    assert_eq!(
-        xattr::get(&restored_target, "com.tzap.target").unwrap().as_deref(),
-        Some(b"unchanged".as_slice())
-    );
+    assert_eq!(xattr::get(&restored_target, "com.tzap.target").unwrap().as_deref(), Some(b"unchanged".as_slice()));
     assert_eq!(xattr::get(&restored_target, "com.tzap.link").unwrap(), None);
 }
 
@@ -1457,25 +1095,13 @@ fn cli_macos_fifo_metadata_round_trips_in_system_mode() {
     let fifo_c = CString::new(fifo.as_os_str().as_bytes()).unwrap();
     assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o640) }, 0);
     xattr::set(&fifo, "com.tzap.fifo", b"fifo metadata").unwrap();
-    assert!(std::process::Command::new("chmod")
-        .args(["+a", "everyone deny delete"])
-        .arg(&fifo)
-        .status()
-        .unwrap()
-        .success());
+    assert!(std::process::Command::new("chmod").args(["+a", "everyone deny delete"]).arg(&fifo).status().unwrap().success());
     assert!(std::process::Command::new("chflags").arg("hidden").arg(&fifo).status().unwrap().success());
     let source = fs::symlink_metadata(&fifo).unwrap();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
     Command::cargo_bin("tzap")
@@ -1495,16 +1121,7 @@ fn cli_macos_fifo_metadata_round_trips_in_system_mode() {
     assert!(!same_os_extract_dir.join("tree/events.fifo").exists());
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--restore",
-            "system",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            extract_dir.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--restore", "system", "--keyfile", keyfile.to_str().unwrap(), "-C", extract_dir.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1536,50 +1153,24 @@ fn cli_macos_privileged_system_flags_round_trip() {
     fs::create_dir_all(&input_root).unwrap();
     fs::write(&input_file, b"system flags").unwrap();
     fs::write(&keyfile, KEY_HEX).unwrap();
-    assert!(std::process::Command::new("chflags")
-        .args(["archived,schg"])
-        .arg(&input_file)
-        .status()
-        .unwrap()
-        .success());
+    assert!(std::process::Command::new("chflags").args(["archived,schg"]).arg(&input_file).status().unwrap().success());
     let source_flags = fs::metadata(&input_file).unwrap().st_flags();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--restore",
-            "system",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            extract_dir.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--restore", "system", "--keyfile", keyfile.to_str().unwrap(), "-C", extract_dir.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success();
 
     let restored = extract_dir.join("tree/locked.txt");
     assert_eq!(fs::metadata(&restored).unwrap().st_flags(), source_flags);
     for path in [&input_file, &restored] {
-        assert!(std::process::Command::new("chflags")
-            .args(["noarchived,noschg"])
-            .arg(path)
-            .status()
-            .unwrap()
-            .success());
+        assert!(std::process::Command::new("chflags").args(["noarchived,noschg"]).arg(path).status().unwrap().success());
     }
 }
 
@@ -1613,16 +1204,7 @@ fn cli_macos_privileged_character_device_metadata_round_trips() {
         .success();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--restore",
-            "system",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            extract_dir.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--restore", "system", "--keyfile", keyfile.to_str().unwrap(), "-C", extract_dir.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1660,32 +1242,16 @@ fn cli_symlink_target_and_mtime_round_trip_without_following_target() {
     let expected_seconds = 1_700_000_321;
     let expected_nanoseconds = 654_321_000;
     let times = [
-        libc::timespec {
-            tv_sec: expected_access_seconds,
-            tv_nsec: expected_access_nanoseconds,
-        },
-        libc::timespec {
-            tv_sec: expected_seconds,
-            tv_nsec: expected_nanoseconds,
-        },
+        libc::timespec { tv_sec: expected_access_seconds, tv_nsec: expected_access_nanoseconds },
+        libc::timespec { tv_sec: expected_seconds, tv_nsec: expected_nanoseconds },
     ];
     // SAFETY: the path and timespec array remain live for this call, and the
     // no-follow flag applies the timestamp to the link itself.
-    assert_eq!(
-        unsafe { libc::utimensat(libc::AT_FDCWD, link_path.as_ptr(), times.as_ptr(), libc::AT_SYMLINK_NOFOLLOW,) },
-        0
-    );
+    assert_eq!(unsafe { libc::utimensat(libc::AT_FDCWD, link_path.as_ptr(), times.as_ptr(), libc::AT_SYMLINK_NOFOLLOW,) }, 0);
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            output.to_str().unwrap(),
-            link.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", output.to_str().unwrap(), link.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1694,16 +1260,7 @@ fn cli_symlink_target_and_mtime_round_trip_without_following_target() {
     let target_before = fs::symlink_metadata(&restored_target).unwrap();
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--restore",
-            "portable",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            extract_dir.to_str().unwrap(),
-            output.to_str().unwrap(),
-        ])
+        .args(["extract", "--restore", "portable", "--keyfile", keyfile.to_str().unwrap(), "-C", extract_dir.to_str().unwrap(), output.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1735,14 +1292,7 @@ fn cli_default_list_uses_index_entries_not_payload_metadata() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1777,21 +1327,11 @@ fn cli_list_with_long_output_includes_kind_mode_mtime() {
     let expected_mode = expected_input_mode(&input);
     let modified = fs::metadata(&input).unwrap().modified().unwrap();
     let modified_since_epoch = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
-    let expected_mtime = ArchiveTimestamp {
-        seconds: i64::try_from(modified_since_epoch.as_secs()).unwrap(),
-        nanoseconds: modified_since_epoch.subsec_nanos(),
-    };
+    let expected_mtime = ArchiveTimestamp { seconds: i64::try_from(modified_since_epoch.as_secs()).unwrap(), nanoseconds: modified_since_epoch.subsec_nanos() };
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1819,14 +1359,7 @@ fn cli_list_long_reports_stable_kind_labels() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1840,15 +1373,9 @@ fn cli_list_long_reports_stable_kind_labels() {
         .clone();
     let lines = String::from_utf8(output).unwrap();
     assert!(lines.lines().any(|line| line.contains("\tfile\t")), "expected a 'file' kind line:\n{lines}");
-    assert!(
-        lines.lines().any(|line| line.contains("\tdirectory\t")),
-        "expected a 'directory' kind line:\n{lines}"
-    );
+    assert!(lines.lines().any(|line| line.contains("\tdirectory\t")), "expected a 'directory' kind line:\n{lines}");
     #[cfg(unix)]
-    assert!(
-        lines.lines().any(|line| line.contains("\tsymlink\t")),
-        "expected a 'symlink' kind line:\n{lines}"
-    );
+    assert!(lines.lines().any(|line| line.contains("\tsymlink\t")), "expected a 'symlink' kind line:\n{lines}");
 }
 
 #[cfg(unix)]
@@ -1871,14 +1398,7 @@ fn cli_list_with_long_output_preserves_unix_mode_bits() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1903,14 +1423,7 @@ fn cli_list_outputs_stable_json() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1958,14 +1471,7 @@ fn cli_list_supports_directory_only_archive() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
@@ -2005,14 +1511,7 @@ fn cli_list_with_bootstrap_supports_passed_bootstrap_file() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bootstrap",
-            bootstrap.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), "--bootstrap", bootstrap.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("payload.txt\n"));
@@ -2030,14 +1529,7 @@ fn cli_list_rejects_long_with_json() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -2063,14 +1555,7 @@ fn cli_list_wrong_key_is_reported_with_stable_category() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -2094,14 +1579,7 @@ fn cli_list_corrupt_archive_reports_corruption() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -2163,14 +1641,7 @@ fn cli_list_missing_bootstrap_file_is_an_io_error() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bootstrap",
-            bootstrap.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), "--bootstrap", bootstrap.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .code(3)
         .stderr(predicate::str::contains("failed to read bootstrap sidecar"));
@@ -2225,14 +1696,7 @@ fn cli_list_one_file_archive_with_keyfile() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 

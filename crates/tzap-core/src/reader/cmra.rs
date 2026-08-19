@@ -66,11 +66,7 @@ impl From<CriticalMetadataRecoveryHeader> for CmraDecoderTuple {
 
 impl From<CriticalMetadataRecoveryHeader> for CmraIdentityHints {
     fn from(header: CriticalMetadataRecoveryHeader) -> Self {
-        Self {
-            archive_uuid: header.archive_uuid_hint,
-            session_id: header.session_id_hint,
-            volume_index: header.volume_index_hint,
-        }
+        Self { archive_uuid: header.archive_uuid_hint, session_id: header.session_id_hint, volume_index: header.volume_index_hint }
     }
 }
 
@@ -88,11 +84,7 @@ impl From<CriticalRecoveryLocator> for CmraDecoderTuple {
 
 impl From<CriticalRecoveryLocator> for CmraIdentityHints {
     fn from(locator: CriticalRecoveryLocator) -> Self {
-        Self {
-            archive_uuid: locator.archive_uuid_hint,
-            session_id: locator.session_id_hint,
-            volume_index: locator.volume_index_hint,
-        }
+        Self { archive_uuid: locator.archive_uuid_hint, session_id: locator.session_id_hint, volume_index: locator.volume_index_hint }
     }
 }
 
@@ -741,9 +733,7 @@ pub(crate) fn choose_v45_recipient_wrap_terminal_authority_candidate(
 
 pub(crate) fn choose_v45_public_terminal_candidate(mut candidates: Vec<PublicTerminalCandidate>) -> Result<PublicTerminalCandidate, FormatError> {
     candidates.sort_by_key(|candidate| candidate.anchor);
-    let winner = candidates
-        .pop()
-        .ok_or(FormatError::InvalidArchive("no valid v45 public CMRA candidate found"))?;
+    let winner = candidates.pop().ok_or(FormatError::InvalidArchive("no valid v45 public CMRA candidate found"))?;
     if let Some(previous) = candidates.last() {
         if previous.anchor == winner.anchor && (previous.cmra_offset != winner.cmra_offset || previous.cmra_length != winner.cmra_length) {
             return Err(FormatError::InvalidArchive("ambiguous v45 public CMRA candidates"));
@@ -777,9 +767,7 @@ pub(crate) fn parse_locator_cmra_candidate(
     let terminal = validate_recovered_terminal(recovered.image, recovered.tuple, bytes, context, false)?;
     Ok(TerminalCandidate {
         terminal,
-        anchor: locator_offset
-            .checked_add(CRITICAL_RECOVERY_LOCATOR_LEN)
-            .ok_or(FormatError::InvalidArchive("locator anchor overflow"))?,
+        anchor: locator_offset.checked_add(CRITICAL_RECOVERY_LOCATOR_LEN).ok_or(FormatError::InvalidArchive("locator anchor overflow"))?,
         locator_sequence: Some(locator.locator_sequence),
         cmra_offset: locator.cmra_offset,
         cmra_length: recovered.cmra_length,
@@ -811,10 +799,7 @@ pub(crate) fn parse_locator_cmra_candidate_read_at(
     let terminal = validate_recovered_terminal_read_at(recovered.image, recovered.tuple, reader, context, false)?;
     Ok(TerminalCandidate {
         terminal,
-        anchor: to_usize(
-            checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?,
-            "locator anchor overflow",
-        )?,
+        anchor: to_usize(checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?, "locator anchor overflow")?,
         locator_sequence: Some(locator.locator_sequence),
         cmra_offset: locator.cmra_offset,
         cmra_length: recovered.cmra_length,
@@ -847,9 +832,7 @@ pub(crate) fn parse_locator_cmra_authority_candidate(
     let authority = validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, false)?;
     Ok(TerminalAuthorityCandidate {
         authority,
-        anchor: locator_offset
-            .checked_add(CRITICAL_RECOVERY_LOCATOR_LEN)
-            .ok_or(FormatError::InvalidArchive("locator anchor overflow"))?,
+        anchor: locator_offset.checked_add(CRITICAL_RECOVERY_LOCATOR_LEN).ok_or(FormatError::InvalidArchive("locator anchor overflow"))?,
         cmra_offset: locator.cmra_offset,
         cmra_length,
     })
@@ -884,9 +867,7 @@ where
     let authority = validate_recovered_recipient_wrap_terminal_authority(recovered.image, recovered.tuple, resolver, false)?;
     Ok(RecipientWrapTerminalAuthorityCandidate {
         authority,
-        anchor: locator_offset
-            .checked_add(CRITICAL_RECOVERY_LOCATOR_LEN)
-            .ok_or(FormatError::InvalidArchive("locator anchor overflow"))?,
+        anchor: locator_offset.checked_add(CRITICAL_RECOVERY_LOCATOR_LEN).ok_or(FormatError::InvalidArchive("locator anchor overflow"))?,
         cmra_offset: locator.cmra_offset,
         cmra_length,
     })
@@ -921,10 +902,7 @@ where
     let authority = validate_recovered_recipient_wrap_terminal_authority(recovered.image, recovered.tuple, resolver, false)?;
     Ok(RecipientWrapTerminalAuthorityCandidate {
         authority,
-        anchor: to_usize(
-            checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?,
-            "locator anchor overflow",
-        )?,
+        anchor: to_usize(checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?, "locator anchor overflow")?,
         cmra_offset: locator.cmra_offset,
         cmra_length,
     })
@@ -956,10 +934,7 @@ pub(crate) fn parse_locator_cmra_authority_candidate_read_at(
     let authority = validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, false)?;
     Ok(TerminalAuthorityCandidate {
         authority,
-        anchor: to_usize(
-            checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?,
-            "locator anchor overflow",
-        )?,
+        anchor: to_usize(checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor overflow")?, "locator anchor overflow")?,
         cmra_offset: locator.cmra_offset,
         cmra_length,
     })
@@ -991,9 +966,7 @@ pub(crate) fn parse_public_locator_cmra_candidate(
     let terminal = validate_recovered_public_terminal(recovered.image, bytes, volume_header, crypto_header, false)?;
     Ok(PublicTerminalCandidate {
         terminal,
-        anchor: locator_offset
-            .checked_add(CRITICAL_RECOVERY_LOCATOR_LEN)
-            .ok_or(FormatError::InvalidArchive("locator anchor overflow"))?,
+        anchor: locator_offset.checked_add(CRITICAL_RECOVERY_LOCATOR_LEN).ok_or(FormatError::InvalidArchive("locator anchor overflow"))?,
         cmra_offset: locator.cmra_offset,
         cmra_length: recovered.cmra_length,
     })
@@ -1025,10 +998,7 @@ pub(crate) fn parse_public_locator_cmra_candidate_read_at(
     let terminal = validate_recovered_public_terminal_read_at(recovered.image, reader, volume_header, crypto_header, false)?;
     Ok(PublicTerminalCandidate {
         terminal,
-        anchor: to_usize(
-            checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor")?,
-            "locator anchor overflow",
-        )?,
+        anchor: to_usize(checked_u64_add(locator_offset, CRITICAL_RECOVERY_LOCATOR_LEN as u64, "locator anchor")?, "locator anchor overflow")?,
         cmra_offset: locator.cmra_offset,
         cmra_length: recovered.cmra_length,
     })
@@ -1043,11 +1013,7 @@ pub(crate) fn parse_locatorless_cmra_candidate(
     if recovered.image.body_bytes_before_cmra != cmra_offset as u64 {
         return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
-    if recovered
-        .image
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
+    if recovered.image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset as u64
     {
         return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
@@ -1056,9 +1022,7 @@ pub(crate) fn parse_locatorless_cmra_candidate(
     let terminal = validate_recovered_terminal(recovered.image, recovered.tuple, bytes, context, true)?;
     Ok(TerminalCandidate {
         terminal,
-        anchor: cmra_offset
-            .checked_add(to_usize(recovered.cmra_length, "CMRA")?)
-            .ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
+        anchor: cmra_offset.checked_add(to_usize(recovered.cmra_length, "CMRA")?).ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
         locator_sequence: None,
         cmra_offset: cmra_offset as u64,
         cmra_length: recovered.cmra_length,
@@ -1074,12 +1038,7 @@ pub(crate) fn parse_locatorless_cmra_candidate_read_at(
     if recovered.image.body_bytes_before_cmra != cmra_offset {
         return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
-    if recovered
-        .image
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
-        != cmra_offset
+    if recovered.image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))? != cmra_offset
     {
         return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
@@ -1087,10 +1046,7 @@ pub(crate) fn parse_locatorless_cmra_candidate_read_at(
     let terminal = validate_recovered_terminal_read_at(recovered.image, recovered.tuple, reader, context, true)?;
     Ok(TerminalCandidate {
         terminal,
-        anchor: to_usize(
-            checked_u64_add(cmra_offset, recovered.cmra_length, "CMRA anchor overflow")?,
-            "CMRA anchor overflow",
-        )?,
+        anchor: to_usize(checked_u64_add(cmra_offset, recovered.cmra_length, "CMRA anchor overflow")?, "CMRA anchor overflow")?,
         locator_sequence: None,
         cmra_offset,
         cmra_length: recovered.cmra_length,
@@ -1106,11 +1062,7 @@ pub(crate) fn parse_locatorless_cmra_authority_candidate(
     if recovered.image.body_bytes_before_cmra != cmra_offset as u64 {
         return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
-    if recovered
-        .image
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
+    if recovered.image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset as u64
     {
         return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
@@ -1120,9 +1072,7 @@ pub(crate) fn parse_locatorless_cmra_authority_candidate(
     let authority = validate_recovered_terminal_authority(recovered.image, recovered.tuple, master_key, true)?;
     Ok(TerminalAuthorityCandidate {
         authority,
-        anchor: cmra_offset
-            .checked_add(to_usize(cmra_length, "CMRA")?)
-            .ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
+        anchor: cmra_offset.checked_add(to_usize(cmra_length, "CMRA")?).ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
         cmra_offset: cmra_offset as u64,
         cmra_length,
     })
@@ -1140,11 +1090,7 @@ where
     if recovered.image.body_bytes_before_cmra != cmra_offset as u64 {
         return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
-    if recovered
-        .image
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
+    if recovered.image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset as u64
     {
         return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
@@ -1154,9 +1100,7 @@ where
     let authority = validate_recovered_recipient_wrap_terminal_authority(recovered.image, recovered.tuple, resolver, true)?;
     Ok(RecipientWrapTerminalAuthorityCandidate {
         authority,
-        anchor: cmra_offset
-            .checked_add(to_usize(cmra_length, "CMRA")?)
-            .ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
+        anchor: cmra_offset.checked_add(to_usize(cmra_length, "CMRA")?).ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
         cmra_offset: cmra_offset as u64,
         cmra_length,
     })
@@ -1174,12 +1118,7 @@ where
     if recovered.image.body_bytes_before_cmra != cmra_offset {
         return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
-    if recovered
-        .image
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
-        != cmra_offset
+    if recovered.image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))? != cmra_offset
     {
         return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
@@ -1203,12 +1142,7 @@ pub(crate) fn parse_locatorless_cmra_authority_candidate_read_at(
     if recovered.image.body_bytes_before_cmra != cmra_offset {
         return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
-    if recovered
-        .image
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
-        != cmra_offset
+    if recovered.image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))? != cmra_offset
     {
         return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
@@ -1233,11 +1167,7 @@ pub(crate) fn parse_public_locatorless_cmra_candidate(
     if recovered.image.body_bytes_before_cmra != cmra_offset as u64 {
         return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
-    if recovered
-        .image
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
+    if recovered.image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
         != cmra_offset as u64
     {
         return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
@@ -1246,9 +1176,7 @@ pub(crate) fn parse_public_locatorless_cmra_candidate(
     let terminal = validate_recovered_public_terminal(recovered.image, bytes, volume_header, crypto_header, true)?;
     Ok(PublicTerminalCandidate {
         terminal,
-        anchor: cmra_offset
-            .checked_add(to_usize(recovered.cmra_length, "CMRA")?)
-            .ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
+        anchor: cmra_offset.checked_add(to_usize(recovered.cmra_length, "CMRA")?).ok_or(FormatError::InvalidArchive("CMRA anchor overflow"))?,
         cmra_offset: cmra_offset as u64,
         cmra_length: recovered.cmra_length,
     })
@@ -1264,12 +1192,7 @@ pub(crate) fn parse_public_locatorless_cmra_candidate_read_at(
     if recovered.image.body_bytes_before_cmra != cmra_offset {
         return Err(FormatError::InvalidArchive("locatorless CMRA boundary mismatch"));
     }
-    if recovered
-        .image
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))?
-        != cmra_offset
+    if recovered.image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA boundary overflow"))? != cmra_offset
     {
         return Err(FormatError::InvalidArchive("locatorless trailer boundary mismatch"));
     }
@@ -1277,10 +1200,7 @@ pub(crate) fn parse_public_locatorless_cmra_candidate_read_at(
     let terminal = validate_recovered_public_terminal_read_at(recovered.image, reader, volume_header, crypto_header, true)?;
     Ok(PublicTerminalCandidate {
         terminal,
-        anchor: to_usize(
-            checked_u64_add(cmra_offset, recovered.cmra_length, "CMRA anchor overflow")?,
-            "CMRA anchor overflow",
-        )?,
+        anchor: to_usize(checked_u64_add(cmra_offset, recovered.cmra_length, "CMRA anchor overflow")?, "CMRA anchor overflow")?,
         cmra_offset,
         cmra_length: recovered.cmra_length,
     })
@@ -1290,20 +1210,14 @@ pub(crate) fn validate_locator_position(locator_offset: usize, locator: Critical
     if locator.cmra_offset != locator.body_bytes_before_cmra {
         return Err(FormatError::InvalidArchive("locator CMRA boundary mismatch"));
     }
-    if locator
-        .volume_trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("locator trailer overflow"))?
+    if locator.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("locator trailer overflow"))?
         != locator.cmra_offset
     {
         return Err(FormatError::InvalidArchive("locator trailer boundary mismatch"));
     }
     let expected_offset = match locator.locator_sequence {
         1 => locator.cmra_offset.checked_add(locator.cmra_length as u64),
-        0 => locator
-            .cmra_offset
-            .checked_add(locator.cmra_length as u64)
-            .and_then(|value| value.checked_add(CRITICAL_RECOVERY_LOCATOR_LEN as u64)),
+        0 => locator.cmra_offset.checked_add(locator.cmra_length as u64).and_then(|value| value.checked_add(CRITICAL_RECOVERY_LOCATOR_LEN as u64)),
         _ => None,
     }
     .ok_or(FormatError::InvalidArchive("locator position overflow"))?;
@@ -1317,10 +1231,7 @@ pub(crate) fn validate_locator_image_boundary(locator: CriticalRecoveryLocator, 
     if locator.volume_format_rev != image.volume_format_rev
         || locator.volume_trailer_offset != image.volume_trailer_offset
         || locator.body_bytes_before_cmra != image.body_bytes_before_cmra
-        || image
-            .volume_trailer_offset
-            .checked_add(VOLUME_TRAILER_LEN as u64)
-            .ok_or(FormatError::InvalidArchive("CMRA image boundary overflow"))?
+        || image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA image boundary overflow"))?
             != locator.cmra_offset
     {
         return Err(FormatError::InvalidArchive("locator and CMRA image boundaries differ"));
@@ -1407,12 +1318,7 @@ pub(crate) fn recover_cmra_from_bytes(
     let mut parity_shards = vec![None; tuple.parity_shard_count as usize];
     let mut cursor = CRITICAL_METADATA_RECOVERY_HEADER_LEN;
     for idx in 0..(tuple.data_shard_count as usize + tuple.parity_shard_count as usize) {
-        let raw = slice(
-            cmra_bytes,
-            cursor,
-            CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + shard_size,
-            "CriticalMetadataRecoveryShard",
-        )?;
+        let raw = slice(cmra_bytes, cursor, CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + shard_size, "CriticalMetadataRecoveryShard")?;
         let shard = CriticalMetadataRecoveryShard::parse(raw, shard_size).ok();
         if let Some(shard) = shard {
             validate_cmra_shard(&shard, idx, tuple)?;
@@ -1421,17 +1327,11 @@ pub(crate) fn recover_cmra_from_bytes(
                 *data_slot = Some(shard.payload);
             } else {
                 let parity_idx = idx - tuple.data_shard_count as usize;
-                let parity_slot = parity_shards
-                    .get_mut(parity_idx)
-                    .ok_or(FormatError::InvalidArchive("CMRA parity shard out of range"))?;
+                let parity_slot = parity_shards.get_mut(parity_idx).ok_or(FormatError::InvalidArchive("CMRA parity shard out of range"))?;
                 *parity_slot = Some(shard.payload);
             }
         }
-        cursor = checked_add(
-            cursor,
-            CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + shard_size,
-            "CriticalMetadataRecoveryShard",
-        )?;
+        cursor = checked_add(cursor, CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN + shard_size, "CriticalMetadataRecoveryShard")?;
     }
     let repaired = repair_data_gf16(&data_shards, &parity_shards, shard_size)?;
     let mut image_bytes = Vec::with_capacity(tuple.image_length as usize);
@@ -1444,12 +1344,7 @@ pub(crate) fn recover_cmra_from_bytes(
     }
     let image = CriticalMetadataImage::parse(&image_bytes)?;
     validate_critical_metadata_image(&image, mode)?;
-    Ok(RecoveredCmra {
-        image,
-        tuple,
-        header_hints,
-        cmra_length,
-    })
+    Ok(RecoveredCmra { image, tuple, header_hints, cmra_length })
 }
 
 pub(crate) fn validate_cmra_decoder_tuple(tuple: CmraDecoderTuple) -> Result<(), FormatError> {
@@ -1467,20 +1362,11 @@ pub(crate) fn validate_cmra_decoder_tuple(tuple: CmraDecoderTuple) -> Result<(),
     if expected_data_shards == 0 || expected_data_shards != tuple.data_shard_count as u64 {
         return Err(FormatError::InvalidArchive("CMRA data_shard_count does not match image length"));
     }
-    let max_parity = 2u64.max(ceil_div_u64(
-        checked_u64_mul(expected_data_shards, READER_MAX_CMRA_PARITY_PCT as u64, "CMRA parity overflow")?,
-        100,
-    )?);
+    let max_parity = 2u64.max(ceil_div_u64(checked_u64_mul(expected_data_shards, READER_MAX_CMRA_PARITY_PCT as u64, "CMRA parity overflow")?, 100)?);
     if tuple.parity_shard_count as u64 > max_parity {
-        return Err(FormatError::ReaderResourceLimitExceeded {
-            field: "CMRA parity shard count",
-            cap: max_parity,
-            actual: tuple.parity_shard_count as u64,
-        });
+        return Err(FormatError::ReaderResourceLimitExceeded { field: "CMRA parity shard count", cap: max_parity, actual: tuple.parity_shard_count as u64 });
     }
-    let total = expected_data_shards
-        .checked_add(tuple.parity_shard_count as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA shard count overflow"))?;
+    let total = expected_data_shards.checked_add(tuple.parity_shard_count as u64).ok_or(FormatError::InvalidArchive("CMRA shard count overflow"))?;
     if total > 65_535 {
         return Err(FormatError::FecTooManyShards(total as usize));
     }
@@ -1488,14 +1374,10 @@ pub(crate) fn validate_cmra_decoder_tuple(tuple: CmraDecoderTuple) -> Result<(),
 }
 
 pub(crate) fn validate_cmra_writer_parity_lower_bound(tuple: CmraDecoderTuple, bit_rot_buffer_pct: u8) -> Result<(), FormatError> {
-    let min_parity = 2u64.max(ceil_div_u64(
-        checked_u64_mul(tuple.data_shard_count as u64, bit_rot_buffer_pct as u64, "CMRA parity lower-bound overflow")?,
-        100,
-    )?);
+    let min_parity =
+        2u64.max(ceil_div_u64(checked_u64_mul(tuple.data_shard_count as u64, bit_rot_buffer_pct as u64, "CMRA parity lower-bound overflow")?, 100)?);
     if (tuple.parity_shard_count as u64) < min_parity {
-        return Err(FormatError::InvalidArchive(
-            "CMRA parity shard count is below authenticated bit-rot lower bound",
-        ));
+        return Err(FormatError::InvalidArchive("CMRA parity shard count is below authenticated bit-rot lower bound"));
     }
     Ok(())
 }
@@ -1551,10 +1433,7 @@ pub(crate) fn validate_critical_metadata_image(image: &CriticalMetadataImage, mo
         || image.manifest_footer_length != MANIFEST_FOOTER_LEN as u32
         || image.volume_trailer_length != VOLUME_TRAILER_LEN as u32
         || image.body_bytes_before_cmra
-            != image
-                .volume_trailer_offset
-                .checked_add(VOLUME_TRAILER_LEN as u64)
-                .ok_or(FormatError::InvalidArchive("CMRA image boundary overflow"))?
+            != image.volume_trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::InvalidArchive("CMRA image boundary overflow"))?
     {
         return Err(FormatError::InvalidArchive("CriticalMetadataImage fixed layout is invalid"));
     }
@@ -1569,10 +1448,7 @@ pub(crate) fn validate_critical_metadata_image(image: &CriticalMetadataImage, mo
     let block_record_len_u64 = u64::try_from(block_record_len).map_err(|_| FormatError::InvalidArchive("BlockRecord length overflow"))?;
     match mode {
         CmraRecoveryMode::KeyHolding => {
-            let expected_len = image
-                .block_count
-                .checked_mul(block_record_len_u64)
-                .ok_or(FormatError::InvalidArchive("BlockRecord region length overflow"))?;
+            let expected_len = image.block_count.checked_mul(block_record_len_u64).ok_or(FormatError::InvalidArchive("BlockRecord region length overflow"))?;
             if image.block_records_length != expected_len {
                 return Err(FormatError::InvalidArchive("CriticalMetadataImage terminal equations are invalid"));
             }
@@ -1583,10 +1459,8 @@ pub(crate) fn validate_critical_metadata_image(image: &CriticalMetadataImage, mo
             }
         }
     }
-    let crypto_header_end = image
-        .crypto_header_offset
-        .checked_add(image.crypto_header_length as u64)
-        .ok_or(FormatError::InvalidArchive("CryptoHeader boundary overflow"))?;
+    let crypto_header_end =
+        image.crypto_header_offset.checked_add(image.crypto_header_length as u64).ok_or(FormatError::InvalidArchive("CryptoHeader boundary overflow"))?;
     let expected_block_records_offset = if key_wrap_present {
         let key_wrap_region = key_wrap_region.ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage key-wrap region"))?;
         if image.key_wrap_table_offset != crypto_header_end
@@ -1596,10 +1470,7 @@ pub(crate) fn validate_critical_metadata_image(image: &CriticalMetadataImage, mo
         {
             return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap region is malformed"));
         }
-        image
-            .key_wrap_table_offset
-            .checked_add(image.key_wrap_table_length as u64)
-            .ok_or(FormatError::InvalidArchive("KeyWrapTableV1 boundary overflow"))?
+        image.key_wrap_table_offset.checked_add(image.key_wrap_table_length as u64).ok_or(FormatError::InvalidArchive("KeyWrapTableV1 boundary overflow"))?
     } else {
         if image.key_wrap_table_offset != 0 || image.key_wrap_table_length != 0 || image.key_wrap_table_sha256 != [0u8; 32] {
             return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap fields must be zero when absent"));
@@ -1608,17 +1479,12 @@ pub(crate) fn validate_critical_metadata_image(image: &CriticalMetadataImage, mo
     };
     if image.block_records_offset != expected_block_records_offset
         || image.manifest_footer_offset
-            != image
-                .block_records_offset
-                .checked_add(image.block_records_length)
-                .ok_or(FormatError::InvalidArchive("ManifestFooter boundary overflow"))?
+            != image.block_records_offset.checked_add(image.block_records_length).ok_or(FormatError::InvalidArchive("ManifestFooter boundary overflow"))?
     {
         return Err(FormatError::InvalidArchive("CriticalMetadataImage terminal equations are invalid"));
     }
-    let manifest_end = image
-        .manifest_footer_offset
-        .checked_add(MANIFEST_FOOTER_LEN as u64)
-        .ok_or(FormatError::InvalidArchive("RootAuthFooter boundary overflow"))?;
+    let manifest_end =
+        image.manifest_footer_offset.checked_add(MANIFEST_FOOTER_LEN as u64).ok_or(FormatError::InvalidArchive("RootAuthFooter boundary overflow"))?;
     if root_auth_present {
         if image.root_auth_footer_offset != manifest_end
             || image
@@ -1673,9 +1539,7 @@ pub(crate) fn image_block_record_len_from_region(image: &CriticalMetadataImage) 
 }
 
 pub(crate) fn validate_image_region(image: &CriticalMetadataImage, region_type: u16, offset: u64, length: u32) -> Result<(), FormatError> {
-    let region = image
-        .region(region_type)
-        .ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage region"))?;
+    let region = image.region(region_type).ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage region"))?;
     if region.offset != offset || region.bytes.len() != length as usize {
         return Err(FormatError::InvalidArchive("CriticalMetadataImage region range mismatch"));
     }
@@ -1710,31 +1574,18 @@ pub(crate) fn validate_image_identity(
 
 pub(crate) fn validate_image_key_wrap_table(image: &CriticalMetadataImage, volume_header: &VolumeHeader, kdf_params: &KdfParams) -> Result<(), FormatError> {
     match kdf_params {
-        KdfParams::RecipientWrap {
-            key_wrap_table_length,
-            key_wrap_table_record_count,
-            key_wrap_table_digest,
-            ..
-        } => {
+        KdfParams::RecipientWrap { key_wrap_table_length, key_wrap_table_record_count, key_wrap_table_digest, .. } => {
             if image.layout_flags & 0x0000_0002 == 0 || image.key_wrap_table_length != *key_wrap_table_length {
                 return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap fields do not match KdfParams"));
             }
-            let region = image
-                .region(6)
-                .ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage key-wrap region"))?;
+            let region = image.region(6).ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage key-wrap region"))?;
             if region.offset != image.key_wrap_table_offset || region.bytes.len() != *key_wrap_table_length as usize {
                 return Err(FormatError::InvalidArchive("CriticalMetadataImage key-wrap region is malformed"));
             }
             if compute_key_wrap_table_digest(*key_wrap_table_length, &region.bytes) != *key_wrap_table_digest {
                 return Err(FormatError::IntegrityDigestMismatch { structure: "KeyWrapTableV1" });
             }
-            KeyWrapTableV1::parse(
-                &region.bytes,
-                &volume_header.archive_uuid,
-                &volume_header.session_id,
-                *key_wrap_table_length,
-                *key_wrap_table_record_count,
-            )?;
+            KeyWrapTableV1::parse(&region.bytes, &volume_header.archive_uuid, &volume_header.session_id, *key_wrap_table_length, *key_wrap_table_record_count)?;
             Ok(())
         }
         _ => {
@@ -1752,12 +1603,7 @@ pub(crate) fn validate_image_key_wrap_table(image: &CriticalMetadataImage, volum
 }
 
 pub(crate) fn sha256_region(image: &CriticalMetadataImage, region_type: u16) -> Result<[u8; 32], FormatError> {
-    Ok(sha256_bytes(
-        &image
-            .region(region_type)
-            .ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage region"))?
-            .bytes,
-    ))
+    Ok(sha256_bytes(&image.region(region_type).ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage region"))?.bytes))
 }
 
 pub(crate) fn validate_recovered_terminal_authority(
@@ -1773,12 +1619,7 @@ pub(crate) fn validate_recovered_terminal_authority(
     let crypto_header_bytes = crypto_region.bytes.clone();
     let parsed_crypto = CryptoHeader::parse(&crypto_header_bytes, image.crypto_header_length)?;
     let kdf_params = parsed_crypto.kdf_params.clone();
-    let subkeys = subkeys_for_open(
-        Some(master_key),
-        parsed_crypto.fixed.aead_algo,
-        &volume_header.archive_uuid,
-        &volume_header.session_id,
-    )?;
+    let subkeys = subkeys_for_open(Some(master_key), parsed_crypto.fixed.aead_algo, &volume_header.archive_uuid, &volume_header.session_id)?;
     verify_integrity_tag(
         HmacDomain::CryptoHeader,
         parsed_crypto.fixed.aead_algo,
@@ -1810,14 +1651,7 @@ pub(crate) fn validate_recovered_terminal_authority(
             crypto_header_bytes: &crypto_header_bytes,
         },
     )?;
-    Ok(RecoveredTerminalAuthority {
-        terminal,
-        volume_header,
-        crypto_header,
-        crypto_header_bytes,
-        subkeys,
-        kdf_params,
-    })
+    Ok(RecoveredTerminalAuthority { terminal, volume_header, crypto_header, crypto_header_bytes, subkeys, kdf_params })
 }
 
 pub(crate) fn validate_recovered_recipient_wrap_terminal_authority<F>(
@@ -1845,9 +1679,7 @@ where
     }
     validate_cmra_writer_parity_lower_bound(tuple, parsed_crypto.fixed.bit_rot_buffer_pct)?;
     validate_image_key_wrap_table(&image, &volume_header, &parsed_crypto.kdf_params)?;
-    let key_wrap_region = image
-        .region(6)
-        .ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage key-wrap region"))?;
+    let key_wrap_region = image.region(6).ok_or(FormatError::InvalidArchive("missing CriticalMetadataImage key-wrap region"))?;
     let startup_key_wrap_table = parse_startup_key_wrap_table_bytes(&volume_header, &parsed_crypto.kdf_params, key_wrap_region.bytes.clone())?;
     let subkeys = recipient_wrap_subkeys_from_table(&volume_header, &parsed_crypto, &startup_key_wrap_table.table, resolver)?;
     parsed_crypto.validate_extension_semantics()?;
@@ -1923,16 +1755,10 @@ pub(crate) fn validate_recovered_terminal_inner(
     if recovered_crypto.fixed != *crypto_header {
         return Err(FormatError::InvalidArchive("CMRA CryptoHeader differs from parsed CryptoHeader"));
     }
-    let recovered_pre_hmac_len = crypto_region
-        .bytes
-        .len()
-        .checked_sub(CRYPTO_HEADER_HMAC_LEN)
-        .ok_or(FormatError::InvalidArchive("CMRA CryptoHeader is too short"))?;
-    let parsed_pre_hmac_len = context
-        .crypto_header_bytes
-        .len()
-        .checked_sub(CRYPTO_HEADER_HMAC_LEN)
-        .ok_or(FormatError::InvalidArchive("CryptoHeader is too short"))?;
+    let recovered_pre_hmac_len =
+        crypto_region.bytes.len().checked_sub(CRYPTO_HEADER_HMAC_LEN).ok_or(FormatError::InvalidArchive("CMRA CryptoHeader is too short"))?;
+    let parsed_pre_hmac_len =
+        context.crypto_header_bytes.len().checked_sub(CRYPTO_HEADER_HMAC_LEN).ok_or(FormatError::InvalidArchive("CryptoHeader is too short"))?;
     if recovered_pre_hmac_len != parsed_pre_hmac_len || crypto_region.bytes[..recovered_pre_hmac_len] != context.crypto_header_bytes[..parsed_pre_hmac_len] {
         return Err(FormatError::InvalidArchive("CMRA CryptoHeader differs from parsed CryptoHeader"));
     }
@@ -1952,14 +1778,7 @@ pub(crate) fn validate_recovered_terminal_inner(
 
     let manifest_region = image.region(3).ok_or(FormatError::InvalidArchive("missing ManifestFooter region"))?;
     let manifest_footer = ManifestFooter::parse(&manifest_region.bytes)?;
-    validate_manifest_footer(
-        volume_header,
-        crypto_header,
-        &manifest_footer,
-        subkeys,
-        volume_header.volume_format_rev,
-        &manifest_region.bytes,
-    )?;
+    validate_manifest_footer(volume_header, crypto_header, &manifest_footer, subkeys, volume_header.volume_format_rev, &manifest_region.bytes)?;
     manifest_footer.validate_index_root_extent(crypto_header.block_size)?;
 
     let root_auth_footer = if image.layout_flags & 0x0000_0001 != 0 {
@@ -2000,13 +1819,7 @@ pub(crate) fn validate_recovered_terminal_inner(
 
     let manifest_footer_bytes = manifest_region.bytes.clone();
     let root_auth_footer_bytes = image.region(4).map(|region| region.bytes.clone());
-    Ok(V45Terminal {
-        image,
-        manifest_footer_bytes,
-        root_auth_footer_bytes,
-        root_auth_footer,
-        volume_trailer: trailer,
-    })
+    Ok(V45Terminal { image, manifest_footer_bytes, root_auth_footer_bytes, root_auth_footer, volume_trailer: trailer })
 }
 
 pub(crate) fn validate_recovered_public_terminal(
@@ -2071,9 +1884,7 @@ pub(crate) fn validate_recovered_public_terminal_inner(
         || root_auth_footer.session_id != volume_header.session_id
         || root_auth_footer.footer_length()? != image.root_auth_footer_length
     {
-        return Err(FormatError::InvalidArchive(
-            "public RootAuthFooter identity or length does not match terminal image",
-        ));
+        return Err(FormatError::InvalidArchive("public RootAuthFooter identity or length does not match terminal image"));
     }
 
     let trailer_region = image.region(5).ok_or(FormatError::InvalidArchive("missing VolumeTrailer region"))?;
@@ -2086,11 +1897,7 @@ pub(crate) fn validate_recovered_public_terminal_inner(
     }
 
     let root_auth_footer_bytes = root_auth_region.bytes.clone();
-    Ok(V45PublicTerminal {
-        image,
-        root_auth_footer_bytes,
-        root_auth_footer,
-    })
+    Ok(V45PublicTerminal { image, root_auth_footer_bytes, root_auth_footer })
 }
 
 pub(crate) fn validate_v45_trailer_equations(image: &CriticalMetadataImage, trailer: &VolumeTrailer) -> Result<(), FormatError> {
@@ -2149,9 +1956,7 @@ pub(crate) fn validate_v45_public_trailer_profile(image: &CriticalMetadataImage,
             .ok_or(FormatError::InvalidArchive("RootAuthFooter trailer boundary overflow"))?
             != image.volume_trailer_offset
     {
-        return Err(FormatError::InvalidArchive(
-            "VolumeTrailer root-auth fields do not match v45 public terminal layout",
-        ));
+        return Err(FormatError::InvalidArchive("VolumeTrailer root-auth fields do not match v45 public terminal layout"));
     }
     Ok(())
 }
@@ -2180,15 +1985,12 @@ pub(crate) fn critical_image_cap() -> Result<u64, FormatError> {
         IMAGE_CRC_LEN as u64,
     ]
     .into_iter()
-    .try_fold(0u64, |total, value| {
-        total.checked_add(value).ok_or(FormatError::InvalidArchive("critical image cap overflow"))
-    })
+    .try_fold(0u64, |total, value| total.checked_add(value).ok_or(FormatError::InvalidArchive("critical image cap overflow")))
 }
 
 pub(crate) fn cmra_serialized_length(tuple: CmraDecoderTuple) -> Result<u64, FormatError> {
-    let shard_total = (tuple.data_shard_count as u64)
-        .checked_add(tuple.parity_shard_count as u64)
-        .ok_or(FormatError::InvalidArchive("CMRA shard count overflow"))?;
+    let shard_total =
+        (tuple.data_shard_count as u64).checked_add(tuple.parity_shard_count as u64).ok_or(FormatError::InvalidArchive("CMRA shard count overflow"))?;
     let row_len = (CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN as u64)
         .checked_add(tuple.shard_size as u64)
         .ok_or(FormatError::InvalidArchive("CMRA row length overflow"))?;
@@ -2203,10 +2005,7 @@ pub(crate) fn cmra_worst_case_cap() -> Result<u64, FormatError> {
     let mut shard_size = 512u64;
     while shard_size <= 4096 {
         let data = ceil_div_u64(cap, shard_size)?;
-        let parity = 2u64.max(ceil_div_u64(
-            checked_u64_mul(data, READER_MAX_CMRA_PARITY_PCT as u64, "CMRA cap overflow")?,
-            100,
-        )?);
+        let parity = 2u64.max(ceil_div_u64(checked_u64_mul(data, READER_MAX_CMRA_PARITY_PCT as u64, "CMRA cap overflow")?, 100)?);
         let tuple = CmraDecoderTuple {
             shard_size: shard_size as u32,
             data_shard_count: u16::try_from(data).map_err(|_| FormatError::InvalidArchive("CMRA cap data shard overflow"))?,
@@ -2221,30 +2020,17 @@ pub(crate) fn cmra_worst_case_cap() -> Result<u64, FormatError> {
 }
 
 pub(crate) fn v45_terminal_tail_cap() -> Result<usize, FormatError> {
-    let total = [
-        MANIFEST_FOOTER_LEN as u64,
-        READER_MAX_ROOT_AUTH_FOOTER_LEN as u64,
-        VOLUME_TRAILER_LEN as u64,
-        cmra_worst_case_cap()?,
-        LOCATOR_PAIR_LEN as u64,
-    ]
-    .into_iter()
-    .try_fold(0u64, |sum, value| {
-        sum.checked_add(value).ok_or(FormatError::InvalidArchive("terminal tail cap overflow"))
-    })?;
+    let total =
+        [MANIFEST_FOOTER_LEN as u64, READER_MAX_ROOT_AUTH_FOOTER_LEN as u64, VOLUME_TRAILER_LEN as u64, cmra_worst_case_cap()?, LOCATOR_PAIR_LEN as u64]
+            .into_iter()
+            .try_fold(0u64, |sum, value| sum.checked_add(value).ok_or(FormatError::InvalidArchive("terminal tail cap overflow")))?;
     usize::try_from(total).map_err(|_| FormatError::InvalidArchive("terminal tail cap overflow"))
 }
 
 pub(crate) fn max_critical_recovery_scan(options: ReaderOptions) -> Result<usize, FormatError> {
     let worst = cmra_worst_case_cap()?;
-    let total = options
-        .max_trailing_garbage_scan
-        .try_into()
-        .map_err(|_| FormatError::InvalidArchive("scan cap overflow"))
-        .and_then(|scan: u64| {
-            scan.checked_add(worst)
-                .and_then(|value| value.checked_add(LOCATOR_PAIR_LEN as u64))
-                .ok_or(FormatError::InvalidArchive("scan cap overflow"))
-        })?;
+    let total = options.max_trailing_garbage_scan.try_into().map_err(|_| FormatError::InvalidArchive("scan cap overflow")).and_then(|scan: u64| {
+        scan.checked_add(worst).and_then(|value| value.checked_add(LOCATOR_PAIR_LEN as u64)).ok_or(FormatError::InvalidArchive("scan cap overflow"))
+    })?;
     usize::try_from(total).map_err(|_| FormatError::InvalidArchive("scan cap overflow"))
 }

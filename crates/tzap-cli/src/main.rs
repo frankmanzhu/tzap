@@ -172,33 +172,9 @@ fn run(cli: Cli) -> Result<()> {
                 jobs,
             },
         ),
-        Command::List {
-            archive,
-            password_stdin,
-            password,
-            keyfile,
-            recipient_key,
-            insecure_zero_key,
-            bootstrap,
-            volumes,
-            long,
-            json,
-            jobs,
-        } => list::run_list(
+        Command::List { archive, password_stdin, password, keyfile, recipient_key, insecure_zero_key, bootstrap, volumes, long, json, jobs } => list::run_list(
             quiet,
-            list::ListArgs {
-                archive,
-                password_stdin,
-                password,
-                keyfile,
-                recipient_key,
-                insecure_zero_key,
-                bootstrap,
-                volumes,
-                long,
-                json,
-                jobs,
-            },
+            list::ListArgs { archive, password_stdin, password, keyfile, recipient_key, insecure_zero_key, bootstrap, volumes, long, json, jobs },
         ),
         Command::Verify {
             archives,
@@ -237,18 +213,9 @@ fn run(cli: Cli) -> Result<()> {
             },
         ),
         Command::Keygen { output, stdout, force } => keygen::run_keygen(quiet, keygen::KeygenArgs { output, stdout, force }),
-        Command::SigningKeygen {
-            secret_output,
-            public_output,
-            force,
-        } => keygen::run_signing_keygen(
-            quiet,
-            keygen::SigningKeygenArgs {
-                secret_output,
-                public_output,
-                force,
-            },
-        ),
+        Command::SigningKeygen { secret_output, public_output, force } => {
+            keygen::run_signing_keygen(quiet, keygen::SigningKeygenArgs { secret_output, public_output, force })
+        }
         Command::TrustInfo { json } => emit_trust_info(json).map_err(Into::into),
     }
 }

@@ -52,14 +52,7 @@ pub(crate) fn build_writer_plan<S: RegularFileSource>(
         session_id,
         root_auth,
     )?;
-    Ok(TimedWriterPlan {
-        plan,
-        timings: WriterTimings {
-            plan_payload,
-            plan_metadata: metadata_started.elapsed(),
-            ..WriterTimings::default()
-        },
-    })
+    Ok(TimedWriterPlan { plan, timings: WriterTimings { plan_payload, plan_metadata: metadata_started.elapsed(), ..WriterTimings::default() } })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -105,33 +98,20 @@ pub(crate) fn build_writer_plan_from_payload(
             first_path_hash: planned.first_path_hash,
             last_path_hash: planned.last_path_hash,
         });
-        index_shard_objects.push(PlannedIndexShardObject {
-            shard_index: planned.shard_index,
-            compressed,
-            extent,
-        });
+        index_shard_objects.push(PlannedIndexShardObject { shard_index: planned.shard_index, compressed, extent });
     }
 
-    let compressed_dictionary = dictionary
-        .map(|dictionary| compress_zstd_frame_with_jobs(dictionary, options.zstd_level, options.jobs))
-        .transpose()?;
+    let compressed_dictionary = dictionary.map(|dictionary| compress_zstd_frame_with_jobs(dictionary, options.zstd_level, options.jobs)).transpose()?;
     let dictionary_decompressed_size = dictionary.map(|dictionary| u32_len(dictionary.len(), "dictionary")).transpose()?;
     let dictionary_plan = compressed_dictionary
         .as_ref()
         .map(|compressed| plan_metadata_object_without_class(compressed.len(), options, MetadataObjectKind::Dictionary))
         .transpose()?;
     let dictionary_extent = dictionary_plan.map(|plan| ObjectExtent::new(next_block_index, plan)).transpose()?;
-    let next_after_dictionary = if let Some(extent) = dictionary_extent {
-        extent.next_block_index()?
-    } else {
-        next_block_index
-    };
+    let next_after_dictionary = if let Some(extent) = dictionary_extent { extent.next_block_index()? } else { next_block_index };
 
-    let planned_directory_hint_shards = if should_emit_directory_hints(payload.tar_members.len()) {
-        build_directory_hint_plaintexts(&shard_file_rows, options)?
-    } else {
-        Vec::new()
-    };
+    let planned_directory_hint_shards =
+        if should_emit_directory_hints(payload.tar_members.len()) { build_directory_hint_plaintexts(&shard_file_rows, options)? } else { Vec::new() };
     let mut directory_hint_entries = Vec::with_capacity(planned_directory_hint_shards.len());
     let mut directory_hint_objects = Vec::with_capacity(planned_directory_hint_shards.len());
     let mut planned_next_block_index = next_after_dictionary;
@@ -151,11 +131,7 @@ pub(crate) fn build_writer_plan_from_payload(
             decompressed_size: u32_len(planned.plaintext.len(), "DirectoryHintTable")?,
             entry_count: planned.entry_count,
         });
-        directory_hint_objects.push(PlannedDirectoryHintObject {
-            hint_shard_index: planned.hint_shard_index,
-            compressed,
-            extent,
-        });
+        directory_hint_objects.push(PlannedDirectoryHintObject { hint_shard_index: planned.hint_shard_index, compressed, extent });
     }
 
     let dictionary_extent = dictionary_extent.zip(dictionary_decompressed_size);
@@ -173,20 +149,11 @@ pub(crate) fn build_writer_plan_from_payload(
     let compressed_index_root = compress_zstd_frame_with_jobs(&index_root_plaintext, options.zstd_level, options.jobs)?;
     let metadata_class = plan_index_root_metadata_class(options, compressed_index_root.len(), compressed_dictionary.as_ref().map(Vec::len))?;
     options = metadata_class.options;
-    let crypto_header = build_crypto_header(
-        options,
-        volume_format_rev,
-        dictionary.is_some(),
-        &subkeys,
-        &archive_uuid,
-        &session_id,
-        &resolved_kdf_params,
-    )?;
+    let crypto_header = build_crypto_header(options, volume_format_rev, dictionary.is_some(), &subkeys, &archive_uuid, &session_id, &resolved_kdf_params)?;
     let index_root_extent = ObjectExtent::new(planned_next_block_index, metadata_class.index_root)?;
     let total_block_count = index_root_extent.next_block_index()?;
-    let root_auth_footer_length = root_auth
-        .map(|config| root_auth_footer_wire_length(config.signer_identity.len(), config.authenticator_value_length as usize))
-        .transpose()?;
+    let root_auth_footer_length =
+        root_auth.map(|config| root_auth_footer_wire_length(config.signer_identity.len(), config.authenticator_value_length as usize)).transpose()?;
     let block_records_offset = checked_u64_add(
         checked_u64_add(VOLUME_HEADER_LEN as u64, crypto_header.len() as u64, "CryptoHeader")?,
         key_wrap_table.as_ref().map(Vec::len).unwrap_or(0) as u64,
@@ -231,10 +198,7 @@ pub(crate) fn plan_payload_stream<S: RegularFileSource>(
     let mut hasher = Sha256::new();
     let mut payload_block_count = 0u64;
     let mut next_frame_index = 0u64;
-    let mut envelope = PayloadEnvelopeBuilder {
-        envelope_index: 0,
-        plaintext: Vec::new(),
-    };
+    let mut envelope = PayloadEnvelopeBuilder { envelope_index: 0, plaintext: Vec::new() };
 
     for (member_index, file) in files.iter().enumerate() {
         let path = normalize_lookup_file_path(file.archive_path(), options.max_path_length)?;
@@ -244,11 +208,8 @@ pub(crate) fn plan_payload_stream<S: RegularFileSource>(
         }
         let link_target = file.link_target().map(<[u8]>::to_vec);
         let sparse_extents = file.sparse_extents().map(<[SparseExtent]>::to_vec);
-        let source_payload_size = sparse_extents
-            .as_deref()
-            .map(|extents| sparse_extent_bytes(extents, file.file_data_size()))
-            .transpose()?
-            .unwrap_or(file.file_data_size());
+        let source_payload_size =
+            sparse_extents.as_deref().map(|extents| sparse_extent_bytes(extents, file.file_data_size())).transpose()?.unwrap_or(file.file_data_size());
         let portable_metadata = file.portable_metadata();
         let layout = build_primary_member_layout(
             &path,
@@ -312,14 +273,7 @@ pub(crate) fn plan_payload_stream<S: RegularFileSource>(
                     next_frame_index: &mut next_frame_index,
                     options,
                 },
-                PayloadFramePlanInput {
-                    frame: &frame,
-                    decompressed_size: chunk_len,
-                    member_index,
-                    member_start,
-                    member_offset,
-                    member_group_size,
-                },
+                PayloadFramePlanInput { frame: &frame, decompressed_size: chunk_len, member_index, member_start, member_offset, member_group_size },
             )?;
             member_offset = checked_u64_add(member_offset, chunk_len as u64, "payload chunk")?;
             tar_total_size = checked_u64_add(tar_total_size, chunk_len as u64, "tar stream")?;
@@ -332,14 +286,7 @@ pub(crate) fn plan_payload_stream<S: RegularFileSource>(
     let digest = hasher.finalize();
     let mut content_sha256 = [0u8; 32];
     content_sha256.copy_from_slice(&digest);
-    Ok(PayloadPlanning {
-        tar_members,
-        frames,
-        payload_objects,
-        payload_block_count,
-        tar_total_size,
-        content_sha256,
-    })
+    Ok(PayloadPlanning { tar_members, frames, payload_objects, payload_block_count, tar_total_size, content_sha256 })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -397,10 +344,7 @@ where
         tar_total_size: 0,
         hasher: Sha256::new(),
         next_frame_index: 0,
-        envelope: PayloadEnvelopeBuilder {
-            envelope_index: 0,
-            plaintext: Vec::new(),
-        },
+        envelope: PayloadEnvelopeBuilder { envelope_index: 0, plaintext: Vec::new() },
         emission_state,
     };
     start_write_phase(progress, ArchiveWritePhase::EmittingPayload);
@@ -434,13 +378,7 @@ pub(crate) struct PayloadFramePlanInput<'a> {
 
 pub(crate) fn append_payload_frame_to_plan(state: PayloadFramePlanState<'_>, input: PayloadFramePlanInput<'_>) -> Result<(), FormatError> {
     if payload_envelope_needs_flush(state.envelope, input.frame.len(), state.options)? {
-        flush_payload_envelope_plan(
-            state.envelope,
-            state.payload_objects,
-            state.payload_block_count,
-            state.next_block_index,
-            state.options,
-        )?;
+        flush_payload_envelope_plan(state.envelope, state.payload_objects, state.payload_block_count, state.next_block_index, state.options)?;
     }
     if state.envelope.plaintext.is_empty() && !payload_object_can_fit(input.frame.len(), state.options)? {
         return Err(FormatError::WriterUnsupported("payload frame exceeds envelope object limits"));
@@ -474,11 +412,7 @@ pub(crate) fn flush_payload_envelope_plan(
     let extent = ObjectExtent::new(*next_block_index, object_plan)?;
     *next_block_index = extent.next_block_index()?;
     *payload_block_count = checked_u64_add(*payload_block_count, extent.data_block_count as u64, "payload")?;
-    payload_objects.push(PayloadObject {
-        envelope_index: envelope.envelope_index,
-        plaintext_size,
-        object: extent,
-    });
+    payload_objects.push(PayloadObject { envelope_index: envelope.envelope_index, plaintext_size, object: extent });
     envelope.envelope_index = checked_u64_add(envelope.envelope_index, 1, "EnvelopeEntry")?;
     envelope.plaintext.clear();
     Ok(())
@@ -494,9 +428,7 @@ pub(crate) fn required_stripe_width_for_plan(plan: &WriterPlan, master_key: &Mas
         let volume_size = planned_v45_volume_size(plan, &subkeys, volume_index, block_count)?;
         max_volume_size = max_volume_size.max(volume_size);
         let record_bytes = checked_u64_mul(block_count, block_record_len, "volume records")?;
-        let overhead = volume_size
-            .checked_sub(record_bytes)
-            .ok_or(FormatError::WriterInvariant("planned volume record overflow"))?;
+        let overhead = volume_size.checked_sub(record_bytes).ok_or(FormatError::WriterInvariant("planned volume record overflow"))?;
         max_overhead = max_overhead.max(overhead);
     }
     if max_volume_size <= target_volume_size {
@@ -511,9 +443,7 @@ pub(crate) fn required_stripe_width_for_plan(plan: &WriterPlan, master_key: &Mas
         return Err(FormatError::WriterUnsupported("volume-size is too small for the configured block-size"));
     }
 
-    let required = ceil_div(plan.total_block_count, records_per_volume)?
-        .max(plan.options.volume_loss_tolerance as u64 + 1)
-        .max(1);
+    let required = ceil_div(plan.total_block_count, records_per_volume)?.max(plan.options.volume_loss_tolerance as u64 + 1).max(1);
     u32::try_from(required).map_err(|_| FormatError::WriterUnsupported("volume count"))
 }
 
@@ -545,15 +475,10 @@ pub(crate) fn planned_v45_volume_size(plan: &WriterPlan, subkeys: &Subkeys, volu
         plan.index_root_plaintext.len(),
     )?;
     let root_auth_footer = plan.root_auth_footer_length.map(|length| vec![0u8; length as usize]);
-    let root_auth_footer_offset = root_auth_footer
-        .as_ref()
-        .map(|_| checked_u64_add(manifest_footer_offset, MANIFEST_FOOTER_LEN as u64, "RootAuthFooterV1"))
-        .transpose()?;
-    let trailer_offset = checked_u64_add(
-        manifest_footer_offset,
-        MANIFEST_FOOTER_LEN as u64 + u64::from(plan.root_auth_footer_length.unwrap_or(0)),
-        "VolumeTrailer",
-    )?;
+    let root_auth_footer_offset =
+        root_auth_footer.as_ref().map(|_| checked_u64_add(manifest_footer_offset, MANIFEST_FOOTER_LEN as u64, "RootAuthFooterV1")).transpose()?;
+    let trailer_offset =
+        checked_u64_add(manifest_footer_offset, MANIFEST_FOOTER_LEN as u64 + u64::from(plan.root_auth_footer_length.unwrap_or(0)), "VolumeTrailer")?;
     let trailer = build_volume_trailer(VolumeTrailerBuildInput {
         subkeys,
         aead_algo: plan.options.aead_algo,
@@ -587,11 +512,7 @@ pub(crate) fn planned_v45_volume_size(plan: &WriterPlan, subkeys: &Subkeys, volu
         session_id: plan.session_id,
         volume_index,
     })?;
-    checked_u64_add(
-        checked_u64_add(cmra_offset, cmra.bytes.len() as u64, "CMRA")?,
-        (CRITICAL_RECOVERY_LOCATOR_LEN * 2) as u64,
-        "critical recovery locators",
-    )
+    checked_u64_add(checked_u64_add(cmra_offset, cmra.bytes.len() as u64, "CMRA")?, (CRITICAL_RECOVERY_LOCATOR_LEN * 2) as u64, "critical recovery locators")
 }
 
 pub(crate) fn striped_block_count(total_block_count: u64, stripe_width: u32, volume_index: u32) -> u64 {
@@ -802,10 +723,7 @@ pub(crate) fn emit_writer_plan_suffix<O: ArchiveWriteSink>(
                     shard_entries: &plan.shard_entries,
                     payload_objects: &plan.payload_objects,
                     directory_hint_entries: &plan.directory_hint_entries,
-                    data_leaf_hashes: state
-                        .data_leaf_hashes
-                        .as_deref()
-                        .ok_or(FormatError::WriterInvariant("missing root-auth data leaf hashes"))?,
+                    data_leaf_hashes: state.data_leaf_hashes.as_deref().ok_or(FormatError::WriterInvariant("missing root-auth data leaf hashes"))?,
                 },
             )?)
         }
@@ -897,17 +815,10 @@ pub(crate) fn emit_writer_plan_suffix<O: ArchiveWriteSink>(
         };
         let mirror = locator_base.to_bytes();
         sink.write_volume(volume_index, &mirror)?;
-        let final_locator = CriticalRecoveryLocator {
-            locator_sequence: 0,
-            ..locator_base
-        }
-        .to_bytes();
+        let final_locator = CriticalRecoveryLocator { locator_sequence: 0, ..locator_base }.to_bytes();
         sink.write_volume(volume_index, &final_locator)?;
-        state.bytes_written[volume_index] = checked_u64_add(
-            state.bytes_written[volume_index],
-            (CRITICAL_RECOVERY_LOCATOR_LEN * 2) as u64,
-            "critical recovery locators",
-        )?;
+        state.bytes_written[volume_index] =
+            checked_u64_add(state.bytes_written[volume_index], (CRITICAL_RECOVERY_LOCATOR_LEN * 2) as u64, "critical recovery locators")?;
 
         if volume_index == 0 {
             debug_assert_eq!(volume_zero_manifest, manifest_footer);
@@ -938,9 +849,6 @@ pub(crate) fn emit_writer_plan_suffix<O: ArchiveWriteSink>(
         bootstrap_sidecar_bytes,
         archive_uuid: plan.archive_uuid,
         session_id: plan.session_id,
-        timings: WriterTimings {
-            emit_metadata: emit_metadata_started.elapsed(),
-            ..WriterTimings::default()
-        },
+        timings: WriterTimings { emit_metadata: emit_metadata_started.elapsed(), ..WriterTimings::default() },
     })
 }

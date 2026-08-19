@@ -24,18 +24,9 @@ pub(crate) fn run_keygen(quiet: bool, args: KeygenArgs) -> Result<()> {
 }
 
 pub(crate) fn run_signing_keygen(quiet: bool, args: SigningKeygenArgs) -> Result<()> {
-    let SigningKeygenArgs {
-        secret_output,
-        public_output,
-        force,
-    } = args;
+    let SigningKeygenArgs { secret_output, public_output, force } = args;
 
-    ensure_distinct_output_paths(
-        "signing secret output",
-        Path::new(&secret_output),
-        "signing public output",
-        Path::new(&public_output),
-    )?;
+    ensure_distinct_output_paths("signing secret output", Path::new(&secret_output), "signing public output", Path::new(&public_output))?;
     if !force {
         check_output_path_free("signing secret output", Path::new(&secret_output))?;
         check_output_path_free("signing public output", Path::new(&public_output))?;
@@ -45,16 +36,8 @@ pub(crate) fn run_signing_keygen(quiet: bool, args: SigningKeygenArgs) -> Result
     let public_hex = format!("{}\n", encode_hex(&signing_key.verifying_key().to_bytes()));
     write_atomic_output_files(
         &[
-            AtomicOutput {
-                label: "signing secret",
-                path: Path::new(&secret_output),
-                bytes: secret_hex.as_bytes(),
-            },
-            AtomicOutput {
-                label: "signing public key",
-                path: Path::new(&public_output),
-                bytes: public_hex.as_bytes(),
-            },
+            AtomicOutput { label: "signing secret", path: Path::new(&secret_output), bytes: secret_hex.as_bytes() },
+            AtomicOutput { label: "signing public key", path: Path::new(&public_output), bytes: public_hex.as_bytes() },
         ],
         force,
     )?;

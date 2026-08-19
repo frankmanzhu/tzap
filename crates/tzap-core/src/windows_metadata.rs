@@ -13,10 +13,7 @@ pub fn capture_windows_metadata(input: &Path) -> io::Result<NativeFileMetadata> 
         FileBasicInfo, GetFileInformationByHandleEx, FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
     };
 
-    let file = fs::OpenOptions::new()
-        .access_mode(FILE_GENERIC_READ)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(input)?;
+    let file = fs::OpenOptions::new().access_mode(FILE_GENERIC_READ).custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT).open(input)?;
     let mut basic = FILE_BASIC_INFO::default();
     if unsafe {
         GetFileInformationByHandleEx(
@@ -31,18 +28,9 @@ pub fn capture_windows_metadata(input: &Path) -> io::Result<NativeFileMetadata> 
     }
 
     let mut native = NativeFileMetadata::default();
-    native
-        .primary_pax_records
-        .insert("TZAP.windows.file-attributes".into(), format!("{:08x}", basic.FileAttributes).into_bytes());
-    for (key, value) in [
-        ("atime", basic.LastAccessTime),
-        ("LIBARCHIVE.creationtime", basic.CreationTime),
-        ("TZAP.windows.change-time", basic.ChangeTime),
-    ] {
-        native.primary_pax_records.insert(
-            key.into(),
-            windows_filetime_timestamp(value as u64)?.canonical_pax_value().map_err(io::Error::other)?,
-        );
+    native.primary_pax_records.insert("TZAP.windows.file-attributes".into(), format!("{:08x}", basic.FileAttributes).into_bytes());
+    for (key, value) in [("atime", basic.LastAccessTime), ("LIBARCHIVE.creationtime", basic.CreationTime), ("TZAP.windows.change-time", basic.ChangeTime)] {
+        native.primary_pax_records.insert(key.into(), windows_filetime_timestamp(value as u64)?.canonical_pax_value().map_err(io::Error::other)?);
     }
 
     let reparse_data = if basic.FileAttributes & 0x0000_0400 != 0 {
@@ -61,23 +49,15 @@ pub fn capture_windows_metadata(input: &Path) -> io::Result<NativeFileMetadata> 
     native.auxiliary_records.push(capture_windows_security_descriptor(&file)?);
     if basic.FileAttributes & 0x0000_0010 != 0 {
         if let Some(case_sensitive) = query_windows_directory_case_sensitive(&file)? {
-            native.primary_pax_records.insert(
-                "TZAP.windows.directory-case-sensitive".into(),
-                if case_sensitive { b"1" } else { b"0" }.to_vec(),
-            );
+            native.primary_pax_records.insert("TZAP.windows.directory-case-sensitive".into(), if case_sensitive { b"1" } else { b"0" }.to_vec());
         }
     }
     let (data_stream_attributes, mut streams) = capture_windows_backup_streams(&file, reparse_data.as_deref())?;
     if basic.FileAttributes & (0x0000_0010 | 0x0000_0400) == 0 {
-        native.primary_pax_records.insert(
-            "TZAP.windows.data-stream-attributes".into(),
-            format!("{data_stream_attributes:08x}").into_bytes(),
-        );
+        native.primary_pax_records.insert("TZAP.windows.data-stream-attributes".into(), format!("{data_stream_attributes:08x}").into_bytes());
     }
     native.auxiliary_records.append(&mut streams);
-    native
-        .auxiliary_records
-        .sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
+    native.auxiliary_records.sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
     native.required_profiles.push("windows-backup-v1".into());
     Ok(native)
 }
@@ -163,14 +143,7 @@ fn capture_windows_security_descriptor(file: &File) -> io::Result<NativeAuxiliar
     const BASE: u32 = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
     let original = file.as_raw_handle().cast();
     let sacl_handle = if enable_windows_privilege(windows_sys::Win32::Security::SE_SECURITY_NAME) {
-        let handle = unsafe {
-            ReOpenFile(
-                original,
-                READ_CONTROL | ACCESS_SYSTEM_SECURITY,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                0,
-            )
-        };
+        let handle = unsafe { ReOpenFile(original, READ_CONTROL | ACCESS_SYSTEM_SECURITY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0) };
         (handle != INVALID_HANDLE_VALUE).then_some(handle)
     } else {
         None
@@ -212,24 +185,14 @@ fn capture_windows_security_descriptor(file: &File) -> io::Result<NativeAuxiliar
     let mut represented = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION;
     if control & 0x0004 != 0 {
         represented |= DACL_SECURITY_INFORMATION;
-        represented |= if control & 0x1000 != 0 {
-            PROTECTED_DACL_SECURITY_INFORMATION
-        } else {
-            UNPROTECTED_DACL_SECURITY_INFORMATION
-        };
+        represented |= if control & 0x1000 != 0 { PROTECTED_DACL_SECURITY_INFORMATION } else { UNPROTECTED_DACL_SECURITY_INFORMATION };
     }
     if control & 0x0010 != 0 {
         represented |= SACL_SECURITY_INFORMATION;
-        represented |= if control & 0x2000 != 0 {
-            PROTECTED_SACL_SECURITY_INFORMATION
-        } else {
-            UNPROTECTED_SACL_SECURITY_INFORMATION
-        };
+        represented |= if control & 0x2000 != 0 { PROTECTED_SACL_SECURITY_INFORMATION } else { UNPROTECTED_SACL_SECURITY_INFORMATION };
     }
     let mut record = NativeAuxiliaryMetadata::new("windows.security-descriptor", "windows-backup-v1", RestoreClass::System, payload);
-    record
-        .meta
-        .insert("TZAP.aux.meta.security-information".into(), format!("{represented:08x}").into_bytes());
+    record.meta.insert("TZAP.aux.meta.security-information".into(), format!("{represented:08x}").into_bytes());
     Ok(record)
 }
 
@@ -244,10 +207,7 @@ fn enable_windows_privilege(name: *const u16) -> bool {
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, &mut token) } == 0 {
         return false;
     }
-    let mut privileges = TOKEN_PRIVILEGES {
-        PrivilegeCount: 1,
-        ..Default::default()
-    };
+    let mut privileges = TOKEN_PRIVILEGES { PrivilegeCount: 1, ..Default::default() };
     let enabled = if unsafe { LookupPrivilegeValueW(std::ptr::null(), name, &mut privileges.Privileges[0].Luid) } == 0 {
         false
     } else {
@@ -270,10 +230,7 @@ struct WindowsBackupReader {
 
 impl WindowsBackupReader {
     fn new(file: &File) -> Self {
-        Self {
-            handle: file.as_raw_handle().cast(),
-            context: std::ptr::null_mut(),
-        }
+        Self { handle: file.as_raw_handle().cast(), context: std::ptr::null_mut() }
     }
 
     fn read_optional_exact(&mut self, out: &mut [u8]) -> io::Result<bool> {
@@ -296,11 +253,7 @@ impl WindowsBackupReader {
                 return Err(io::Error::last_os_error());
             }
             if read == 0 {
-                return if offset == 0 {
-                    Ok(false)
-                } else {
-                    Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Windows backup stream ended mid-record"))
-                };
+                return if offset == 0 { Ok(false) } else { Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Windows backup stream ended mid-record")) };
             }
             offset += read as usize;
         }
@@ -387,21 +340,13 @@ fn capture_windows_backup_streams(file: &File, expected_reparse: Option<&[u8]>) 
                 }
                 let payload = reader.read_vec(size)?;
                 let (kind, stream_type, restore_class) = match stream_id {
-                    BACKUP_ALTERNATE_DATA => (
-                        "windows.alternate-data",
-                        "00000004",
-                        if attributes & 2 != 0 { RestoreClass::System } else { RestoreClass::SameOs },
-                    ),
-                    BACKUP_EA_DATA => (
-                        "windows.ea-data",
-                        "00000002",
-                        if attributes & 2 != 0 { RestoreClass::System } else { RestoreClass::SameOs },
-                    ),
-                    BACKUP_PROPERTY_DATA => (
-                        "windows.property-data",
-                        "00000006",
-                        if attributes & 2 != 0 { RestoreClass::System } else { RestoreClass::SameOs },
-                    ),
+                    BACKUP_ALTERNATE_DATA => {
+                        ("windows.alternate-data", "00000004", if attributes & 2 != 0 { RestoreClass::System } else { RestoreClass::SameOs })
+                    }
+                    BACKUP_EA_DATA => ("windows.ea-data", "00000002", if attributes & 2 != 0 { RestoreClass::System } else { RestoreClass::SameOs }),
+                    BACKUP_PROPERTY_DATA => {
+                        ("windows.property-data", "00000006", if attributes & 2 != 0 { RestoreClass::System } else { RestoreClass::SameOs })
+                    }
                     _ => ("windows.object-id", "00000007", RestoreClass::System),
                 };
                 let mut record = NativeAuxiliaryMetadata::new(kind, "windows-backup-v1", restore_class, payload);
@@ -412,9 +357,7 @@ fn capture_windows_backup_streams(file: &File, expected_reparse: Option<&[u8]>) 
                     return Err(io::Error::other("unnamed Windows metadata stream had a name"));
                 }
                 record.meta.insert("TZAP.aux.meta.stream-type".into(), stream_type.as_bytes().to_vec());
-                record
-                    .meta
-                    .insert("TZAP.aux.meta.stream-attributes".into(), format!("{attributes:08x}").into_bytes());
+                record.meta.insert("TZAP.aux.meta.stream-attributes".into(), format!("{attributes:08x}").into_bytes());
                 auxiliary.push(record);
             }
             BACKUP_TXFS_DATA => {

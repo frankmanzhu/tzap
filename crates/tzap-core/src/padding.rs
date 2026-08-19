@@ -108,10 +108,7 @@ mod tests {
 
     #[test]
     fn rejects_noncanonical_wide_form_padding_below_255() {
-        assert_eq!(
-            depad_suffix_padding(&[0x05, 0x00, 0x00, 0x00, 0xff]).unwrap_err(),
-            FormatError::InvalidSuffixPadding
-        );
+        assert_eq!(depad_suffix_padding(&[0x05, 0x00, 0x00, 0x00, 0xff]).unwrap_err(), FormatError::InvalidSuffixPadding);
     }
 
     #[test]

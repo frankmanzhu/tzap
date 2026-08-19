@@ -78,11 +78,8 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
     let jobs = resolve_jobs(jobs)?;
     let resolved_volume_loss_tolerance =
         resolve_create_volume_loss_tolerance(volume_loss_tolerance, volumes, volume_size.as_deref(), tar_stdin || raw_stdin || spool_stdin);
-    let layout_overrides = CreateLayoutOverrides {
-        chunk_size: chunk_size.as_deref(),
-        envelope_size: envelope_size.as_deref(),
-        block_size: block_size.as_deref(),
-    };
+    let layout_overrides =
+        CreateLayoutOverrides { chunk_size: chunk_size.as_deref(), envelope_size: envelope_size.as_deref(), block_size: block_size.as_deref() };
     let build_writer_options = |total_input_size: Option<u64>| -> Result<WriterOptions> {
         let mut options = create_writer_options(CreateWriterOptionsArgs {
             volumes,
@@ -99,14 +96,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
         }
         Ok(options)
     };
-    validate_create_key_source(
-        keyfile.as_deref(),
-        recipient_cert.as_deref(),
-        password_stdin,
-        password,
-        no_encryption,
-        insecure_zero_key,
-    )?;
+    validate_create_key_source(keyfile.as_deref(), recipient_cert.as_deref(), password_stdin, password, no_encryption, insecure_zero_key)?;
     if bootstrap_out.is_some() && (volumes.unwrap_or(1) > 1 || volume_size.is_some()) {
         return Err(FormatError::WriterUnsupported("--bootstrap-out is currently supported only for single-volume output").into());
     }
@@ -150,14 +140,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
             eprintln!("  input bytes: unknown until stdin is consumed");
             eprintln!(
                 "  key mode: {}",
-                create_key_mode_label(
-                    keyfile.as_deref(),
-                    recipient_cert.as_deref(),
-                    password_stdin,
-                    password,
-                    no_encryption,
-                    insecure_zero_key
-                )
+                create_key_mode_label(keyfile.as_deref(), recipient_cert.as_deref(), password_stdin, password, no_encryption, insecure_zero_key)
             );
             eprintln!("  root auth: {}", create_root_auth_mode_label(signing_key.as_deref(), signing_cert.as_deref()));
             eprintln!("  volume mode: {}", describe_planned_volume_mode(volumes, volume_size.as_deref()));
@@ -303,14 +286,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
         eprintln!("  input bytes: {}", input_bytes);
         eprintln!(
             "  key mode: {}",
-            create_key_mode_label(
-                keyfile.as_deref(),
-                recipient_cert.as_deref(),
-                password_stdin,
-                password,
-                no_encryption,
-                insecure_zero_key
-            )
+            create_key_mode_label(keyfile.as_deref(), recipient_cert.as_deref(), password_stdin, password, no_encryption, insecure_zero_key)
         );
         eprintln!("  root auth: {}", create_root_auth_mode_label(signing_key.as_deref(), signing_cert.as_deref()));
         eprintln!("  volume mode: {}", describe_planned_volume_mode(volumes, volume_size.as_deref()));
@@ -370,27 +346,11 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
         return Ok(());
     }
 
-    let key = load_create_key(
-        keyfile.as_deref(),
-        password_stdin,
-        password,
-        no_encryption,
-        insecure_zero_key,
-        argon2_t_cost,
-        argon2_m_cost_kib,
-        argon2_parallelism,
-    )?;
-    let dictionary_bytes = dictionary
-        .as_deref()
-        .map(|path| fs::read(path).with_context(|| format!("failed to read dictionary {path}")))
-        .transpose()?;
-    let root_auth_profile = load_create_root_auth_profile(
-        signing_key.as_deref(),
-        signing_cert.as_deref(),
-        signing_private_key.as_deref(),
-        &signing_chain,
-        x509_signature_scheme,
-    )?;
+    let key =
+        load_create_key(keyfile.as_deref(), password_stdin, password, no_encryption, insecure_zero_key, argon2_t_cost, argon2_m_cost_kib, argon2_parallelism)?;
+    let dictionary_bytes = dictionary.as_deref().map(|path| fs::read(path).with_context(|| format!("failed to read dictionary {path}"))).transpose()?;
+    let root_auth_profile =
+        load_create_root_auth_profile(signing_key.as_deref(), signing_cert.as_deref(), signing_private_key.as_deref(), &signing_chain, x509_signature_scheme)?;
     let root_auth = root_auth_profile.as_ref().map(CreateRootAuthProfile::root_auth_writer_config).transpose()?;
 
     if dictionary_bytes.is_none() && options.target_volume_size.is_none() && options.volume_loss_tolerance == 0 {
@@ -455,16 +415,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
             &mut archive_sink,
         )
     } else {
-        write_archive_sources_to_sink(
-            &input_specs,
-            &key.master_key,
-            options,
-            dictionary_bytes.as_deref(),
-            &key.kdf_params,
-            None,
-            None,
-            &mut archive_sink,
-        )
+        write_archive_sources_to_sink(&input_specs, &key.master_key, options, dictionary_bytes.as_deref(), &key.kdf_params, None, None, &mut archive_sink)
     }
     .context("failed to create archive")?;
     let core_writer = core_writer_started.elapsed();
@@ -499,14 +450,7 @@ pub(crate) fn run_create(quiet: bool, args: CreateArgs) -> Result<()> {
         emit_success_summary(quiet, &format!("  bootstrap output: {}", path))?;
     }
     if timings {
-        emit_create_timing_report(
-            scan_inputs,
-            read_inputs,
-            core_writer,
-            write_outputs,
-            create_total_started.elapsed(),
-            archive.timings,
-        )?;
+        emit_create_timing_report(scan_inputs, read_inputs, core_writer, write_outputs, create_total_started.elapsed(), archive.timings)?;
     }
     Ok(())
 }
@@ -581,10 +525,7 @@ pub(crate) fn create_writer_options(args: CreateWriterOptionsArgs<'_>) -> Result
     let layout = resolve_create_layout(args.layout_overrides, args.total_input_size)?;
     Ok(WriterOptions {
         stripe_width: args.volumes.unwrap_or(1),
-        target_volume_size: args
-            .volume_size
-            .map(|value| parse_size(value).with_context(|| UsageError("invalid volume-size")))
-            .transpose()?,
+        target_volume_size: args.volume_size.map(|value| parse_size(value).with_context(|| UsageError("invalid volume-size"))).transpose()?,
         volume_loss_tolerance: args.volume_loss_tolerance,
         bit_rot_buffer_pct: args.bit_rot_buffer_pct,
         zstd_level: args.compression_level,
@@ -615,16 +556,10 @@ pub(crate) fn resolve_create_layout(overrides: CreateLayoutOverrides<'_>, total_
 
 pub(crate) fn default_create_layout(total_input_size: Option<u64>) -> CreateLayout {
     match total_input_size {
-        Some(size) if size <= LARGE_CREATE_LAYOUT_THRESHOLD => CreateLayout {
-            block_size: 64 * 1024,
-            chunk_size: 256 * 1024,
-            envelope_target_size: 1024 * 1024,
-        },
-        Some(_) | None => CreateLayout {
-            block_size: 1024 * 1024,
-            chunk_size: 32 * 1024 * 1024,
-            envelope_target_size: 64 * 1024 * 1024,
-        },
+        Some(size) if size <= LARGE_CREATE_LAYOUT_THRESHOLD => {
+            CreateLayout { block_size: 64 * 1024, chunk_size: 256 * 1024, envelope_target_size: 1024 * 1024 }
+        }
+        Some(_) | None => CreateLayout { block_size: 1024 * 1024, chunk_size: 32 * 1024 * 1024, envelope_target_size: 64 * 1024 * 1024 },
     }
 }
 
@@ -760,21 +695,11 @@ impl RegularFileSource for InputSpec {
                 validated: false,
             }) as Box<dyn Read + '_>);
         }
-        Ok(Box::new(IdentityCheckedInputReader {
-            file,
-            expected: self.identity,
-            remaining: self.size,
-            validated: false,
-        }) as Box<dyn Read + '_>)
+        Ok(Box::new(IdentityCheckedInputReader { file, expected: self.identity, remaining: self.size, validated: false }) as Box<dyn Read + '_>)
     }
 
     fn open_auxiliary(&self, ordinal: usize) -> std::result::Result<Box<dyn Read + '_>, ArchiveWriteError> {
-        let record = self
-            .portable_metadata
-            .native
-            .auxiliary_records
-            .get(ordinal)
-            .ok_or(FormatError::WriterInvariant("auxiliary source ordinal is missing"))?;
+        let record = self.portable_metadata.native.auxiliary_records.get(ordinal).ok_or(FormatError::WriterInvariant("auxiliary source ordinal is missing"))?;
         if !record.is_streamed() {
             return Ok(Box::new(io::Cursor::new(record.payload.as_slice())));
         }
@@ -789,9 +714,7 @@ impl RegularFileSource for InputSpec {
                 let file = File::open(&self.source).map_err(ArchiveWriteError::Io)?;
                 open_macos_resource_fork_for_read(file).map_err(ArchiveWriteError::Io)?
             };
-            Ok(Box::new(
-                MacosResourceForkReader::new(source, self.identity, Some(record.logical_size)).map_err(ArchiveWriteError::Io)?,
-            ))
+            Ok(Box::new(MacosResourceForkReader::new(source, self.identity, Some(record.logical_size)).map_err(ArchiveWriteError::Io)?))
         }
         #[cfg(windows)]
         {
@@ -799,11 +722,7 @@ impl RegularFileSource for InputSpec {
                 if record.name_encoding != NativeAuxiliaryNameEncoding::None || !record.name.is_empty() {
                     return Err(FormatError::WriterUnsupported("raw EFS auxiliary source has an unexpected name").into());
                 }
-                return Ok(Box::new(WindowsRawEfsReader::spawn(
-                    self.source.clone(),
-                    self.identity,
-                    record.stored_payload_size(),
-                )));
+                return Ok(Box::new(WindowsRawEfsReader::spawn(self.source.clone(), self.identity, record.stored_payload_size())));
             }
             if record.kind != "windows.alternate-data" || record.name_encoding != NativeAuxiliaryNameEncoding::Utf16Le || record.name.len() % 2 != 0 {
                 return Err(FormatError::WriterUnsupported("unsupported streamed Windows auxiliary source").into());
@@ -865,11 +784,7 @@ pub(crate) fn collect_input_specs(paths: &[String]) -> Result<Vec<InputSpec>> {
     let mut out = Vec::new();
     for path in paths {
         let input = PathBuf::from(path);
-        let base = input
-            .file_name()
-            .and_then(OsStr::to_str)
-            .ok_or_else(|| anyhow!("input path has no valid UTF-8 file name: {path}"))?
-            .to_owned();
+        let base = input.file_name().and_then(OsStr::to_str).ok_or_else(|| anyhow!("input path has no valid UTF-8 file name: {path}"))?.to_owned();
         collect_one_input_spec(&input, Path::new(&base), &mut out).with_context(|| format!("failed to collect input {path}"))?;
     }
     out.sort_by(|left, right| left.archive_path.cmp(&right.archive_path));
@@ -895,12 +810,8 @@ pub(crate) fn apply_selected_hardlink_topology(specs: &mut [InputSpec]) -> Resul
             if canonical.identity != spec.identity {
                 bail!("selected hardlink identity changed while grouping inputs");
             }
-            let (canonical_target, mode, mtime, mut portable_metadata) = (
-                canonical.archive_path.as_bytes().to_vec(),
-                canonical.mode,
-                canonical.mtime,
-                canonical.portable_metadata.clone(),
-            );
+            let (canonical_target, mode, mtime, mut portable_metadata) =
+                (canonical.archive_path.as_bytes().to_vec(), canonical.mode, canonical.mtime, canonical.portable_metadata.clone());
             // A hardlink alias owns topology, not a second file object.
             // Creation/access times belong to the canonical inode and would
             // otherwise introduce source-OS primary keys on an alias whose
@@ -924,9 +835,7 @@ pub(crate) fn apply_selected_hardlink_topology(specs: &mut [InputSpec]) -> Resul
 }
 
 pub(crate) fn input_specs_total_size(specs: &[InputSpec]) -> Result<u64> {
-    specs.iter().try_fold(0u64, |sum, entry| {
-        sum.checked_add(entry.size).ok_or_else(|| anyhow!("input byte count overflow"))
-    })
+    specs.iter().try_fold(0u64, |sum, entry| sum.checked_add(entry.size).ok_or_else(|| anyhow!("input byte count overflow")))
 }
 
 pub(crate) fn collect_one_input_spec(input: &Path, archive_path: &Path, out: &mut Vec<InputSpec>) -> Result<()> {
@@ -939,10 +848,7 @@ pub(crate) fn collect_one_input_spec(input: &Path, archive_path: &Path, out: &mu
         // This must precede every handle open, reparse query, directory enumeration, and data
         // read. Cloud providers may combine OFFLINE with REPARSE_POINT, and touching the
         // placeholder through those paths can hydrate it before the ordinary-file guard runs.
-        bail!(
-            "Windows metadata capture does not support {}: offline/cloud placeholders require an explicit hydration policy",
-            input.display()
-        );
+        bail!("Windows metadata capture does not support {}: offline/cloud placeholders require an explicit hydration policy", input.display());
     }
     #[cfg(windows)]
     if metadata.file_attributes() & 0x0000_0400 != 0 {
@@ -996,9 +902,7 @@ pub(crate) fn collect_one_input_spec(input: &Path, archive_path: &Path, out: &mu
             sparse_extents: None,
             identity,
         });
-        let mut entries = fs::read_dir(input)
-            .with_context(|| format!("failed to read directory {}", input.display()))?
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut entries = fs::read_dir(input).with_context(|| format!("failed to read directory {}", input.display()))?.collect::<Result<Vec<_>, _>>()?;
         entries.sort_by_key(|entry| entry.file_name());
         for entry in entries {
             let child_name = entry.file_name().into_string().map_err(|_| anyhow!("input path is not valid UTF-8"))?;
@@ -1033,14 +937,8 @@ pub(crate) fn collect_one_input_spec(input: &Path, archive_path: &Path, out: &mu
                 let device = libc::dev_t::try_from(metadata.st_rdev()).map_err(|_| anyhow!("device identifier exceeds host ABI"))?;
                 let major = libc::major(device);
                 let minor = libc::minor(device);
-                portable_metadata
-                    .native
-                    .primary_pax_records
-                    .insert("TZAP.posix.device-major".into(), major.to_string().into_bytes());
-                portable_metadata
-                    .native
-                    .primary_pax_records
-                    .insert("TZAP.posix.device-minor".into(), minor.to_string().into_bytes());
+                portable_metadata.native.primary_pax_records.insert("TZAP.posix.device-major".into(), major.to_string().into_bytes());
+                portable_metadata.native.primary_pax_records.insert("TZAP.posix.device-minor".into(), minor.to_string().into_bytes());
                 #[cfg(target_os = "linux")]
                 if entry_kind == SourceEntryKind::CharacterDevice && major == 0 && minor == 0 {
                     portable_metadata.native.primary_pax_records.insert("TZAP.linux.whiteout".into(), b"1".to_vec());
@@ -1123,9 +1021,7 @@ pub(crate) fn write_archive_outputs(output: &str, volumes: &[Vec<u8>], force: bo
     let output_paths = create_output_paths(output, volumes.len());
     let mut temps = create_archive_output_temps(&output_paths)?;
     for ((temp, output_path), volume) in temps.iter_mut().zip(&output_paths).zip(volumes) {
-        temp.as_file_mut()
-            .write_all(volume)
-            .with_context(|| format!("failed to write temporary archive volume for {}", output_path.display()))?;
+        temp.as_file_mut().write_all(volume).with_context(|| format!("failed to write temporary archive volume for {}", output_path.display()))?;
     }
     flush_archive_output_temps(&mut temps, &output_paths)?;
     publish_archive_output_temps(temps, &output_paths, force)?;
@@ -1180,10 +1076,7 @@ impl ArchiveWriteSink for PathBackedArchiveSink<'_> {
     }
 
     fn write_volume(&mut self, volume_index: usize, bytes: &[u8]) -> std::result::Result<(), ArchiveWriteError> {
-        let temp = self
-            .temps
-            .get_mut(volume_index)
-            .ok_or(FormatError::WriterInvariant("stdin file sink volume index is out of bounds"))?;
+        let temp = self.temps.get_mut(volume_index).ok_or(FormatError::WriterInvariant("stdin file sink volume index is out of bounds"))?;
         temp.as_file_mut().write_all(bytes).map_err(ArchiveWriteError::Io)
     }
 
@@ -1347,10 +1240,7 @@ pub(crate) fn write_stdin_archive_output_with_sink<T>(
     let output_paths = create_output_paths(output, volume_count);
     let mut temps = create_archive_output_temps(&output_paths)?;
     let (summary, bootstrap_sidecar) = {
-        let mut sink = PathBackedArchiveSink {
-            temps: temps.as_mut_slice(),
-            bootstrap_sidecar: Vec::new(),
-        };
+        let mut sink = PathBackedArchiveSink { temps: temps.as_mut_slice(), bootstrap_sidecar: Vec::new() };
         let summary = write_archive(&mut sink)?;
         (summary, sink.bootstrap_sidecar)
     };
@@ -1363,10 +1253,7 @@ pub(crate) fn create_archive_output_temps(output_paths: &[PathBuf]) -> Result<Ve
     output_paths
         .iter()
         .map(|output_path| {
-            let parent = output_path
-                .parent()
-                .filter(|path| !path.as_os_str().is_empty())
-                .unwrap_or_else(|| Path::new("."));
+            let parent = output_path.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
             tempfile::Builder::new()
                 .prefix(".tzap-create-")
                 .suffix(".partial")
@@ -1378,35 +1265,21 @@ pub(crate) fn create_archive_output_temps(output_paths: &[PathBuf]) -> Result<Ve
 
 pub(crate) fn flush_archive_output_temps(temps: &mut [tempfile::NamedTempFile], output_paths: &[PathBuf]) -> Result<()> {
     for (temp, output_path) in temps.iter_mut().zip(output_paths) {
-        temp.as_file_mut()
-            .flush()
-            .with_context(|| format!("failed to flush temporary archive for {}", output_path.display()))?;
-        temp.as_file_mut()
-            .sync_all()
-            .with_context(|| format!("failed to sync temporary archive for {}", output_path.display()))?;
+        temp.as_file_mut().flush().with_context(|| format!("failed to flush temporary archive for {}", output_path.display()))?;
+        temp.as_file_mut().sync_all().with_context(|| format!("failed to sync temporary archive for {}", output_path.display()))?;
     }
     Ok(())
 }
 
 pub(crate) fn publish_archive_output_temps(temps: Vec<tempfile::NamedTempFile>, output_paths: &[PathBuf], force: bool) -> Result<()> {
     let volume_count = output_paths.len();
-    let publish_order = if volume_count == 1 {
-        vec![0]
-    } else {
-        (1..volume_count).chain(std::iter::once(0)).collect()
-    };
+    let publish_order = if volume_count == 1 { vec![0] } else { (1..volume_count).chain(std::iter::once(0)).collect() };
     let mut temp_slots = temps.into_iter().map(Some).collect::<Vec<_>>();
     let mut persisted_paths = Vec::new();
     for volume_index in publish_order {
-        let temp = temp_slots[volume_index]
-            .take()
-            .ok_or_else(|| anyhow!("missing temporary archive volume {volume_index}"))?;
+        let temp = temp_slots[volume_index].take().ok_or_else(|| anyhow!("missing temporary archive volume {volume_index}"))?;
         let output_path = &output_paths[volume_index];
-        let publish_result = if force {
-            temp.persist(output_path)
-        } else {
-            temp.persist_noclobber(output_path)
-        };
+        let publish_result = if force { temp.persist(output_path) } else { temp.persist_noclobber(output_path) };
         if let Err(error) = publish_result {
             for path in &persisted_paths {
                 let _ = fs::remove_file(path);
@@ -1424,14 +1297,10 @@ pub(crate) fn write_bootstrap_output(path: &str, bytes: &[u8], force: bool) -> R
 
 pub(crate) fn reject_create_stdout_sentinels(output: &str, bootstrap_out: Option<&str>) -> Result<()> {
     if output == "-" {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--output - is not archive stdout; create output must be a file path",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--output - is not archive stdout; create output must be a file path",)));
     }
     if matches!(bootstrap_out, Some("-")) {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--bootstrap-out - is not sidecar stdout; sidecar output must be a file path",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--bootstrap-out - is not sidecar stdout; sidecar output must be a file path",)));
     }
     Ok(())
 }
@@ -1465,34 +1334,22 @@ pub(crate) fn validate_create_stdin_mode(args: CreateStdinArgs<'_>) -> Result<Op
     };
 
     if args.paths != ["-"] {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "stdin create modes require exactly one archive input path: -",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("stdin create modes require exactly one archive input path: -",)));
     }
     if args.password_stdin {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--password-stdin cannot be used when stdin carries archive payload bytes",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--password-stdin cannot be used when stdin carries archive payload bytes",)));
     }
     if args.password {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--password cannot be used when stdin carries archive payload bytes",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--password cannot be used when stdin carries archive payload bytes",)));
     }
     if args.has_dictionary {
-        return Err(anyhow!(
-            FormatError::WriterUnsupported("--dictionary is not supported with stdin create modes",)
-        ));
+        return Err(anyhow!(FormatError::WriterUnsupported("--dictionary is not supported with stdin create modes",)));
     }
     if args.volume_size.is_some() {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--volume-size is not supported with stdin create modes",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--volume-size is not supported with stdin create modes",)));
     }
     if args.volume_loss_tolerance.unwrap_or(0) != 0 {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--volume-loss-tolerance > 0 is not supported with stdin create modes",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--volume-loss-tolerance > 0 is not supported with stdin create modes",)));
     }
     if matches!(args.volumes, Some(volumes) if volumes > 1) && !matches!(mode, CreateStdinMode::Tar | CreateStdinMode::RawKnownSize | CreateStdinMode::RawSpool)
     {
@@ -1504,9 +1361,7 @@ pub(crate) fn validate_create_stdin_mode(args: CreateStdinArgs<'_>) -> Result<Op
     match mode {
         CreateStdinMode::Tar => {
             if args.stdin_name.is_some() || args.stdin_size.is_some() || args.spool_stdin {
-                return Err(anyhow!(FormatError::WriterUnsupported(
-                    "--stdin-name, --stdin-size, and --spool-stdin require --raw-stdin",
-                )));
+                return Err(anyhow!(FormatError::WriterUnsupported("--stdin-name, --stdin-size, and --spool-stdin require --raw-stdin",)));
             }
         }
         CreateStdinMode::RawUnknownSize => {
@@ -1525,9 +1380,7 @@ pub(crate) fn validate_create_stdin_mode(args: CreateStdinArgs<'_>) -> Result<Op
                 return Err(anyhow!(FormatError::WriterUnsupported("--raw-stdin requires --stdin-name PATH",)));
             }
             if args.stdin_size.is_some() {
-                return Err(anyhow!(FormatError::WriterUnsupported(
-                    "--spool-stdin is for unknown-size raw stdin; omit --stdin-size",
-                )));
+                return Err(anyhow!(FormatError::WriterUnsupported("--spool-stdin is for unknown-size raw stdin; omit --stdin-size",)));
             }
         }
     }
@@ -1585,10 +1438,7 @@ pub(crate) fn check_output_path_collisions_for_volume_size_output(output: &str) 
     check_output_path_free("archive output", Path::new(output))?;
     let output_path = Path::new(output);
     let parent = output_path.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = output_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| anyhow!("output path has invalid UTF-8: {output}"))?;
+    let file_name = output_path.file_name().and_then(|name| name.to_str()).ok_or_else(|| anyhow!("output path has invalid UTF-8: {output}"))?;
     let base = volume_file::multi_volume_base_name(file_name);
     let entries = match fs::read_dir(parent) {
         Ok(entries) => entries,
@@ -1620,13 +1470,7 @@ pub(crate) fn resolve_create_volume_loss_tolerance(
     volume_size: Option<&str>,
     stdin_payload_mode_requested: bool,
 ) -> u8 {
-    explicit.unwrap_or_else(|| {
-        if stdin_payload_mode_requested || (volumes.unwrap_or(1) <= 1 && volume_size.is_none()) {
-            0
-        } else {
-            1
-        }
-    })
+    explicit.unwrap_or_else(|| if stdin_payload_mode_requested || (volumes.unwrap_or(1) <= 1 && volume_size.is_none()) { 0 } else { 1 })
 }
 
 pub(crate) fn validate_create_writer_options(options: &WriterOptions) -> Result<()> {
@@ -1636,11 +1480,8 @@ pub(crate) fn validate_create_writer_options(options: &WriterOptions) -> Result<
     if options.stripe_width == 0 {
         return Err(anyhow!(FormatError::WriterUnsupported("stripe_width must be non-zero",)));
     }
-    let effective_stripe_width = if options.target_volume_size.is_some() {
-        options.stripe_width.max(options.volume_loss_tolerance as u32 + 1)
-    } else {
-        options.stripe_width
-    };
+    let effective_stripe_width =
+        if options.target_volume_size.is_some() { options.stripe_width.max(options.volume_loss_tolerance as u32 + 1) } else { options.stripe_width };
     if options.volume_loss_tolerance as u32 >= effective_stripe_width {
         return Err(anyhow!(FormatError::WriterUnsupported("volume_loss_tolerance must be less than stripe_width",)));
     }
@@ -1654,9 +1495,7 @@ pub(crate) fn validate_create_writer_options(options: &WriterOptions) -> Result<
         return Err(anyhow!(FormatError::WriterUnsupported("bit_rot_buffer_pct must be at most 100",)));
     }
     if options.chunk_size == 0 || options.chunk_size > options.envelope_target_size {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "chunk_size must be non-zero and no larger than envelope_target_size",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("chunk_size must be non-zero and no larger than envelope_target_size",)));
     }
     Ok(())
 }
@@ -1665,26 +1504,18 @@ pub(crate) fn create_output_paths(output: &str, volume_count: usize) -> Vec<Path
     if volume_count == 1 {
         vec![PathBuf::from(output)]
     } else {
-        (0..volume_count)
-            .map(|index| volume_file::volume_output_path(Path::new(output), index))
-            .collect()
+        (0..volume_count).map(|index| volume_file::volume_output_path(Path::new(output), index)).collect()
     }
 }
 
 pub(crate) fn create_dry_run_output_paths(output: &str, volumes: Option<u32>, has_volume_size: bool) -> Vec<String> {
     if let Some(volumes) = volumes {
-        return create_output_paths(output, volumes as usize)
-            .into_iter()
-            .map(|path| path.display().to_string())
-            .collect();
+        return create_output_paths(output, volumes as usize).into_iter().map(|path| path.display().to_string()).collect();
     }
     if has_volume_size {
         let first = volume_file::volume_output_path(Path::new(output), 0);
         let second = volume_file::volume_output_path(Path::new(output), 1);
-        return vec![
-            format!("{output} (if one volume is emitted)"),
-            format!("{}, {}, ... (if split)", first.display(), second.display()),
-        ];
+        return vec![format!("{output} (if one volume is emitted)"), format!("{}, {}, ... (if split)", first.display(), second.display())];
     }
     vec![output.to_owned()]
 }
@@ -1749,7 +1580,7 @@ pub(crate) fn validate_create_key_source(
     }
     if count > 1 {
         return Err(
-            UsageError("create accepts exactly one protection mode: --keyfile, --password, --password-stdin, --recipient-cert, or --no-encryption").into(),
+            UsageError("create accepts exactly one protection mode: --keyfile, --password, --password-stdin, --recipient-cert, or --no-encryption").into()
         );
     }
     Ok(())
@@ -1767,24 +1598,16 @@ pub(crate) fn validate_create_recipient_wrap_scope(
         return Ok(());
     }
     if stdin_mode.is_some() {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--recipient-cert is currently supported only for file-backed create inputs",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--recipient-cert is currently supported only for file-backed create inputs",)));
     }
     if has_dictionary {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--recipient-cert is not yet supported with --dictionary",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--recipient-cert is not yet supported with --dictionary",)));
     }
     if has_root_auth {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--recipient-cert is not yet supported with RootAuth signing flags",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--recipient-cert is not yet supported with RootAuth signing flags",)));
     }
     if volumes.unwrap_or(1) != 1 || volume_size.is_some() {
-        return Err(anyhow!(FormatError::WriterUnsupported(
-            "--recipient-cert is currently supported only for single-volume create",
-        )));
+        return Err(anyhow!(FormatError::WriterUnsupported("--recipient-cert is currently supported only for single-volume create",)));
     }
     Ok(())
 }
@@ -1823,9 +1646,9 @@ impl CreateRootAuthProfile {
 pub(crate) fn root_auth_authenticator_value(profile: &CreateRootAuthProfile, request: &RootAuthSigningRequest) -> Result<Vec<u8>, FormatError> {
     match profile {
         CreateRootAuthProfile::Ed25519 { signing_key, .. } => Ok(ed25519_raw::authenticator_value_for_request(signing_key, request).to_vec()),
-        CreateRootAuthProfile::X509(signer) => signer
-            .authenticator_value_for_request(request)
-            .map_err(|_| FormatError::WriterUnsupported("X.509 RootAuth signing failed")),
+        CreateRootAuthProfile::X509(signer) => {
+            signer.authenticator_value_for_request(request).map_err(|_| FormatError::WriterUnsupported("X.509 RootAuth signing failed"))
+        }
     }
 }
 pub(crate) fn parse_size_u32(value: &str, name: &'static str) -> Result<u32> {

@@ -15,11 +15,7 @@ pub(crate) struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,
 
-    #[arg(
-        long = "quiet",
-        global = true,
-        help = "Suppress routine success output and non-fatal diagnostics; failures are still reported."
-    )]
+    #[arg(long = "quiet", global = true, help = "Suppress routine success output and non-fatal diagnostics; failures are still reported.")]
     pub(crate) quiet: bool,
 
     #[arg(long = "verbose", global = true, help = "Enable verbose diagnostics.")]
@@ -42,43 +38,19 @@ pub(crate) enum Command {
         ]))
     )]
     Create {
-        #[arg(
-            short = 'o',
-            long = "output",
-            value_name = "ARCHIVE",
-            help = "Write output to ARCHIVE (single volume) or base path for multi-volume output."
-        )]
+        #[arg(short = 'o', long = "output", value_name = "ARCHIVE", help = "Write output to ARCHIVE (single volume) or base path for multi-volume output.")]
         output: String,
 
-        #[arg(
-            long = "volumes",
-            value_name = "COUNT",
-            conflicts_with = "volume_size",
-            help = "Create exactly COUNT output volumes."
-        )]
+        #[arg(long = "volumes", value_name = "COUNT", conflicts_with = "volume_size", help = "Create exactly COUNT output volumes.")]
         volumes: Option<u32>,
 
-        #[arg(
-            long = "volume-size",
-            value_name = "SIZE",
-            conflicts_with = "volumes",
-            help = "Create as many fixed-size output volumes as needed."
-        )]
+        #[arg(long = "volume-size", value_name = "SIZE", conflicts_with = "volumes", help = "Create as many fixed-size output volumes as needed.")]
         volume_size: Option<String>,
 
-        #[arg(
-            long = "volume-loss-tolerance",
-            value_name = "COUNT",
-            help = "Allowed missing-volume recovery tolerance for multi-volume archives."
-        )]
+        #[arg(long = "volume-loss-tolerance", value_name = "COUNT", help = "Allowed missing-volume recovery tolerance for multi-volume archives.")]
         volume_loss_tolerance: Option<u8>,
 
-        #[arg(
-            long = "bit-rot-buffer-pct",
-            value_name = "PERCENT",
-            default_value_t = 5,
-            help = "Percent of archive reserved for bit-rot recovery structures."
-        )]
+        #[arg(long = "bit-rot-buffer-pct", value_name = "PERCENT", default_value_t = 5, help = "Percent of archive reserved for bit-rot recovery structures.")]
         bit_rot_buffer_pct: u8,
 
         #[arg(
@@ -120,11 +92,7 @@ pub(crate) enum Command {
         )]
         recipient_cert: Option<String>,
 
-        #[arg(
-            long = "no-encryption",
-            conflicts_with = "recipient_cert",
-            help = "Create an explicit plaintext v45 archive with no password or keyfile."
-        )]
+        #[arg(long = "no-encryption", conflicts_with = "recipient_cert", help = "Create an explicit plaintext v45 archive with no password or keyfile.")]
         no_encryption: bool,
 
         #[arg(long = "insecure-zero-key", hide = true, help = "Removed in v43; use --no-encryption for plaintext archives.")]
@@ -160,12 +128,7 @@ pub(crate) enum Command {
         #[arg(long = "dictionary", value_name = "FILE", help = "Read compression dictionary from FILE.")]
         dictionary: Option<String>,
 
-        #[arg(
-            long = "signing-key",
-            value_name = "FILE",
-            conflicts_with = "signing_cert",
-            help = "Sign RootAuth with an Ed25519 signing key seed from FILE."
-        )]
+        #[arg(long = "signing-key", value_name = "FILE", conflicts_with = "signing_cert", help = "Sign RootAuth with an Ed25519 signing key seed from FILE.")]
         signing_key: Option<String>,
 
         #[arg(
@@ -186,12 +149,7 @@ pub(crate) enum Command {
         )]
         signing_private_key: Option<String>,
 
-        #[arg(
-            long = "signing-chain",
-            value_name = "FILE",
-            requires = "signing_cert",
-            help = "PEM or DER intermediate certificate chain for --signing-cert."
-        )]
+        #[arg(long = "signing-chain", value_name = "FILE", requires = "signing_cert", help = "PEM or DER intermediate certificate chain for --signing-cert.")]
         signing_chain: Vec<String>,
 
         #[arg(
@@ -203,11 +161,7 @@ pub(crate) enum Command {
         )]
         x509_signature_scheme: Option<CliX509SignatureScheme>,
 
-        #[arg(
-            long = "bootstrap-out",
-            value_name = "FILE",
-            help = "Write bootstrap recovery sidecar to FILE (single-volume output only)."
-        )]
+        #[arg(long = "bootstrap-out", value_name = "FILE", help = "Write bootstrap recovery sidecar to FILE (single-volume output only).")]
         bootstrap_out: Option<String>,
 
         #[arg(long = "tar-stdin", help = "Treat PATH '-' as a tar stream read from stdin.")]
@@ -234,11 +188,7 @@ pub(crate) enum Command {
         #[arg(long = "envelope-size", value_name = "SIZE", help = "Archive envelope size (default: auto by input size).")]
         envelope_size: Option<String>,
 
-        #[arg(
-            long = "block-size",
-            value_name = "SIZE",
-            help = "Block size for archive payload layout (default: auto by input size)."
-        )]
+        #[arg(long = "block-size", value_name = "SIZE", help = "Block size for archive payload layout (default: auto by input size).")]
         block_size: Option<String>,
 
         #[arg(long = "jobs", value_name = "N", help = "Worker jobs for reader/writer CPU work (default: logical CPU count).")]
@@ -263,22 +213,13 @@ pub(crate) enum Command {
         )
     )]
     Extract {
-        #[arg(
-            value_name = "ARCHIVE",
-            help = "Archive input. A .volNNN.tzap path discovers sibling volumes unless --volume is used."
-        )]
+        #[arg(value_name = "ARCHIVE", help = "Archive input. A .volNNN.tzap path discovers sibling volumes unless --volume is used.")]
         archive: String,
 
         #[arg(value_name = "PATH", help = "Optional archive member paths to extract.")]
         paths: Vec<String>,
 
-        #[arg(
-            short = 'C',
-            long = "directory",
-            value_name = "DIR",
-            default_value = ".",
-            help = "Destination directory for extracted files."
-        )]
+        #[arg(short = 'C', long = "directory", value_name = "DIR", default_value = ".", help = "Destination directory for extracted files.")]
         directory: String,
 
         #[arg(long = "stdout", conflicts_with = "dry_run", help = "Write a single selected member to stdout.")]
@@ -290,24 +231,13 @@ pub(crate) enum Command {
         #[arg(long = "overwrite", help = "Allow overwriting existing output files.")]
         overwrite: bool,
 
-        #[arg(
-            long = "restore",
-            value_enum,
-            default_value = "portable",
-            help = "Restore policy: content, portable, same-os, or system."
-        )]
+        #[arg(long = "restore", value_enum, default_value = "portable", help = "Restore policy: content, portable, same-os, or system.")]
         restore: CliRestorePolicy,
 
-        #[arg(
-            long = "allow-degraded",
-            help = "Explicitly permit requested unsupported metadata to be skipped with diagnostics."
-        )]
+        #[arg(long = "allow-degraded", help = "Explicitly permit requested unsupported metadata to be skipped with diagnostics.")]
         allow_degraded: bool,
 
-        #[arg(
-            long = "allow-absolute-symlinks",
-            help = "Permit extraction of symlinks pointing to absolute paths outside the destination directory."
-        )]
+        #[arg(long = "allow-absolute-symlinks", help = "Permit extraction of symlinks pointing to absolute paths outside the destination directory.")]
         allow_absolute_symlinks: bool,
 
         #[arg(
@@ -371,10 +301,7 @@ pub(crate) enum Command {
         )
     )]
     List {
-        #[arg(
-            value_name = "ARCHIVE",
-            help = "Archive to inspect. A .volNNN.tzap path discovers sibling volumes unless --volume is used."
-        )]
+        #[arg(value_name = "ARCHIVE", help = "Archive to inspect. A .volNNN.tzap path discovers sibling volumes unless --volume is used.")]
         archive: String,
 
         #[arg(
@@ -501,10 +428,7 @@ pub(crate) enum Command {
         #[arg(long = "public-no-key", help = "Verify public RootAuth commitments without the archive key.")]
         public_no_key: bool,
 
-        #[arg(
-            long = "fast",
-            help = "Verify readable archive content with repair-on-demand parity reads, but skip RootAuth and recovery-margin checks."
-        )]
+        #[arg(long = "fast", help = "Verify readable archive content with repair-on-demand parity reads, but skip RootAuth and recovery-margin checks.")]
         fast: bool,
 
         #[arg(long = "bootstrap", value_name = "FILE", help = "Use bootstrap sidecar FILE for single-volume archive input.")]
@@ -532,13 +456,7 @@ pub(crate) enum Command {
         )
     )]
     Keygen {
-        #[arg(
-            short = 'o',
-            long = "output",
-            value_name = "KEYFILE",
-            conflicts_with = "stdout",
-            help = "Write the generated key to KEYFILE."
-        )]
+        #[arg(short = 'o', long = "output", value_name = "KEYFILE", conflicts_with = "stdout", help = "Write the generated key to KEYFILE.")]
         output: Option<String>,
 
         #[arg(long = "stdout", help = "Write the generated key to stdout.")]

@@ -65,18 +65,7 @@ pub(crate) fn emit_encrypted_object<O: ArchiveWriteSink>(
 ) -> Result<EncryptedObject, ArchiveWriteError> {
     let object = encrypt_object(
         payload,
-        ObjectEncryptionContext {
-            key,
-            nonce_seed,
-            domain,
-            counter,
-            data_kind,
-            parity_kind,
-            data_shard_max,
-            class_parity_shard_max,
-            archive_uuid,
-            session_id,
-        },
+        ObjectEncryptionContext { key, nonce_seed, domain, counter, data_kind, parity_kind, data_shard_max, class_parity_shard_max, archive_uuid, session_id },
         next_block_index,
         options,
     )
@@ -109,14 +98,7 @@ pub(crate) fn emit_block_record<O: ArchiveWriteSink>(
         if record.kind.is_data() {
             data_leaf_hashes.push((
                 record.block_index,
-                data_block_merkle_leaf_hash_for_revision(
-                    FORMAT_VERSION,
-                    volume_format_rev,
-                    record.block_index,
-                    record.kind,
-                    record.flags,
-                    &record.payload,
-                )?,
+                data_block_merkle_leaf_hash_for_revision(FORMAT_VERSION, volume_format_rev, record.block_index, record.kind, record.flags, &record.payload)?,
             ));
         }
     }
@@ -153,17 +135,11 @@ where
     S: RegularFileSource,
     O: ArchiveWriteSink,
 {
-    let mut envelope = PayloadEnvelopeBuilder {
-        envelope_index: 0,
-        plaintext: Vec::new(),
-    };
+    let mut envelope = PayloadEnvelopeBuilder { envelope_index: 0, plaintext: Vec::new() };
     let mut next_frame_index = 0u64;
 
     for (member_index, file) in files.iter().enumerate() {
-        let member = plan
-            .tar_members
-            .get(member_index)
-            .ok_or(FormatError::WriterInvariant("planned tar member is missing"))?;
+        let member = plan.tar_members.get(member_index).ok_or(FormatError::WriterInvariant("planned tar member is missing"))?;
         let current_path = normalize_lookup_file_path(file.archive_path(), plan.options.max_path_length)?;
         if current_path != member.path
             || file.entry_kind() != member.entry_kind
@@ -186,12 +162,8 @@ where
             member.mtime,
             &member.portable_metadata,
         )?;
-        let source_payload_size = member
-            .sparse_extents
-            .as_deref()
-            .map(|extents| sparse_extent_bytes(extents, member.file_data_size))
-            .transpose()?
-            .unwrap_or(member.file_data_size);
+        let source_payload_size =
+            member.sparse_extents.as_deref().map(|extents| sparse_extent_bytes(extents, member.file_data_size)).transpose()?.unwrap_or(member.file_data_size);
         let actual_member_group_size = primary_member_layout_size(&layout, source_payload_size)?;
         if actual_member_group_size != member.tar_member_group_size {
             return Err(FormatError::WriterInvariant("streamed auxiliary layout changed between planning and emission").into());
@@ -244,16 +216,7 @@ where
     }
 
     if !envelope.plaintext.is_empty() {
-        flush_payload_envelope_emit(
-            &mut envelope,
-            subkeys,
-            plan,
-            next_block_index,
-            sink,
-            bytes_written,
-            record_counts,
-            data_leaf_hashes,
-        )?;
+        flush_payload_envelope_emit(&mut envelope, subkeys, plan, next_block_index, sink, bytes_written, record_counts, data_leaf_hashes)?;
     }
     if next_frame_index != plan.frames.len() as u64 || envelope.envelope_index != plan.payload_objects.len() as u64 {
         return Err(FormatError::WriterInvariant("streaming payload plan mismatch").into());
@@ -297,10 +260,7 @@ pub(crate) fn append_payload_frame_to_emit<O: ArchiveWriteSink>(
         member_offset,
         member_group_size,
     })?;
-    let expected = plan
-        .frames
-        .get(*next_frame_index as usize)
-        .ok_or(FormatError::WriterInvariant("planned payload frame is missing"))?;
+    let expected = plan.frames.get(*next_frame_index as usize).ok_or(FormatError::WriterInvariant("planned payload frame is missing"))?;
     if expected.envelope_index != actual.envelope_index
         || expected.member_index != actual.member_index
         || expected.offset_in_envelope != actual.offset_in_envelope
@@ -327,10 +287,7 @@ pub(crate) fn flush_payload_envelope_emit<O: ArchiveWriteSink>(
     record_counts: &mut [u64],
     data_leaf_hashes: &mut Option<Vec<(u64, [u8; 32])>>,
 ) -> Result<(), ArchiveWriteError> {
-    let expected = plan
-        .payload_objects
-        .get(envelope.envelope_index as usize)
-        .ok_or(FormatError::WriterInvariant("planned payload envelope is missing"))?;
+    let expected = plan.payload_objects.get(envelope.envelope_index as usize).ok_or(FormatError::WriterInvariant("planned payload envelope is missing"))?;
     if expected.envelope_index != envelope.envelope_index || expected.plaintext_size != u32_len(envelope.plaintext.len(), "EnvelopeEntry.plaintext_size")? {
         return Err(FormatError::WriterInvariant("emitted payload envelope does not match plan").into());
     }
@@ -388,9 +345,7 @@ pub(crate) fn plan_writer_options(mut options: WriterOptions) -> Result<WriterOp
         return Err(FormatError::WriterUnsupported("bit_rot_buffer_pct must be at most 100"));
     }
     if options.chunk_size == 0 || options.chunk_size > options.envelope_target_size {
-        return Err(FormatError::WriterUnsupported(
-            "chunk_size must be non-zero and no larger than envelope_target_size",
-        ));
+        return Err(FormatError::WriterUnsupported("chunk_size must be non-zero and no larger than envelope_target_size"));
     }
     if options.fec_data_shards == 0 || options.index_fec_data_shards == 0 || options.index_root_fec_data_shards == 0 {
         return Err(FormatError::WriterUnsupported("FEC data shard class maxima must be non-zero"));
@@ -454,10 +409,7 @@ pub(crate) fn build_crypto_header(
         (AeadAlgo::None, KdfAlgo::None) => {}
         (aead_algo, KdfAlgo::Raw | KdfAlgo::Argon2id | KdfAlgo::RecipientWrap) if aead_algo.is_encrypted() => {}
         _ => {
-            return Err(FormatError::InvalidProtectionMode {
-                aead_algo: options.aead_algo,
-                kdf_algo,
-            });
+            return Err(FormatError::InvalidProtectionMode { aead_algo: options.aead_algo, kdf_algo });
         }
     }
     let fixed = CryptoHeaderFixed {
@@ -487,15 +439,7 @@ pub(crate) fn build_crypto_header(
     bytes.extend_from_slice(&kdf_payload);
     bytes.extend_from_slice(&0u16.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
-    let hmac = compute_integrity_tag(
-        HmacDomain::CryptoHeader,
-        options.aead_algo,
-        volume_format_rev,
-        Some(&subkeys.mac_key),
-        archive_uuid,
-        session_id,
-        &bytes,
-    )?;
+    let hmac = compute_integrity_tag(HmacDomain::CryptoHeader, options.aead_algo, volume_format_rev, Some(&subkeys.mac_key), archive_uuid, session_id, &bytes)?;
     bytes.extend_from_slice(&hmac);
     Ok(bytes)
 }
@@ -509,21 +453,14 @@ pub(crate) fn serialize_kdf_params(params: &KdfParams) -> Result<Vec<u8>, Format
         KdfParams::Raw => {
             bytes.extend_from_slice(&(KdfAlgo::Raw as u16).to_le_bytes());
         }
-        KdfParams::Argon2id {
-            t_cost,
-            m_cost_kib,
-            parallelism,
-            salt,
-        } => {
+        KdfParams::Argon2id { t_cost, m_cost_kib, parallelism, salt } => {
             if *t_cost == 0 {
                 return Err(FormatError::InvalidKdfParams("t_cost must be non-zero"));
             }
             if *parallelism == 0 {
                 return Err(FormatError::InvalidKdfParams("parallelism must be non-zero"));
             }
-            let min_memory = parallelism
-                .checked_mul(8)
-                .ok_or(FormatError::InvalidKdfParams("m_cost_kib requirement overflow"))?;
+            let min_memory = parallelism.checked_mul(8).ok_or(FormatError::InvalidKdfParams("m_cost_kib requirement overflow"))?;
             if *m_cost_kib < min_memory {
                 return Err(FormatError::InvalidKdfParams("m_cost_kib must be at least 8 * parallelism"));
             }
@@ -538,12 +475,7 @@ pub(crate) fn serialize_kdf_params(params: &KdfParams) -> Result<Vec<u8>, Format
             bytes.extend_from_slice(&salt_len.to_le_bytes());
             bytes.extend_from_slice(salt);
         }
-        KdfParams::RecipientWrap {
-            key_wrap_table_length,
-            key_wrap_table_record_count,
-            key_wrap_table_version,
-            key_wrap_table_digest,
-        } => {
+        KdfParams::RecipientWrap { key_wrap_table_length, key_wrap_table_record_count, key_wrap_table_version, key_wrap_table_digest } => {
             bytes.extend_from_slice(&(KdfAlgo::RecipientWrap as u16).to_le_bytes());
             bytes.extend_from_slice(&key_wrap_table_length.to_le_bytes());
             bytes.extend_from_slice(&key_wrap_table_record_count.to_le_bytes());
@@ -563,11 +495,8 @@ pub(crate) fn build_tar_stream<S: RegularFileSource>(files: &[S], max_path_lengt
         let path = normalize_lookup_file_path(file.archive_path(), max_path_length)?;
         let start = stream.len() as u64;
         let sparse_extents = file.sparse_extents().map(<[SparseExtent]>::to_vec);
-        let source_payload_size = sparse_extents
-            .as_deref()
-            .map(|extents| sparse_extent_bytes(extents, file.file_data_size()))
-            .transpose()?
-            .unwrap_or(file.file_data_size());
+        let source_payload_size =
+            sparse_extents.as_deref().map(|extents| sparse_extent_bytes(extents, file.file_data_size())).transpose()?.unwrap_or(file.file_data_size());
         let mut member_group = build_primary_member_prefix(
             &path,
             file.entry_kind(),
@@ -580,9 +509,7 @@ pub(crate) fn build_tar_stream<S: RegularFileSource>(files: &[S], max_path_lengt
         )?;
         let mut reader = file.open().map_err(|_| FormatError::WriterInvariant("test source failed to open"))?;
         let mut payload = Vec::new();
-        reader
-            .read_to_end(&mut payload)
-            .map_err(|_| FormatError::WriterInvariant("test source failed to read"))?;
+        reader.read_to_end(&mut payload).map_err(|_| FormatError::WriterInvariant("test source failed to read"))?;
         if payload.len() as u64 != source_payload_size {
             return Err(FormatError::WriterInvariant("test source payload size mismatch"));
         }
@@ -614,25 +541,18 @@ pub(crate) fn build_payload_envelopes(
 ) -> Result<(Vec<PayloadEnvelope>, Vec<PayloadFrame>), FormatError> {
     let chunk_size = options.chunk_size as usize;
     if chunk_size == 0 {
-        return Err(FormatError::WriterUnsupported(
-            "chunk_size must be non-zero and no larger than envelope_target_size",
-        ));
+        return Err(FormatError::WriterUnsupported("chunk_size must be non-zero and no larger than envelope_target_size"));
     }
     let envelope_target_size = options.envelope_target_size as usize;
     let mut envelopes = Vec::new();
-    let mut current = PayloadEnvelope {
-        envelope_index: 0,
-        plaintext: Vec::new(),
-    };
+    let mut current = PayloadEnvelope { envelope_index: 0, plaintext: Vec::new() };
     let mut frames = Vec::new();
     let mut next_frame_index = 0u64;
 
     for (member_index, member) in members.iter().enumerate() {
         let start = member.tar_member_group_start as usize;
         let end = checked_usize_add(start, member.tar_member_group_size as usize, "tar member")?;
-        let member_bytes = tar_stream
-            .get(start..end)
-            .ok_or(FormatError::WriterInvariant("tar member range is out of bounds"))?;
+        let member_bytes = tar_stream.get(start..end).ok_or(FormatError::WriterInvariant("tar member range is out of bounds"))?;
         let mut member_offset = 0usize;
         while member_offset < member_bytes.len() {
             let mut chunk_len = (member_bytes.len() - member_offset).min(chunk_size);
@@ -655,10 +575,7 @@ pub(crate) fn build_payload_envelopes(
             let next_len = checked_usize_add(current.plaintext.len(), frame.len(), "payload")?;
             if !current.plaintext.is_empty() && (next_len > envelope_target_size || !payload_object_can_fit(next_len, options)?) {
                 envelopes.push(current);
-                current = PayloadEnvelope {
-                    envelope_index: envelopes.len() as u64,
-                    plaintext: Vec::new(),
-                };
+                current = PayloadEnvelope { envelope_index: envelopes.len() as u64, plaintext: Vec::new() };
             }
 
             if current.plaintext.is_empty() && !payload_object_can_fit(frame.len(), options)? {
@@ -703,12 +620,7 @@ pub(crate) fn sorted_file_rows(members: &[TarMember]) -> Vec<FileRow> {
     let mut rows = members
         .iter()
         .enumerate()
-        .map(|(member_index, member)| FileRow {
-            path_hash: hash_prefix(&member.path),
-            path: member.path.clone(),
-            member_index,
-            member: member.clone(),
-        })
+        .map(|(member_index, member)| FileRow { path_hash: hash_prefix(&member.path), path: member.path.clone(), member_index, member: member.clone() })
         .collect::<Vec<_>>();
     rows.sort_by(|left, right| {
         (left.path_hash, left.path.as_slice(), left.member.tar_member_group_start).cmp(&(
@@ -740,11 +652,7 @@ pub(crate) fn partition_file_rows(rows: Vec<FileRow>) -> Result<Vec<Vec<FileRow>
                 full_run_end += 1;
             }
             let full_run_len = full_run_end - full_run_start;
-            end = if full_run_len <= MAX_HASH_PREFIX_RUN_FILES {
-                full_run_end
-            } else {
-                (run_start_in_shard + MAX_HASH_PREFIX_RUN_FILES).min(full_run_end)
-            };
+            end = if full_run_len <= MAX_HASH_PREFIX_RUN_FILES { full_run_end } else { (run_start_in_shard + MAX_HASH_PREFIX_RUN_FILES).min(full_run_end) };
         }
         if end - start > MAX_FILES_PER_INDEX_SHARD {
             return Err(FormatError::WriterUnsupported("hash-prefix collision run exceeds max_files_per_index_shard"));
@@ -961,13 +869,7 @@ pub(crate) fn build_index_shard_plaintext(
     let plaintext = serialize_index_shard(shard_index, &file_entries, &frame_entries, &envelope_entries, &string_pool, options)?;
     let first_path_hash = file_rows.first().ok_or(FormatError::WriterInvariant("empty planned IndexShard"))?.path_hash;
     let last_path_hash = file_rows.last().ok_or(FormatError::WriterInvariant("empty planned IndexShard"))?.path_hash;
-    Ok(PlannedIndexShard {
-        shard_index,
-        plaintext,
-        file_count: u32_len(file_rows.len(), "IndexShard.file_count")?,
-        first_path_hash,
-        last_path_hash,
-    })
+    Ok(PlannedIndexShard { shard_index, plaintext, file_count: u32_len(file_rows.len(), "IndexShard.file_count")?, first_path_hash, last_path_hash })
 }
 
 pub(crate) fn serialize_index_shard(
@@ -1024,10 +926,7 @@ pub(crate) fn build_directory_hint_plaintexts(shard_rows: &[Vec<FileRow>], optio
         }
     }
 
-    let rows = map
-        .into_iter()
-        .map(|(path, shard_rows)| (hash_prefix(&path), path, shard_rows))
-        .collect::<Vec<_>>();
+    let rows = map.into_iter().map(|(path, shard_rows)| (hash_prefix(&path), path, shard_rows)).collect::<Vec<_>>();
     let mut rows = rows;
     rows.sort_by(|left, right| (left.0, left.1.as_slice()).cmp(&(right.0, right.1.as_slice())));
 
@@ -1087,11 +986,8 @@ pub(crate) fn build_directory_hint_plaintext(
     let mut string_pool = Vec::new();
 
     for (dir_hash, path, shard_rows) in rows {
-        let path_offset = if path.is_empty() {
-            0
-        } else {
-            u64::try_from(string_pool.len()).map_err(|_| FormatError::WriterUnsupported("DirectoryHintEntry.path_offset"))?
-        };
+        let path_offset =
+            if path.is_empty() { 0 } else { u64::try_from(string_pool.len()).map_err(|_| FormatError::WriterUnsupported("DirectoryHintEntry.path_offset"))? };
         if !path.is_empty() {
             string_pool.extend_from_slice(path);
         }
@@ -1109,13 +1005,7 @@ pub(crate) fn build_directory_hint_plaintext(
     let plaintext = serialize_directory_hint_table(hint_shard_index, &entries, &shard_row_indexes, &string_pool)?;
     let first_dir_hash = rows.first().ok_or(FormatError::WriterInvariant("empty directory hint shard"))?.0;
     let last_dir_hash = rows.last().ok_or(FormatError::WriterInvariant("empty directory hint shard"))?.0;
-    Ok(PlannedDirectoryHintShard {
-        hint_shard_index,
-        plaintext,
-        entry_count: rows.len() as u64,
-        first_dir_hash,
-        last_dir_hash,
-    })
+    Ok(PlannedDirectoryHintShard { hint_shard_index, plaintext, entry_count: rows.len() as u64, first_dir_hash, last_dir_hash })
 }
 
 pub(crate) fn serialize_directory_hint_table(
@@ -1183,11 +1073,7 @@ pub(crate) fn build_index_root_plaintext(input: IndexRootPlaintextInput<'_>) -> 
         header.dictionary_encrypted_size = dictionary.encrypted_size;
         header.dictionary_decompressed_size = decompressed_size;
     }
-    let root = IndexRoot {
-        header,
-        shards: input.shard_entries.to_vec(),
-        directory_hint_shards: input.directory_hint_entries.to_vec(),
-    };
+    let root = IndexRoot { header, shards: input.shard_entries.to_vec(), directory_hint_shards: input.directory_hint_entries.to_vec() };
     root.to_bytes()
 }
 
@@ -1204,9 +1090,7 @@ pub(crate) fn plan_index_root_metadata_class(
     compressed_dictionary_len: Option<usize>,
 ) -> Result<MetadataClassPlan, FormatError> {
     let index_root = plan_metadata_object_without_class(compressed_index_root_len, options, MetadataObjectKind::IndexRoot)?;
-    let dictionary = compressed_dictionary_len
-        .map(|len| plan_metadata_object_without_class(len, options, MetadataObjectKind::Dictionary))
-        .transpose()?;
+    let dictionary = compressed_dictionary_len.map(|len| plan_metadata_object_without_class(len, options, MetadataObjectKind::Dictionary)).transpose()?;
     let required_data_shards = u32::from(options.index_root_fec_data_shards)
         .max(MIN_INDEX_ROOT_FEC_DATA_SHARDS as u32)
         .max(index_root.data_block_count)
@@ -1219,11 +1103,7 @@ pub(crate) fn plan_index_root_metadata_class(
     if let Some(dictionary) = dictionary {
         ensure_metadata_object_fits_class(dictionary, options, MetadataObjectKind::Dictionary)?;
     }
-    Ok(MetadataClassPlan {
-        options,
-        index_root,
-        dictionary,
-    })
+    Ok(MetadataClassPlan { options, index_root, dictionary })
 }
 
 pub(crate) fn plan_metadata_object_without_class(
@@ -1288,28 +1168,18 @@ pub(crate) fn plan_encrypted_object(
 pub(crate) fn plan_encrypted_object_without_class(payload_len: usize, options: WriterOptions) -> Result<PlannedEncryptedObject, FormatError> {
     let (data_block_count, encrypted_size) = encrypted_object_data_extent(payload_len, options)?;
     let parity_block_count = compute_parity(data_block_count as u64, options)?;
-    Ok(PlannedEncryptedObject {
-        data_block_count,
-        parity_block_count,
-        encrypted_size,
-    })
+    Ok(PlannedEncryptedObject { data_block_count, parity_block_count, encrypted_size })
 }
 
 pub(crate) fn encrypted_object_data_extent(payload_len: usize, options: WriterOptions) -> Result<(u32, u32), FormatError> {
     let block_size = options.block_size as usize;
     let tag_len = options.aead_algo.tag_len();
-    let total_before_padding = payload_len
-        .checked_add(tag_len)
-        .ok_or(FormatError::WriterUnsupported("encrypted object size overflow"))?;
+    let total_before_padding = payload_len.checked_add(tag_len).ok_or(FormatError::WriterUnsupported("encrypted object size overflow"))?;
     let remainder = total_before_padding % block_size;
     let encrypted_size = if remainder == 0 {
-        total_before_padding
-            .checked_add(block_size)
-            .ok_or(FormatError::WriterUnsupported("encrypted object size overflow"))?
+        total_before_padding.checked_add(block_size).ok_or(FormatError::WriterUnsupported("encrypted object size overflow"))?
     } else {
-        total_before_padding
-            .checked_add(block_size - remainder)
-            .ok_or(FormatError::WriterUnsupported("encrypted object size overflow"))?
+        total_before_padding.checked_add(block_size - remainder).ok_or(FormatError::WriterUnsupported("encrypted object size overflow"))?
     };
     let encrypted_size = u32_len(encrypted_size, "encrypted_size").map_err(|_| FormatError::WriterUnsupported("encrypted object exceeds u32 size limit"))?;
     Ok((encrypted_size / options.block_size, encrypted_size))
@@ -1355,11 +1225,7 @@ pub(crate) fn encrypt_object(
     }
     validate_object_shard_total(data_block_count, required_parity)?;
     let parity_count = required_parity as u16;
-    let parity_shards = if parity_count == 0 {
-        Vec::new()
-    } else {
-        encode_parity_gf16(&data_shards, parity_count as usize)?
-    };
+    let parity_shards = if parity_count == 0 { Vec::new() } else { encode_parity_gf16(&data_shards, parity_count as usize)? };
 
     let first_block_index = *next_block_index;
     let mut records = Vec::with_capacity(data_shards.len() + parity_shards.len());
@@ -1385,13 +1251,7 @@ pub(crate) fn encrypt_object(
 
     *next_block_index = checked_u64_add(first_block_index, data_block_count as u64 + parity_count as u64, "next_block_index")?;
 
-    Ok(EncryptedObject {
-        first_block_index,
-        data_block_count,
-        parity_block_count: parity_count as u32,
-        encrypted_size,
-        records,
-    })
+    Ok(EncryptedObject { first_block_index, data_block_count, parity_block_count: parity_count as u32, encrypted_size, records })
 }
 
 pub(crate) fn serialize_zero_parity_encrypted_object(
@@ -1422,10 +1282,7 @@ pub(crate) fn serialize_zero_parity_encrypted_object(
     for (index, chunk) in encrypted.chunks(block_size).enumerate() {
         let block_index = checked_u64_add(expected_extent.first_block_index, index as u64, "BlockRecord")?;
         let flags = if index + 1 == data_block_count { 0x01 } else { 0 };
-        records.push(SerializedBlockRecord {
-            block_index,
-            bytes: BlockRecord::to_bytes_from_parts(block_index, context.data_kind, flags, chunk),
-        });
+        records.push(SerializedBlockRecord { block_index, bytes: BlockRecord::to_bytes_from_parts(block_index, context.data_kind, flags, chunk) });
     }
     Ok(records)
 }
@@ -1436,14 +1293,7 @@ pub(crate) fn encrypt_object_payload(payload: &[u8], context: ObjectEncryptionCo
     if matches!(options.aead_algo, AeadAlgo::None) {
         return Ok(padded);
     }
-    let nonce = derive_nonce(
-        context.nonce_seed,
-        context.domain,
-        context.archive_uuid,
-        context.session_id,
-        context.counter,
-        options.aead_algo.nonce_len(),
-    )?;
+    let nonce = derive_nonce(context.nonce_seed, context.domain, context.archive_uuid, context.session_id, context.counter, options.aead_algo.nonce_len())?;
     let aad = build_aad(context.domain, context.archive_uuid, context.session_id, context.counter)?;
     aead_encrypt(options.aead_algo, context.key, &nonce, &aad, &padded)
 }
@@ -1778,15 +1628,8 @@ pub(crate) fn build_manifest_footer(
         manifest_hmac: [0u8; 32],
     };
     let mut bytes = footer.to_bytes();
-    footer.manifest_hmac = compute_integrity_tag(
-        HmacDomain::ManifestFooter,
-        aead_algo,
-        volume_format_rev,
-        Some(&subkeys.mac_key),
-        &archive_uuid,
-        &session_id,
-        &bytes[..104],
-    )?;
+    footer.manifest_hmac =
+        compute_integrity_tag(HmacDomain::ManifestFooter, aead_algo, volume_format_rev, Some(&subkeys.mac_key), &archive_uuid, &session_id, &bytes[..104])?;
     bytes = footer.to_bytes();
     Ok(bytes)
 }
@@ -1895,22 +1738,14 @@ pub(crate) fn build_v45_cmra(input: CmraBuildInput<'_>) -> Result<BuiltCmra, For
         return Err(FormatError::WriterInvariant("CMRA block records offset does not match key-wrap table layout"));
     }
     let block_records_length = checked_u64_mul(input.block_count, block_record_len, "CMRA BlockRecord length overflow")?;
-    let manifest_end = input
-        .manifest_footer_offset
-        .checked_add(MANIFEST_FOOTER_LEN as u64)
-        .ok_or(FormatError::WriterUnsupported("CMRA terminal overflow"))?;
+    let manifest_end = input.manifest_footer_offset.checked_add(MANIFEST_FOOTER_LEN as u64).ok_or(FormatError::WriterUnsupported("CMRA terminal overflow"))?;
     let root_auth_footer_length = input.root_auth_footer.map(|footer| u32_len(footer.len(), "RootAuthFooterV1")).transpose()?;
     match (input.root_auth_footer_offset, root_auth_footer_length) {
         (Some(offset), Some(length)) => {
             if manifest_end != offset
-                || offset
-                    .checked_add(length as u64)
-                    .ok_or(FormatError::WriterUnsupported("CMRA terminal overflow"))?
-                    != input.trailer_offset
+                || offset.checked_add(length as u64).ok_or(FormatError::WriterUnsupported("CMRA terminal overflow"))? != input.trailer_offset
             {
-                return Err(FormatError::WriterInvariant(
-                    "RootAuthFooter does not sit between ManifestFooter and VolumeTrailer",
-                ));
+                return Err(FormatError::WriterInvariant("RootAuthFooter does not sit between ManifestFooter and VolumeTrailer"));
             }
         }
         (None, None) => {
@@ -1922,50 +1757,23 @@ pub(crate) fn build_v45_cmra(input: CmraBuildInput<'_>) -> Result<BuiltCmra, For
             return Err(FormatError::WriterInvariant("RootAuthFooter offset/bytes mismatch"));
         }
     }
-    let body_bytes_before_cmra = input
-        .trailer_offset
-        .checked_add(VOLUME_TRAILER_LEN as u64)
-        .ok_or(FormatError::WriterUnsupported("CMRA terminal overflow"))?;
+    let body_bytes_before_cmra = input.trailer_offset.checked_add(VOLUME_TRAILER_LEN as u64).ok_or(FormatError::WriterUnsupported("CMRA terminal overflow"))?;
     if body_bytes_before_cmra != input.cmra_offset {
         return Err(FormatError::WriterInvariant("CMRA does not start after VolumeTrailer"));
     }
 
     let mut regions = vec![
-        SerializedRegion {
-            region_type: 1,
-            offset: 0,
-            bytes: input.volume_header_bytes.to_vec(),
-        },
-        SerializedRegion {
-            region_type: 2,
-            offset: VOLUME_HEADER_LEN as u64,
-            bytes: input.crypto_header.to_vec(),
-        },
+        SerializedRegion { region_type: 1, offset: 0, bytes: input.volume_header_bytes.to_vec() },
+        SerializedRegion { region_type: 2, offset: VOLUME_HEADER_LEN as u64, bytes: input.crypto_header.to_vec() },
     ];
     if let Some((table, _)) = key_wrap_table {
-        regions.push(SerializedRegion {
-            region_type: 6,
-            offset: crypto_end,
-            bytes: table.to_vec(),
-        });
+        regions.push(SerializedRegion { region_type: 6, offset: crypto_end, bytes: table.to_vec() });
     }
-    regions.push(SerializedRegion {
-        region_type: 3,
-        offset: input.manifest_footer_offset,
-        bytes: input.manifest_footer.to_vec(),
-    });
+    regions.push(SerializedRegion { region_type: 3, offset: input.manifest_footer_offset, bytes: input.manifest_footer.to_vec() });
     if let (Some(offset), Some(footer)) = (input.root_auth_footer_offset, input.root_auth_footer) {
-        regions.push(SerializedRegion {
-            region_type: 4,
-            offset,
-            bytes: footer.to_vec(),
-        });
+        regions.push(SerializedRegion { region_type: 4, offset, bytes: footer.to_vec() });
     }
-    regions.push(SerializedRegion {
-        region_type: 5,
-        offset: input.trailer_offset,
-        bytes: input.trailer.to_vec(),
-    });
+    regions.push(SerializedRegion { region_type: 5, offset: input.trailer_offset, bytes: input.trailer.to_vec() });
     let root_auth_flag = if input.root_auth_footer.is_some() { 0x0000_0001 } else { 0 };
     let key_wrap_flag = if key_wrap_table.is_some() { 0x0000_0002 } else { 0 };
     let image = CriticalMetadataImage {
@@ -2058,9 +1866,7 @@ pub(crate) fn build_v45_cmra(input: CmraBuildInput<'_>) -> Result<BuiltCmra, For
         );
     }
     for (idx, payload) in parity_shards.into_iter().enumerate() {
-        let shard_index = data_shard_count
-            .checked_add(idx as u64)
-            .ok_or(FormatError::WriterUnsupported("CMRA shard index overflow"))?;
+        let shard_index = data_shard_count.checked_add(idx as u64).ok_or(FormatError::WriterUnsupported("CMRA shard index overflow"))?;
         cmra.extend_from_slice(
             &CriticalMetadataRecoveryShard {
                 shard_index: u16::try_from(shard_index).map_err(|_| FormatError::WriterUnsupported("CMRA shard index"))?,
@@ -2110,26 +1916,13 @@ pub(crate) fn compute_parity_u16(data_block_count: u64, options: WriterOptions, 
 }
 
 pub(crate) fn compute_parity(data_block_count: u64, options: WriterOptions) -> Result<u32, FormatError> {
-    let min_parity = if options.volume_loss_tolerance > 0 || options.bit_rot_buffer_pct > 0 {
-        1u64
-    } else {
-        0u64
-    };
+    let min_parity = if options.volume_loss_tolerance > 0 || options.bit_rot_buffer_pct > 0 { 1u64 } else { 0u64 };
     let mut parity = 0u64;
     for _ in 0..100 {
-        let total = data_block_count
-            .checked_add(parity)
-            .ok_or(FormatError::WriterUnsupported("parity total overflow"))?;
-        let by_volume = checked_u64_mul(
-            options.volume_loss_tolerance as u64,
-            ceil_div(total, options.stripe_width as u64)?,
-            "volume-loss parity overflow",
-        )?;
+        let total = data_block_count.checked_add(parity).ok_or(FormatError::WriterUnsupported("parity total overflow"))?;
+        let by_volume = checked_u64_mul(options.volume_loss_tolerance as u64, ceil_div(total, options.stripe_width as u64)?, "volume-loss parity overflow")?;
         let by_bitrot = ceil_div(checked_u64_mul(total, options.bit_rot_buffer_pct as u64, "bit-rot parity overflow")?, 100)?;
-        let next = by_volume
-            .checked_add(by_bitrot)
-            .ok_or(FormatError::WriterUnsupported("parity overflow"))?
-            .max(min_parity);
+        let next = by_volume.checked_add(by_bitrot).ok_or(FormatError::WriterUnsupported("parity overflow"))?.max(min_parity);
         if next == parity {
             return u32::try_from(next).map_err(|_| FormatError::WriterUnsupported("parity count"));
         }
@@ -2142,10 +1935,7 @@ pub(crate) fn ceil_div(numerator: u64, denominator: u64) -> Result<u64, FormatEr
     if denominator == 0 {
         return Err(FormatError::WriterUnsupported("division by zero"));
     }
-    numerator
-        .checked_add(denominator - 1)
-        .ok_or(FormatError::WriterUnsupported("ceiling division overflow"))
-        .map(|value| value / denominator)
+    numerator.checked_add(denominator - 1).ok_or(FormatError::WriterUnsupported("ceiling division overflow")).map(|value| value / denominator)
 }
 
 pub(crate) fn checked_u64_mul(lhs: u64, rhs: u64, field: &'static str) -> Result<u64, FormatError> {
@@ -2163,20 +1953,12 @@ pub(crate) fn build_bootstrap_sidecar(
     index_root_records: &[BlockRecord],
     dictionary_records: Option<&[BlockRecord]>,
 ) -> Result<Vec<u8>, FormatError> {
-    let index_records_len = index_root_records
-        .iter()
-        .try_fold(0usize, |sum, record| checked_usize_add(sum, record.to_bytes().len(), "bootstrap sidecar"))?;
-    let dictionary_records_len = dictionary_records
-        .unwrap_or(&[])
-        .iter()
-        .try_fold(0usize, |sum, record| checked_usize_add(sum, record.to_bytes().len(), "bootstrap sidecar"))?;
+    let index_records_len = index_root_records.iter().try_fold(0usize, |sum, record| checked_usize_add(sum, record.to_bytes().len(), "bootstrap sidecar"))?;
+    let dictionary_records_len =
+        dictionary_records.unwrap_or(&[]).iter().try_fold(0usize, |sum, record| checked_usize_add(sum, record.to_bytes().len(), "bootstrap sidecar"))?;
     let manifest_offset = BOOTSTRAP_SIDECAR_HEADER_LEN as u64;
     let index_root_offset = manifest_offset + MANIFEST_FOOTER_LEN as u64;
-    let dictionary_offset = if dictionary_records.is_some() {
-        index_root_offset + index_records_len as u64
-    } else {
-        0
-    };
+    let dictionary_offset = if dictionary_records.is_some() { index_root_offset + index_records_len as u64 } else { 0 };
     let mut header = BootstrapSidecarHeader {
         archive_uuid,
         session_id,
@@ -2274,10 +2056,7 @@ impl<'a> StreamingMemberSection<'a> {
 
     pub fn reader(&mut self) -> std::io::Result<&mut Box<dyn Read + 'a>> {
         if self.reader.is_none() {
-            let opener = self
-                .opener
-                .take()
-                .ok_or_else(|| std::io::Error::other("streaming member section has no source"))?;
+            let opener = self.opener.take().ok_or_else(|| std::io::Error::other("streaming member section has no source"))?;
             self.reader = Some(opener().map_err(|error| std::io::Error::other(error.to_string()))?);
         }
         Ok(self.reader.as_mut().expect("reader was initialized"))
@@ -2293,10 +2072,7 @@ impl Read for StreamingMemberSection<'_> {
             let limit = out.len().min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
             let count = self.reader()?.read(&mut out[..limit])?;
             if count == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "member source ended before its declared size",
-                ));
+                return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "member source ended before its declared size"));
             }
             self.remaining -= count as u64;
             if self.expected_sha256.is_some() {
@@ -2312,10 +2088,7 @@ impl Read for StreamingMemberSection<'_> {
             if let Some(expected) = self.expected_sha256 {
                 let actual: [u8; 32] = self.hasher.clone().finalize().into();
                 if actual != expected {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "auxiliary source changed after metadata capture",
-                    ));
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "auxiliary source changed after metadata capture"));
                 }
             }
             self.source_eof_checked = true;
@@ -2349,11 +2122,7 @@ impl<'a> StreamingMemberReader<'a> {
         let mut sections = Vec::with_capacity(layout.auxiliary.len() * 2 + 2);
         for (ordinal, auxiliary) in layout.auxiliary.into_iter().enumerate() {
             sections.push(StreamingMemberSection::bytes(auxiliary.bytes));
-            let record = metadata
-                .native
-                .auxiliary_records
-                .get(ordinal)
-                .ok_or(FormatError::WriterInvariant("planned auxiliary source ordinal is missing"))?;
+            let record = metadata.native.auxiliary_records.get(ordinal).ok_or(FormatError::WriterInvariant("planned auxiliary source ordinal is missing"))?;
             if record.is_streamed() {
                 sections.push(StreamingMemberSection::deferred_payload(
                     Box::new(move || source.open_auxiliary(ordinal)),
@@ -2361,11 +2130,7 @@ impl<'a> StreamingMemberReader<'a> {
                     Some(auxiliary.sha256),
                 ));
             } else {
-                sections.push(StreamingMemberSection::payload(
-                    Box::new(Cursor::new(record.payload.clone())),
-                    auxiliary.stored_size,
-                    Some(auxiliary.sha256),
-                ));
+                sections.push(StreamingMemberSection::payload(Box::new(Cursor::new(record.payload.clone())), auxiliary.stored_size, Some(auxiliary.sha256)));
             }
             if record.stored_payload_size() != auxiliary.stored_size {
                 return Err(FormatError::WriterInvariant("auxiliary source declaration changed while opening").into());
@@ -2373,11 +2138,7 @@ impl<'a> StreamingMemberReader<'a> {
         }
         sections.push(StreamingMemberSection::bytes(layout.primary));
         sections.push(StreamingMemberSection::deferred_payload(Box::new(move || source.open()), primary_size, None));
-        Ok(Self {
-            sections,
-            section_index: 0,
-            pushback: Vec::new(),
-        })
+        Ok(Self { sections, section_index: 0, pushback: Vec::new() })
     }
 
     pub fn push_back(&mut self, bytes: Vec<u8>) {
@@ -2514,15 +2275,8 @@ pub(crate) fn build_primary_member_layout(
         (_, None) => {}
     }
     let sparse_map = sparse_extents.map(|extents| encode_v45_sparse_map(extents, file_size)).transpose()?;
-    let stored_extent_bytes = sparse_extents
-        .map(|extents| sparse_extent_bytes(extents, file_size))
-        .transpose()?
-        .unwrap_or(file_size);
-    let stored_size = checked_u64_add(
-        sparse_map.as_ref().map_or(0, |map| map.len() as u64),
-        stored_extent_bytes,
-        "sparse primary stored size",
-    )?;
+    let stored_extent_bytes = sparse_extents.map(|extents| sparse_extent_bytes(extents, file_size)).transpose()?.unwrap_or(file_size);
+    let stored_size = checked_u64_add(sparse_map.as_ref().map_or(0, |map| map.len() as u64), stored_extent_bytes, "sparse primary stored size")?;
     let use_path_override = sparse_map.is_none() && path_requires_pax(path);
     validate_portable_file_metadata(portable_metadata)?;
     let reparse_placeholder = portable_metadata.native.primary_pax_records.contains_key("TZAP.windows.reparse-placeholder");
@@ -2530,10 +2284,7 @@ pub(crate) fn build_primary_member_layout(
         return Err(FormatError::WriterInvariant("Windows reparse source kind and placeholder metadata disagree"));
     }
     let mut pax_records = portable_primary_pax(path, mode, &portable_metadata.source_os, use_path_override)?;
-    pax_records.insert(
-        "TZAP.metadata.source-filesystem".into(),
-        portable_metadata.source_filesystem.as_bytes().to_vec(),
-    );
+    pax_records.insert("TZAP.metadata.source-filesystem".into(), portable_metadata.source_filesystem.as_bytes().to_vec());
     pax_records.insert(
         "TZAP.portable.mode-origin".into(),
         match portable_metadata.mode_origin {
@@ -2563,12 +2314,7 @@ pub(crate) fn build_primary_member_layout(
         pax_records.insert("GNU.sparse.realsize".into(), file_size.to_string().into_bytes());
     }
     merge_native_primary_metadata(&mut pax_records, &portable_metadata.native)?;
-    if portable_metadata
-        .native
-        .auxiliary_records
-        .iter()
-        .any(|record| record.kind == CAPTURE_REPORT_KIND)
-    {
+    if portable_metadata.native.auxiliary_records.iter().any(|record| record.kind == CAPTURE_REPORT_KIND) {
         pax_records.insert("TZAP.metadata.capture-status".into(), b"partial".to_vec());
     }
     let use_linkpath_override = link_target.is_some_and(|target| target.len() > 100);
@@ -2638,12 +2384,9 @@ pub(crate) fn build_primary_member_layout(
     apply_primary_tar_identity(&mut header, &primary_identity)?;
     if matches!(entry_kind, SourceEntryKind::CharacterDevice | SourceEntryKind::BlockDevice) {
         let parse_device = |key: &str| -> Result<u64, FormatError> {
-            let value = pax_records
-                .get(key)
-                .ok_or(FormatError::WriterInvariant("device member lacks device-number metadata"))?;
+            let value = pax_records.get(key).ok_or(FormatError::WriterInvariant("device member lacks device-number metadata"))?;
             let text = std::str::from_utf8(value).map_err(|_| FormatError::WriterUnsupported("device number is not canonical decimal"))?;
-            text.parse::<u64>()
-                .map_err(|_| FormatError::WriterUnsupported("device number is not canonical decimal"))
+            text.parse::<u64>().map_err(|_| FormatError::WriterUnsupported("device number is not canonical decimal"))
         };
         let major = parse_device("TZAP.posix.device-major")?;
         let minor = parse_device("TZAP.posix.device-minor")?;
@@ -2675,16 +2418,11 @@ pub(crate) fn sparse_extent_bytes(extents: &[SparseExtent], logical_size: u64) -
         if index != 0 && extent.offset == previous_end {
             return Err(FormatError::WriterUnsupported("adjacent sparse extents must be merged"));
         }
-        let end = extent
-            .offset
-            .checked_add(extent.length)
-            .ok_or(FormatError::WriterUnsupported("sparse extent overflow"))?;
+        let end = extent.offset.checked_add(extent.length).ok_or(FormatError::WriterUnsupported("sparse extent overflow"))?;
         if end > logical_size {
             return Err(FormatError::WriterUnsupported("sparse extent exceeds logical size"));
         }
-        stored_size = stored_size
-            .checked_add(extent.length)
-            .ok_or(FormatError::WriterUnsupported("sparse stored size overflow"))?;
+        stored_size = stored_size.checked_add(extent.length).ok_or(FormatError::WriterUnsupported("sparse stored size overflow"))?;
         previous_end = end;
     }
     Ok(stored_size)
@@ -2702,12 +2440,7 @@ pub fn encode_v45_sparse_map(extents: &[SparseExtent], logical_size: u64) -> Res
         map.push(b'\n');
     }
     let padding = padding_to_512(map.len());
-    map.resize(
-        map.len()
-            .checked_add(padding)
-            .ok_or(FormatError::WriterUnsupported("sparse map size overflow"))?,
-        0,
-    );
+    map.resize(map.len().checked_add(padding).ok_or(FormatError::WriterUnsupported("sparse map size overflow"))?, 0);
     Ok(map)
 }
 
@@ -2720,15 +2453,10 @@ pub(crate) struct NativeAuxiliaryMemberPrefix {
 
 pub(crate) fn build_native_auxiliary_member_prefix(ordinal: u32, record: &NativeAuxiliaryMetadata) -> Result<NativeAuxiliaryMemberPrefix, FormatError> {
     if record.is_streamed()
-        && !matches!(
-            record.kind.as_str(),
-            "windows.alternate-data" | "windows.property-data" | "windows.efs-raw" | "macos.resource-fork" | "generic.xattr"
-        )
+        && !matches!(record.kind.as_str(), "windows.alternate-data" | "windows.property-data" | "windows.efs-raw" | "macos.resource-fork" | "generic.xattr")
         && !record.kind.starts_with("x.")
     {
-        return Err(FormatError::WriterUnsupported(
-            "this auxiliary kind requires inline structural payload validation",
-        ));
+        return Err(FormatError::WriterUnsupported("this auxiliary kind requires inline structural payload validation"));
     }
     let mut pax_records = BTreeMap::new();
     pax_records.insert("TZAP.aux.version".into(), b"1".to_vec());
@@ -2784,12 +2512,7 @@ pub(crate) fn build_native_auxiliary_member_prefix(ordinal: u32, record: &Native
     bytes.extend_from_slice(&pax_payload);
     bytes.resize(bytes.len() + padding_to_512(pax_payload.len()), 0);
     bytes.extend_from_slice(&auxiliary_header);
-    Ok(NativeAuxiliaryMemberPrefix {
-        bytes,
-        stored_size,
-        sha256: digest,
-        parsed,
-    })
+    Ok(NativeAuxiliaryMemberPrefix { bytes, stored_size, sha256: digest, parsed })
 }
 
 pub(crate) fn merge_native_primary_metadata(pax_records: &mut crate::entry_metadata::PaxRecords, native: &NativeFileMetadata) -> Result<(), FormatError> {
@@ -2916,22 +2639,9 @@ pub(crate) fn path_requires_pax(path: &[u8]) -> bool {
 
 pub(crate) fn v45_portable_file_entry_flags(mode: u32, primary_sparse: bool, metadata: &PortableFileMetadata) -> u32 {
     EXTENDED_METADATA_V1
-        | if metadata.native.auxiliary_records.iter().any(|record| record.kind == CAPTURE_REPORT_KIND) {
-            CAPTURE_PARTIAL
-        } else {
-            0
-        }
-        | if metadata.native.auxiliary_records.is_empty() {
-            0
-        } else {
-            HAS_AUXILIARY_STREAMS
-        }
-        | if metadata
-            .native
-            .required_profiles
-            .iter()
-            .chain(&metadata.native.optional_profiles)
-            .any(|profile| profile != PORTABLE_PROFILE)
+        | if metadata.native.auxiliary_records.iter().any(|record| record.kind == CAPTURE_REPORT_KIND) { CAPTURE_PARTIAL } else { 0 }
+        | if metadata.native.auxiliary_records.is_empty() { 0 } else { HAS_AUXILIARY_STREAMS }
+        | if metadata.native.required_profiles.iter().chain(&metadata.native.optional_profiles).any(|profile| profile != PORTABLE_PROFILE)
             || !metadata.native.primary_pax_records.is_empty()
             || metadata.native.auxiliary_records.iter().any(|record| record.native)
         {
@@ -2939,19 +2649,11 @@ pub(crate) fn v45_portable_file_entry_flags(mode: u32, primary_sparse: bool, met
         } else {
             0
         }
-        | if primary_sparse || metadata.native.auxiliary_records.iter().any(|record| record.flags & 1 != 0) {
-            HAS_SPARSE_EXTENTS
-        } else {
-            0
-        }
+        | if primary_sparse || metadata.native.auxiliary_records.iter().any(|record| record.flags & 1 != 0) { HAS_SPARSE_EXTENTS } else { 0 }
         | if mode & 0o6000 != 0
             || metadata.posix_owner.is_some()
             || native_metadata_requires_system_restore(&metadata.native, &metadata.source_os)
-            || metadata
-                .native
-                .auxiliary_records
-                .iter()
-                .any(|record| record.restore_class == RestoreClass::System)
+            || metadata.native.auxiliary_records.iter().any(|record| record.restore_class == RestoreClass::System)
         {
             REQUIRES_SYSTEM_RESTORE
         } else {
@@ -2974,31 +2676,17 @@ pub(crate) fn native_metadata_requires_system_restore(native: &NativeFileMetadat
                 && !key.starts_with("LIBARCHIVE.xattr.user.")
                 && !key.starts_with("LIBARCHIVE.xattr.com.apple."))
             || (key == "TZAP.linux.fsflags"
-                && std::str::from_utf8(value)
-                    .ok()
-                    .and_then(|value| u64::from_str_radix(value, 16).ok())
-                    .is_some_and(|flags| flags & 0x30 != 0))
+                && std::str::from_utf8(value).ok().and_then(|value| u64::from_str_radix(value, 16).ok()).is_some_and(|flags| flags & 0x30 != 0))
             || (key == "TZAP.bsd.st-flags"
-                && std::str::from_utf8(value)
-                    .ok()
-                    .and_then(|value| u64::from_str_radix(value, 16).ok())
-                    .is_some_and(|flags| flags & 0x0006_0006 != 0))
+                && std::str::from_utf8(value).ok().and_then(|value| u64::from_str_radix(value, 16).ok()).is_some_and(|flags| flags & 0x0006_0006 != 0))
             || (key == "TZAP.macos.st-flags"
-                && std::str::from_utf8(value)
-                    .ok()
-                    .and_then(|value| u64::from_str_radix(value, 16).ok())
-                    .is_some_and(|flags| flags & 0x009f_0086 != 0))
+                && std::str::from_utf8(value).ok().and_then(|value| u64::from_str_radix(value, 16).ok()).is_some_and(|flags| flags & 0x009f_0086 != 0))
             || (key == "TZAP.windows.data-stream-attributes"
+                && std::str::from_utf8(value).ok().and_then(|value| u32::from_str_radix(value, 16).ok()).is_some_and(|flags| flags & 0x0000_0002 != 0))
+            || (key == "SCHILY.fflags"
                 && std::str::from_utf8(value)
                     .ok()
-                    .and_then(|value| u32::from_str_radix(value, 16).ok())
-                    .is_some_and(|flags| flags & 0x0000_0002 != 0))
-            || (key == "SCHILY.fflags"
-                && std::str::from_utf8(value).ok().is_some_and(|value| {
-                    value
-                        .split(',')
-                        .any(|token| matches!(token, "append" | "immutable" | "sappnd" | "schg" | "uappnd" | "uchg"))
-                }))
+                    .is_some_and(|value| value.split(',').any(|token| matches!(token, "append" | "immutable" | "sappnd" | "schg" | "uappnd" | "uchg"))))
     })
 }
 

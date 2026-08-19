@@ -54,11 +54,7 @@ pub fn capture_macos_metadata(input: &Path, symlink: bool) -> io::Result<Capture
 }
 
 pub fn open_macos_resource_fork(input: &Path, symlink: bool, expected_identity: MacosMetadataIdentity, expected_size: u64) -> io::Result<Box<dyn Read>> {
-    let source = if symlink {
-        ResourceForkSource::Symlink(open_symlink(input)?)
-    } else {
-        ResourceForkSource::File(open_regular_resource_fork(input)?)
-    };
+    let source = if symlink { ResourceForkSource::Symlink(open_symlink(input)?) } else { ResourceForkSource::File(open_regular_resource_fork(input)?) };
     Ok(Box::new(ResourceForkReader::new(source, expected_identity, Some(expected_size))?))
 }
 
@@ -66,9 +62,7 @@ fn capture_from_file(input: &Path, file: &File, identity: MacosMetadataIdentity,
     use std::os::unix::fs::FileTypeExt as _;
 
     let mut native = NativeFileMetadata::default();
-    native
-        .primary_pax_records
-        .insert("TZAP.macos.st-flags".into(), format!("{:016x}", identity.flags).into_bytes());
+    native.primary_pax_records.insert("TZAP.macos.st-flags".into(), format!("{:016x}", identity.flags).into_bytes());
     native.primary_pax_records.insert(
         "TZAP.unix.ctime-observed".into(),
         ArchiveTimestamp::new(
@@ -100,28 +94,17 @@ fn capture_from_file(input: &Path, file: &File, identity: MacosMetadataIdentity,
     for name in names {
         let name_bytes = name.as_bytes();
         if name_bytes == b"com.apple.ResourceFork" {
-            let source = if symlink {
-                ResourceForkSource::Symlink(file.try_clone()?)
-            } else {
-                ResourceForkSource::File(open_regular_resource_fork(input)?)
-            };
+            let source = if symlink { ResourceForkSource::Symlink(file.try_clone()?) } else { ResourceForkSource::File(open_regular_resource_fork(input)?) };
             native.auxiliary_records.push(capture_resource_fork(source, identity)?);
             continue;
         }
 
-        let value = file
-            .get_xattr(&name)?
-            .ok_or_else(|| io::Error::other("xattr changed during metadata capture"))?;
+        let value = file.get_xattr(&name)?.ok_or_else(|| io::Error::other("xattr changed during metadata capture"))?;
         if name_bytes == b"com.apple.FinderInfo" {
             if value.len() != 32 {
                 return Err(io::Error::other("FinderInfo is not exactly 32 bytes"));
             }
-            native.auxiliary_records.push(NativeAuxiliaryMetadata::new(
-                "macos.finder-info",
-                "macos-backup-v1",
-                RestoreClass::SameOs,
-                value,
-            ));
+            native.auxiliary_records.push(NativeAuxiliaryMetadata::new("macos.finder-info", "macos-backup-v1", RestoreClass::SameOs, value));
             continue;
         }
 
@@ -129,16 +112,8 @@ fn capture_from_file(input: &Path, file: &File, identity: MacosMetadataIdentity,
         if inline_xattr_bytes.saturating_add(name_bytes.len()).saturating_add(encoded_size) > INLINE_XATTR_BUDGET {
             let mut record = NativeAuxiliaryMetadata::new(
                 "generic.xattr",
-                if name_bytes.starts_with(b"com.apple.") {
-                    "macos-backup-v1"
-                } else {
-                    "posix-backup-v1"
-                },
-                if is_system_xattr(name_bytes) {
-                    RestoreClass::System
-                } else {
-                    RestoreClass::SameOs
-                },
+                if name_bytes.starts_with(b"com.apple.") { "macos-backup-v1" } else { "posix-backup-v1" },
+                if is_system_xattr(name_bytes) { RestoreClass::System } else { RestoreClass::SameOs },
                 value,
             );
             record.name_encoding = NativeAuxiliaryNameEncoding::Bytes;
@@ -165,9 +140,7 @@ fn capture_from_file(input: &Path, file: &File, identity: MacosMetadataIdentity,
     }
 
     native.required_profiles = vec!["macos-backup-v1".into(), "posix-backup-v1".into()];
-    native
-        .auxiliary_records
-        .sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
+    native.auxiliary_records.sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
     Ok(native)
 }
 
@@ -194,10 +167,7 @@ fn open_metadata_file(input: &Path) -> io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt as _;
 
     const O_EVTONLY: libc::c_int = 0x0000_8000;
-    fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK | O_EVTONLY)
-        .open(input)
+    fs::OpenOptions::new().read(true).custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK | O_EVTONLY).open(input)
 }
 
 fn open_symlink(input: &Path) -> io::Result<File> {
@@ -240,13 +210,7 @@ impl ResourceForkReader {
         if expected_size.is_some_and(|size| size != logical_size) {
             return Err(io::Error::other("macOS resource fork changed after metadata scan"));
         }
-        Ok(Self {
-            source,
-            expected_identity,
-            logical_size,
-            offset: 0,
-            validated: false,
-        })
+        Ok(Self { source, expected_identity, logical_size, offset: 0, validated: false })
     }
 
     fn validate_finished(&mut self) -> io::Result<()> {
@@ -273,10 +237,7 @@ impl Read for ResourceForkReader {
             usize::try_from((self.logical_size - self.offset).min(output.len() as u64)).map_err(|_| io::Error::other("resource fork read size overflow"))?;
         let read = read_resource_fork(&self.source, self.offset, &mut output[..count])?;
         if read == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "macOS resource fork ended before its scanned size",
-            ));
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "macOS resource fork ended before its scanned size"));
         }
         self.offset += read as u64;
         if self.offset == self.logical_size {
@@ -298,23 +259,14 @@ fn capture_resource_fork(source: ResourceForkSource, identity: MacosMetadataIden
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(NativeAuxiliaryMetadata::new_streamed(
-        "macos.resource-fork",
-        "macos-backup-v1",
-        RestoreClass::SameOs,
-        logical_size,
-        hasher.finalize().into(),
-    ))
+    Ok(NativeAuxiliaryMetadata::new_streamed("macos.resource-fork", "macos-backup-v1", RestoreClass::SameOs, logical_size, hasher.finalize().into()))
 }
 
 fn resource_fork_identity(source: &ResourceForkSource) -> io::Result<MacosMetadataIdentity> {
     match source {
         ResourceForkSource::File(fork) => {
             let path = descriptor_path(fork)?;
-            let owner = path
-                .parent()
-                .and_then(Path::parent)
-                .ok_or_else(|| io::Error::other("invalid named-fork descriptor path"))?;
+            let owner = path.parent().and_then(Path::parent).ok_or_else(|| io::Error::other("invalid named-fork descriptor path"))?;
             Ok(metadata_identity(&fs::metadata(owner)?))
         }
         ResourceForkSource::Symlink(file) => Ok(metadata_identity(&file.metadata()?)),
@@ -329,10 +281,7 @@ fn descriptor_path(file: &File) -> io::Result<PathBuf> {
     if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, path.as_mut_ptr()) } != 0 {
         return Err(io::Error::last_os_error());
     }
-    let length = path
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or_else(|| io::Error::other("unterminated descriptor path"))?;
+    let length = path.iter().position(|byte| *byte == 0).ok_or_else(|| io::Error::other("unterminated descriptor path"))?;
     path.truncate(length);
     Ok(PathBuf::from(std::ffi::OsString::from_vec(path)))
 }

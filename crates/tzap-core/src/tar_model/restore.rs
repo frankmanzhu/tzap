@@ -160,9 +160,7 @@ pub(crate) struct TarStreamFilesystemRestoreObserver<'a> {
 
 impl<'a> TarStreamFilesystemRestoreObserver<'a> {
     pub(crate) fn new(root: &'a Path, options: SafeExtractionOptions) -> Self {
-        Self {
-            handler: FilesystemRestoreHandler::new_deferred(root, options),
-        }
+        Self { handler: FilesystemRestoreHandler::new_deferred(root, options) }
     }
 }
 
@@ -188,9 +186,7 @@ impl TarStreamObserver for TarStreamFilesystemRestoreObserver<'_> {
     }
 
     fn on_sparse_layout(&mut self, logical_size: u64, extents: &[SparseExtent]) -> Result<bool, FormatError> {
-        self.handler
-            .begin_sparse_payload(logical_size, extents)
-            .map_err(format_error_from_extract_error)
+        self.handler.begin_sparse_payload(logical_size, extents).map_err(format_error_from_extract_error)
     }
 
     fn on_sparse_extent(&mut self, offset: u64, bytes: &[u8]) -> Result<(), FormatError> {
@@ -211,54 +207,21 @@ impl TarStreamObserver for TarStreamFilesystemRestoreObserver<'_> {
 }
 
 pub(super) enum StreamingTarState {
-    Header {
-        metadata: V45StreamingGroup,
-        group_start: u64,
-        group_size: u64,
-        header: Vec<u8>,
-    },
-    Payload {
-        metadata: V45StreamingGroup,
-        group_start: u64,
-        group_size: u64,
-        entry: PendingTarEntry,
-        remaining: u64,
-        padding_remaining: u64,
-    },
-    Padding {
-        metadata: V45StreamingGroup,
-        group_start: u64,
-        group_size: u64,
-        entry: PendingTarEntry,
-        remaining: u64,
-    },
+    Header { metadata: V45StreamingGroup, group_start: u64, group_size: u64, header: Vec<u8> },
+    Payload { metadata: V45StreamingGroup, group_start: u64, group_size: u64, entry: PendingTarEntry, remaining: u64, padding_remaining: u64 },
+    Padding { metadata: V45StreamingGroup, group_start: u64, group_size: u64, entry: PendingTarEntry, remaining: u64 },
 }
 
 impl StreamingTarState {
     pub(crate) fn new_member(group_start: u64) -> Self {
-        Self::Header {
-            metadata: V45StreamingGroup::default(),
-            group_start,
-            group_size: 0,
-            header: Vec::new(),
-        }
+        Self::Header { metadata: V45StreamingGroup::default(), group_start, group_size: 0, header: Vec::new() }
     }
 }
 
 pub(super) enum PendingTarEntry {
-    LocalPax {
-        kind: V45PaxKind,
-        payload: Vec<u8>,
-    },
-    Auxiliary {
-        validator: AuxiliaryStreamValidator,
-        stream_to_observer: bool,
-    },
-    Main {
-        member: StreamedTarMemberMetadata,
-        group_start: u64,
-        sparse: Option<StreamingSparsePrimary>,
-    },
+    LocalPax { kind: V45PaxKind, payload: Vec<u8> },
+    Auxiliary { validator: AuxiliaryStreamValidator, stream_to_observer: bool },
+    Main { member: StreamedTarMemberMetadata, group_start: u64, sparse: Option<StreamingSparsePrimary> },
 }
 
 pub(crate) fn try_tar_member_group_end(stream: &[u8], start: usize) -> Result<Option<usize>, FormatError> {
@@ -303,9 +266,7 @@ pub(crate) fn try_tar_member_group_end(stream: &[u8], start: usize) -> Result<Op
                     return Err(FormatError::InvalidArchive("PAX header is not immediately consumed"));
                 }
                 validate_v45_metadata_header(header)?;
-                aggregate_pax_bytes = aggregate_pax_bytes
-                    .checked_add(payload.len())
-                    .ok_or(FormatError::InvalidArchive("aggregate PAX size overflow"))?;
+                aggregate_pax_bytes = aggregate_pax_bytes.checked_add(payload.len()).ok_or(FormatError::InvalidArchive("aggregate PAX size overflow"))?;
                 if aggregate_pax_bytes > MAX_AGGREGATE_PAX_PAYLOAD {
                     return Err(FormatError::ReaderResourceLimitExceeded {
                         field: "aggregate local PAX payload bytes per member group",
@@ -378,15 +339,7 @@ where
     W: Write,
 {
     let mut handler = RegularWriterHandler { writer };
-    let member = stream_tar_member_group(
-        reader,
-        expected_path,
-        expected_file_data_size,
-        expected_file_flags,
-        group_len,
-        max_path_length,
-        &mut handler,
-    )?;
+    let member = stream_tar_member_group(reader, expected_path, expected_file_data_size, expected_file_flags, group_len, max_path_length, &mut handler)?;
     Ok(member.diagnostics)
 }
 
@@ -460,9 +413,7 @@ where
             .transpose()?
             .unwrap_or(header_size);
         let padding_len = padding_to_512_u64(effective_size);
-        let entry_payload_len = effective_size
-            .checked_add(padding_len)
-            .ok_or(FormatError::InvalidArchive("tar member arithmetic overflow"))?;
+        let entry_payload_len = effective_size.checked_add(padding_len).ok_or(FormatError::InvalidArchive("tar member arithmetic overflow"))?;
         if entry_payload_len > remaining {
             return Err(FormatError::InvalidArchive("tar member payload exceeds group").into());
         }
@@ -483,9 +434,7 @@ where
                 }
                 let payload = read_member_vec(reader, effective_size, &mut remaining)?;
                 read_zero_padding(reader, padding_len, &mut remaining)?;
-                aggregate_pax_bytes = aggregate_pax_bytes
-                    .checked_add(payload.len())
-                    .ok_or(FormatError::InvalidArchive("aggregate PAX size overflow"))?;
+                aggregate_pax_bytes = aggregate_pax_bytes.checked_add(payload.len()).ok_or(FormatError::InvalidArchive("aggregate PAX size overflow"))?;
                 if aggregate_pax_bytes > MAX_AGGREGATE_PAX_PAYLOAD {
                     return Err(FormatError::ReaderResourceLimitExceeded {
                         field: "aggregate local PAX payload bytes per member group",
@@ -551,11 +500,8 @@ where
                 if reparse_placeholder && effective_size != 0 {
                     return Err(FormatError::InvalidArchive("reparse placeholder has non-zero primary payload").into());
                 }
-                let logical_size = if kind == TarEntryKind::Regular && !reparse_placeholder {
-                    primary.sparse_logical_size.unwrap_or(effective_size)
-                } else {
-                    0
-                };
+                let logical_size =
+                    if kind == TarEntryKind::Regular && !reparse_placeholder { primary.sparse_logical_size.unwrap_or(effective_size) } else { 0 };
                 let (file_entry_flags, capture_report) = v45_group_flags(&primary, &auxiliary, kind)?;
                 if file_entry_flags != expected_file_flags {
                     return Err(FormatError::InvalidArchive("tar member metadata flags do not match FileEntry flags").into());
@@ -565,10 +511,7 @@ where
                     &records,
                     &primary,
                     &auxiliary,
-                    V45PrimaryLink {
-                        path: &path,
-                        target: link_target.as_deref(),
-                    },
+                    V45PrimaryLink { path: &path, target: link_target.as_deref() },
                     sparse,
                     capture_report.as_deref(),
                 )?;
@@ -658,33 +601,22 @@ pub(super) fn plan_restore(
                 } else {
                     format!("capture omission: {}; detail={}", row.reason, row.encoded_detail)
                 };
-                MetadataDiagnostic::new(
-                    path,
-                    &row.profile,
-                    &row.metadata_class,
-                    MetadataOperation::Capture,
-                    MetadataDiagnosticStatus::Partial,
-                    message,
-                )
-                .for_restore(options.restore_policy, restore_phase_for_kind(kind, reparse_placeholder))
+                MetadataDiagnostic::new(path, &row.profile, &row.metadata_class, MetadataOperation::Capture, MetadataDiagnosticStatus::Partial, message)
+                    .for_restore(options.restore_policy, restore_phase_for_kind(kind, reparse_placeholder))
             }));
         }
-        let required_omission = metadata.capture_report.as_ref().is_some_and(|rows| {
-            rows.iter()
-                .any(|row| metadata.declaration.required_profiles.binary_search(&row.profile).is_ok())
-        });
+        let required_omission = metadata
+            .capture_report
+            .as_ref()
+            .is_some_and(|rows| rows.iter().any(|row| metadata.declaration.required_profiles.binary_search(&row.profile).is_ok()));
         if required_omission && !options.allow_degraded {
-            return Err(FormatError::ReaderUnsupported(
-                "required-profile capture omission needs explicit degraded restore",
-            ));
+            return Err(FormatError::ReaderUnsupported("required-profile capture omission needs explicit degraded restore"));
         }
     }
     let unknown_required_profiles = metadata.declaration.unknown_required_profiles().collect::<Vec<_>>();
     if !unknown_required_profiles.is_empty() {
         if !options.allow_degraded {
-            return Err(FormatError::ReaderUnsupported(
-                "requested restore policy requires an unsupported required profile",
-            ));
+            return Err(FormatError::ReaderUnsupported("requested restore policy requires an unsupported required profile"));
         }
         diagnostics.extend(unknown_required_profiles.into_iter().map(|profile| {
             MetadataDiagnostic::new(
@@ -711,20 +643,12 @@ pub(super) fn plan_restore(
     }));
 
     if options.restore_policy == RestorePolicy::Content {
-        for (metadata_class, message) in [
-            ("mode", "portable mode is outside content restore policy"),
-            ("mtime", "modification time is outside content restore policy"),
-        ] {
+        for (metadata_class, message) in
+            [("mode", "portable mode is outside content restore policy"), ("mtime", "modification time is outside content restore policy")]
+        {
             diagnostics.push(
-                MetadataDiagnostic::new(
-                    path,
-                    "portable-v1",
-                    metadata_class,
-                    MetadataOperation::Plan,
-                    MetadataDiagnosticStatus::Skipped,
-                    message,
-                )
-                .for_restore(options.restore_policy, 4),
+                MetadataDiagnostic::new(path, "portable-v1", metadata_class, MetadataOperation::Plan, MetadataDiagnosticStatus::Skipped, message)
+                    .for_restore(options.restore_policy, 4),
             );
         }
     }
@@ -876,9 +800,7 @@ pub(super) fn plan_restore(
             }
         };
         if unsupported_requested && !options.allow_degraded {
-            return Err(FormatError::ReaderUnsupported(
-                "requested portable attribute projection needs explicit degraded restore",
-            ));
+            return Err(FormatError::ReaderUnsupported("requested portable attribute projection needs explicit degraded restore"));
         }
         if options.restore_policy == RestorePolicy::Content || unsupported_requested || (options.restore_policy == RestorePolicy::Portable && same_os_bits != 0)
         {
@@ -947,12 +869,7 @@ pub(super) fn plan_restore(
                 .for_restore(options.restore_policy, 4),
             );
         }
-        if metadata
-            .primary_records
-            .get("TZAP.macos.st-flags")
-            .and_then(|value| parse_macos_flags(value).ok())
-            .is_some_and(macos_flags_require_system)
-        {
+        if metadata.primary_records.get("TZAP.macos.st-flags").and_then(|value| parse_macos_flags(value).ok()).is_some_and(macos_flags_require_system) {
             diagnostics.push(
                 MetadataDiagnostic::new(
                     path,
@@ -985,13 +902,7 @@ pub(super) fn plan_restore(
             .for_restore(options.restore_policy, 4),
         );
     }
-    let profile_is_required = |profile: &str| {
-        metadata
-            .declaration
-            .required_profiles
-            .binary_search_by(|candidate| candidate.as_str().cmp(profile))
-            .is_ok()
-    };
+    let profile_is_required = |profile: &str| metadata.declaration.required_profiles.binary_search_by(|candidate| candidate.as_str().cmp(profile)).is_ok();
     let native_profile = metadata
         .auxiliary
         .iter()
@@ -1027,9 +938,7 @@ pub(super) fn plan_restore(
 
     if (!requests_system && requests_same_os && unsupported_same_os) || (requests_system && unsupported_system) {
         if !options.allow_degraded {
-            return Err(FormatError::ReaderUnsupported(
-                "requested native metadata is not supported by this conformance class",
-            ));
+            return Err(FormatError::ReaderUnsupported("requested native metadata is not supported by this conformance class"));
         }
         diagnostics.push(
             MetadataDiagnostic::new(
@@ -1203,9 +1112,7 @@ impl<'a> FilesystemRestoreHandler<'a> {
                     let _ = destination.parent.remove_file_or_symlink(&temp_leaf);
                     return Err(FormatError::FilesystemExtractionFailed("failed to materialize hardlink target"));
                 }
-                output
-                    .flush()
-                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to write materialized hardlink target"))?;
+                output.flush().map_err(|_| FormatError::FilesystemExtractionFailed("failed to write materialized hardlink target"))?;
                 publish_regular_file(&destination, &temp_leaf, output, self.options)?;
             } else {
                 create_hardlink(&destination, &target_path, self.options)?;
@@ -1213,21 +1120,13 @@ impl<'a> FilesystemRestoreHandler<'a> {
         }
         let mut directories = std::mem::take(&mut self.deferred_directories);
         directories.sort_by(|left, right| {
-            right
-                .0
-                .iter()
-                .filter(|byte| **byte == b'/')
-                .count()
-                .cmp(&left.0.iter().filter(|byte| **byte == b'/').count())
-                .then_with(|| left.0.cmp(&right.0))
+            right.0.iter().filter(|byte| **byte == b'/').count().cmp(&left.0.iter().filter(|byte| **byte == b'/').count()).then_with(|| left.0.cmp(&right.0))
         });
         if self.options.restore_policy != RestorePolicy::Content {
             for (path, metadata, mut staged) in directories {
                 apply_restored_directory_metadata(self.root, &path, &metadata, Some(&mut staged), self.options, &mut diagnostics)?;
                 if !staged.is_empty() {
-                    return Err(FormatError::InvalidArchive(
-                        "native auxiliary payload was not restored for its directory member",
-                    ));
+                    return Err(FormatError::InvalidArchive("native auxiliary payload was not restored for its directory member"));
                 }
             }
         }
@@ -1282,8 +1181,7 @@ impl<'a> FilesystemRestoreHandler<'a> {
             && self.options.system_authorized
             && matches!(member.kind, TarEntryKind::Regular | TarEntryKind::Symlink)
         {
-            self.deferred_windows_objects
-                .push((member.path.clone(), member.kind, member.v45_metadata.clone()));
+            self.deferred_windows_objects.push((member.path.clone(), member.kind, member.v45_metadata.clone()));
         }
         if member.reparse_placeholder {
             return Ok(diagnostics);
@@ -1309,13 +1207,9 @@ impl<'a> FilesystemRestoreHandler<'a> {
         }
 
         let mut file = self.file.take().ok_or(FormatError::InvalidArchive("regular file output is missing"))?;
-        file.flush()
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to write regular file"))?;
+        file.flush().map_err(|_| FormatError::FilesystemExtractionFailed("failed to write regular file"))?;
 
-        let destination = self
-            .destination
-            .take()
-            .ok_or(FormatError::InvalidArchive("regular file destination is missing"))?;
+        let destination = self.destination.take().ok_or(FormatError::InvalidArchive("regular file destination is missing"))?;
         let temp_leaf = self.temp_leaf.take().ok_or(FormatError::InvalidArchive("regular file temp path is missing"))?;
         let file = match restore_windows_efs_temp(&destination, &temp_leaf, file, &mut self.staged_auxiliary, self.options) {
             Ok(file) => file,
@@ -1404,21 +1298,12 @@ impl TarMemberStreamHandler for FilesystemRestoreHandler<'_> {
     }
 
     fn finish_auxiliary_payload(&mut self, record: &AuxiliaryRecord) -> Result<(), ExtractError> {
-        let mut staged = self
-            .active_auxiliary
-            .take()
-            .ok_or(FormatError::InvalidArchive("auxiliary staging output is missing"))?;
+        let mut staged = self.active_auxiliary.take().ok_or(FormatError::InvalidArchive("auxiliary staging output is missing"))?;
         if staged.record.ordinal != record.ordinal || staged.record.kind != record.kind {
             return Err(FormatError::InvalidArchive("staged auxiliary declaration changed during validation").into());
         }
-        staged
-            .file
-            .flush()
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to flush native auxiliary staging"))?;
-        staged
-            .file
-            .seek(SeekFrom::Start(0))
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind native auxiliary staging"))?;
+        staged.file.flush().map_err(|_| FormatError::FilesystemExtractionFailed("failed to flush native auxiliary staging"))?;
+        staged.file.seek(SeekFrom::Start(0)).map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind native auxiliary staging"))?;
         staged.record = record.clone();
         self.staged_auxiliary.push(staged);
         Ok(())
@@ -1504,29 +1389,13 @@ impl TarMemberStreamHandler for FilesystemRestoreHandler<'_> {
                 }
                 #[cfg(windows)]
                 if !self.staged_auxiliary.is_empty() {
-                    let directory = if member.reparse_placeholder {
-                        open_existing_windows_reparse(&destination)?
-                    } else {
-                        open_existing_directory(&destination)?
-                    };
-                    apply_generic_xattr_auxiliaries(
-                        &directory,
-                        &member.path,
-                        &mut self.staged_auxiliary,
-                        self.options,
-                        &mut self.planned_diagnostics,
-                    )?;
-                    apply_windows_alternate_streams(
-                        &directory,
-                        &member.path,
-                        &mut self.staged_auxiliary,
-                        self.options,
-                        &mut self.planned_diagnostics,
-                    )?;
+                    let directory =
+                        if member.reparse_placeholder { open_existing_windows_reparse(&destination)? } else { open_existing_directory(&destination)? };
+                    apply_generic_xattr_auxiliaries(&directory, &member.path, &mut self.staged_auxiliary, self.options, &mut self.planned_diagnostics)?;
+                    apply_windows_alternate_streams(&directory, &member.path, &mut self.staged_auxiliary, self.options, &mut self.planned_diagnostics)?;
                 }
                 if self.defer_directories {
-                    self.deferred_directories
-                        .push((member.path.clone(), member.v45_metadata.clone(), std::mem::take(&mut self.staged_auxiliary)));
+                    self.deferred_directories.push((member.path.clone(), member.v45_metadata.clone(), std::mem::take(&mut self.staged_auxiliary)));
                 }
             }
             TarEntryKind::Symlink => {
@@ -1688,8 +1557,7 @@ impl TarMemberStreamHandler for FilesystemRestoreHandler<'_> {
 
     fn write_regular_payload(&mut self, bytes: &[u8]) -> Result<(), ExtractError> {
         let file = self.file.as_mut().ok_or(FormatError::InvalidArchive("regular file output is missing"))?;
-        file.write_all(bytes)
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to write regular file"))?;
+        file.write_all(bytes).map_err(|_| FormatError::FilesystemExtractionFailed("failed to write regular file"))?;
         Ok(())
     }
 
@@ -1709,8 +1577,7 @@ impl TarMemberStreamHandler for FilesystemRestoreHandler<'_> {
         #[cfg(target_os = "linux")]
         {
             let file = self.file.as_mut().ok_or(FormatError::InvalidArchive("regular file output is missing"))?;
-            file.set_len(logical_size)
-                .map_err(|_| FormatError::FilesystemExtractionFailed("failed to set Linux sparse output logical size"))?;
+            file.set_len(logical_size).map_err(|_| FormatError::FilesystemExtractionFailed("failed to set Linux sparse output logical size"))?;
             self.native_sparse_active = true;
             self.sparse_logical_size = logical_size;
             self.sparse_extents = extents.to_vec();
@@ -1728,10 +1595,8 @@ impl TarMemberStreamHandler for FilesystemRestoreHandler<'_> {
             return Err(FormatError::InvalidArchive("sparse output was not initialized").into());
         }
         let file = self.file.as_mut().ok_or(FormatError::InvalidArchive("regular file output is missing"))?;
-        file.seek(SeekFrom::Start(offset))
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to seek sparse output extent"))?;
-        file.write_all(bytes)
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to write sparse output extent"))?;
+        file.seek(SeekFrom::Start(offset)).map_err(|_| FormatError::FilesystemExtractionFailed("failed to seek sparse output extent"))?;
+        file.write_all(bytes).map_err(|_| FormatError::FilesystemExtractionFailed("failed to write sparse output extent"))?;
         Ok(())
     }
 
@@ -1740,14 +1605,8 @@ impl TarMemberStreamHandler for FilesystemRestoreHandler<'_> {
             return Ok(());
         }
         let file = self.file.as_mut().ok_or(FormatError::InvalidArchive("regular file output is missing"))?;
-        file.flush()
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to flush sparse output"))?;
-        if file
-            .metadata()
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect sparse output"))?
-            .len()
-            != self.sparse_logical_size
-        {
+        file.flush().map_err(|_| FormatError::FilesystemExtractionFailed("failed to flush sparse output"))?;
+        if file.metadata().map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect sparse output"))?.len() != self.sparse_logical_size {
             return Err(FormatError::FilesystemExtractionFailed("sparse output logical size does not match archive").into());
         }
         #[cfg(windows)]
@@ -1885,10 +1744,8 @@ pub(crate) fn restore_tar_member(root: &Path, member: &OwnedTarMember, options: 
     match member.kind {
         TarEntryKind::Regular => {
             let (temp_leaf, mut file) = create_temp_regular_file(&destination)?;
-            file.write_all(&member.data)
-                .map_err(|_| FormatError::FilesystemExtractionFailed("failed to write regular file"))?;
-            file.flush()
-                .map_err(|_| FormatError::FilesystemExtractionFailed("failed to write regular file"))?;
+            file.write_all(&member.data).map_err(|_| FormatError::FilesystemExtractionFailed("failed to write regular file"))?;
+            file.flush().map_err(|_| FormatError::FilesystemExtractionFailed("failed to write regular file"))?;
             let file = publish_regular_file(&destination, &temp_leaf, file, options)?;
             if options.restore_policy != RestorePolicy::Content {
                 if let Err(error) = apply_restored_regular_file_metadata(&file, member, options, &mut diagnostics) {
@@ -1901,10 +1758,7 @@ pub(crate) fn restore_tar_member(root: &Path, member: &OwnedTarMember, options: 
         TarEntryKind::Directory => {
             create_directory(&destination)?;
             if options.restore_policy != RestorePolicy::Content {
-                let metadata = member
-                    .v45_metadata
-                    .as_ref()
-                    .ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
+                let metadata = member.v45_metadata.as_ref().ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
                 apply_restored_directory_metadata(root, &member.path, metadata, None, options, &mut diagnostics)?;
             }
         }
@@ -1913,10 +1767,7 @@ pub(crate) fn restore_tar_member(root: &Path, member: &OwnedTarMember, options: 
             validate_symlink_target(&member.path, target)?;
             create_symlink(&destination, target, options)?;
             if options.restore_policy != RestorePolicy::Content {
-                let metadata = member
-                    .v45_metadata
-                    .as_ref()
-                    .ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
+                let metadata = member.v45_metadata.as_ref().ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
                 apply_restored_linux_symlink_metadata(&destination, &member.path, metadata, options, &mut diagnostics)?;
                 let mut staged = Vec::new();
                 apply_restored_macos_symlink_metadata(&destination, &member.path, metadata, &mut staged, options, &mut diagnostics)?;
@@ -1933,9 +1784,7 @@ pub(crate) fn restore_tar_member(root: &Path, member: &OwnedTarMember, options: 
                 let mut input = open_existing_regular_file(&target_path)?;
                 let materialized_bytes =
                     std::io::copy(&mut input, &mut output).map_err(|_| FormatError::FilesystemExtractionFailed("failed to materialize hardlink target"))?;
-                output
-                    .flush()
-                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to materialize hardlink target"))?;
+                output.flush().map_err(|_| FormatError::FilesystemExtractionFailed("failed to materialize hardlink target"))?;
                 publish_regular_file(&destination, &temp_leaf, output, options)?;
                 diagnostics.push(
                     MetadataDiagnostic::new(
@@ -2072,9 +1921,7 @@ fn existing_safe_windows_reparse_path(root: &Path, archive_path: &[u8]) -> Resul
 /// cargo, rustc, git, and PostgreSQL do rather than failing the restore.
 #[cfg(unix)]
 pub(crate) fn benign_directory_sync_error(error: &std::io::Error) -> bool {
-    error
-        .raw_os_error()
-        .is_some_and(|code| code == libc::EINVAL || code == libc::ENOTSUP || code == libc::EOPNOTSUPP)
+    error.raw_os_error().is_some_and(|code| code == libc::EINVAL || code == libc::ENOTSUP || code == libc::EOPNOTSUPP)
 }
 
 /// fsync a destination directory so a rename/create published beneath it is durable
@@ -2170,9 +2017,7 @@ fn open_existing_windows_directory_with_access(target: &PreparedDestination, add
         .open_with(&target.leaf, &options)
         .map(cap_std::fs::File::into_std)
         .map_err(|_| FormatError::FilesystemExtractionFailed("failed to open directory for metadata restoration"))?;
-    let metadata = directory
-        .metadata()
-        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect directory for metadata restoration"))?;
+    let metadata = directory.metadata().map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect directory for metadata restoration"))?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err(FormatError::UnsafeArchivePath);
     }
@@ -2191,9 +2036,8 @@ fn open_existing_windows_regular_with_access(target: &PreparedDestination, addit
         .open_with(&target.leaf, &options)
         .map(cap_std::fs::File::into_std)
         .map_err(|_| FormatError::FilesystemExtractionFailed("failed to reopen regular file for final Windows metadata restoration"))?;
-    let metadata = file
-        .metadata()
-        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect regular file for final Windows metadata restoration"))?;
+    let metadata =
+        file.metadata().map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect regular file for final Windows metadata restoration"))?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err(FormatError::UnsafeArchivePath);
     }
@@ -2269,11 +2113,8 @@ fn apply_restored_directory_metadata(
     #[cfg(windows)]
     let exact_reparse = options.restore_policy == RestorePolicy::System && options.system_authorized && windows_reparse_metadata_supported(metadata);
     #[cfg(windows)]
-    let destination = if exact_reparse {
-        existing_safe_windows_reparse_path(root, path)?
-    } else {
-        prepare_destination(root, path, TarEntryKind::Directory, options)?
-    };
+    let destination =
+        if exact_reparse { existing_safe_windows_reparse_path(root, path)? } else { prepare_destination(root, path, TarEntryKind::Directory, options)? };
     #[cfg(not(windows))]
     let destination = prepare_destination(root, path, TarEntryKind::Directory, options)?;
     #[cfg(windows)]
@@ -2354,10 +2195,7 @@ pub(crate) fn finalize_committed_directory_metadata(
         // security descriptor and Windows ChangeTime. Replay exact file and
         // reparse metadata after every directory has reached its final
         // security state.
-        for member in members
-            .iter_mut()
-            .filter(|member| matches!(member.kind, TarEntryKind::Regular | TarEntryKind::Symlink))
-        {
+        for member in members.iter_mut().filter(|member| matches!(member.kind, TarEntryKind::Regular | TarEntryKind::Symlink)) {
             replay_windows_descendant_metadata(root, &member.path, member.kind, &member.v45_metadata, options, &mut member.diagnostics)?;
         }
     }
@@ -2372,11 +2210,7 @@ fn apply_restored_symlink_mtime(
     diagnostics: &mut Vec<MetadataDiagnostic>,
 ) -> Result<(), FormatError> {
     let duration = Duration::new(seconds.unsigned_abs(), nanoseconds);
-    let modified = if seconds < 0 {
-        SystemTime::UNIX_EPOCH.checked_sub(duration)
-    } else {
-        SystemTime::UNIX_EPOCH.checked_add(duration)
-    };
+    let modified = if seconds < 0 { SystemTime::UNIX_EPOCH.checked_sub(duration) } else { SystemTime::UNIX_EPOCH.checked_add(duration) };
     let Some(modified) = modified else {
         return record_metadata_application_failure(
             diagnostics,
@@ -2393,11 +2227,9 @@ fn apply_restored_symlink_mtime(
             "symlink mtime cannot be represented on this host",
         );
     };
-    if let Err(error) = destination.parent.set_symlink_times(
-        &destination.leaf,
-        None,
-        Some(SystemTimeSpec::Absolute(cap_std::time::SystemTime::from_std(modified))),
-    ) {
+    if let Err(error) =
+        destination.parent.set_symlink_times(&destination.leaf, None, Some(SystemTimeSpec::Absolute(cap_std::time::SystemTime::from_std(modified))))
+    {
         return record_metadata_application_failure(
             diagnostics,
             MetadataDiagnostic::new(
@@ -2433,10 +2265,7 @@ fn apply_restored_linux_symlink_metadata(
     }
     let leaf = destination.leaf.as_os_str().as_bytes();
     let leaf_c = CString::new(leaf).map_err(|_| FormatError::UnsafeArchivePath)?;
-    let current = destination
-        .parent
-        .symlink_metadata(&destination.leaf)
-        .map_err(|_| FormatError::UnsafeArchivePath)?;
+    let current = destination.parent.symlink_metadata(&destination.leaf).map_err(|_| FormatError::UnsafeArchivePath)?;
     if !current.file_type().is_symlink() {
         return Err(FormatError::UnsafeArchivePath);
     }
@@ -2542,10 +2371,7 @@ fn apply_restored_macos_symlink_metadata(
     if metadata.declaration.source_os != "macos" || !matches!(options.restore_policy, RestorePolicy::SameOs | RestorePolicy::System) {
         return Ok(());
     }
-    let current = destination
-        .parent
-        .symlink_metadata(&destination.leaf)
-        .map_err(|_| FormatError::UnsafeArchivePath)?;
+    let current = destination.parent.symlink_metadata(&destination.leaf).map_err(|_| FormatError::UnsafeArchivePath)?;
     if !current.file_type().is_symlink() {
         return Err(FormatError::UnsafeArchivePath);
     }
@@ -2553,13 +2379,7 @@ fn apply_restored_macos_symlink_metadata(
     let leaf_c = CString::new(leaf).map_err(|_| FormatError::UnsafeArchivePath)?;
     const O_SYMLINK: c_int = 0x0020_0000;
     // SAFETY: the parent directory is pinned and `leaf_c` is a validated single path component.
-    let link_fd = unsafe {
-        libc::openat(
-            destination.parent.as_raw_fd(),
-            leaf_c.as_ptr(),
-            libc::O_RDONLY | libc::O_CLOEXEC | O_SYMLINK | 0x0000_1000,
-        )
-    };
+    let link_fd = unsafe { libc::openat(destination.parent.as_raw_fd(), leaf_c.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC | O_SYMLINK | 0x0000_1000) };
     if link_fd < 0 {
         return Err(FormatError::UnsafeArchivePath);
     }
@@ -2591,15 +2411,8 @@ fn apply_restored_macos_symlink_metadata(
     const FINDER_INFO: &[u8] = b"com.apple.FinderInfo\0";
 
     let fail = |diagnostics: &mut Vec<MetadataDiagnostic>, class: &'static str, message: &'static str, error: Option<&std::io::Error>| {
-        let mut diagnostic = MetadataDiagnostic::new(
-            path,
-            "macos-backup-v1",
-            class,
-            MetadataOperation::Restore,
-            MetadataDiagnosticStatus::Failed,
-            message,
-        )
-        .for_restore(options.restore_policy, 4);
+        let mut diagnostic = MetadataDiagnostic::new(path, "macos-backup-v1", class, MetadataOperation::Restore, MetadataDiagnosticStatus::Failed, message)
+            .for_restore(options.restore_policy, 4);
         if let Some(error) = error {
             diagnostic = diagnostic.with_native_error(error);
         }
@@ -2674,12 +2487,7 @@ fn apply_restored_macos_symlink_metadata(
                 }
                 let actual = unsafe { fgetxattr(link_fd.as_raw_fd(), name, std::ptr::null_mut(), 0, 0, 0) };
                 if actual < 0 || actual as u64 != item.record.logical_size {
-                    fail(
-                        diagnostics,
-                        "resource-fork",
-                        "macOS symlink resource fork did not verify after restoration",
-                        None,
-                    )?;
+                    fail(diagnostics, "resource-fork", "macOS symlink resource fork did not verify after restoration", None)?;
                 } else {
                     item.file
                         .seek(SeekFrom::Start(0))
@@ -2704,12 +2512,7 @@ fn apply_restored_macos_symlink_metadata(
                             )
                         };
                         if copied != count as libc::ssize_t || restored[..count] != expected[..count] {
-                            fail(
-                                diagnostics,
-                                "resource-fork",
-                                "macOS symlink resource fork did not verify after restoration",
-                                None,
-                            )?;
+                            fail(diagnostics, "resource-fork", "macOS symlink resource fork did not verify after restoration", None)?;
                             break;
                         }
                         verify_offset += count as u64;
@@ -2719,12 +2522,8 @@ fn apply_restored_macos_symlink_metadata(
             "macos.acl-native" => {
                 let size = usize::try_from(item.record.logical_size).map_err(|_| FormatError::ReaderUnsupported("macOS ACL exceeds platform limits"))?;
                 let mut value = vec![0u8; size];
-                item.file
-                    .seek(SeekFrom::Start(0))
-                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged macOS ACL"))?;
-                item.file
-                    .read_exact(&mut value)
-                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged macOS ACL"))?;
+                item.file.seek(SeekFrom::Start(0)).map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged macOS ACL"))?;
+                item.file.read_exact(&mut value).map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged macOS ACL"))?;
                 validate_darwin_acl_external(&value)?;
                 let acl = unsafe { acl_copy_int(value.as_ptr().cast()) };
                 if acl.is_null() {
@@ -2763,12 +2562,8 @@ fn apply_restored_macos_symlink_metadata(
                 let value_len =
                     usize::try_from(item.record.logical_size).map_err(|_| FormatError::ReaderUnsupported("extended attribute exceeds platform limits"))?;
                 let mut value = vec![0u8; value_len];
-                item.file
-                    .seek(SeekFrom::Start(0))
-                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged macOS symlink xattr"))?;
-                item.file
-                    .read_exact(&mut value)
-                    .map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged macOS symlink xattr"))?;
+                item.file.seek(SeekFrom::Start(0)).map_err(|_| FormatError::FilesystemExtractionFailed("failed to rewind staged macOS symlink xattr"))?;
+                item.file.read_exact(&mut value).map_err(|_| FormatError::FilesystemExtractionFailed("failed to read staged macOS symlink xattr"))?;
                 if item.record.kind == "macos.finder-info" && value.len() != 32 {
                     return Err(FormatError::InvalidArchive("macOS FinderInfo is not exactly 32 bytes"));
                 }
@@ -2803,23 +2598,13 @@ fn apply_restored_macos_symlink_metadata(
         let name = CString::new(name).map_err(|_| FormatError::InvalidArchive("xattr name contains NUL"))?;
         if unsafe { fsetxattr(link_fd.as_raw_fd(), name.as_ptr(), value.as_ptr().cast(), value.len(), 0, 0) } != 0 {
             let error = std::io::Error::last_os_error();
-            fail(
-                diagnostics,
-                "extended-attribute",
-                "failed to apply macOS symlink extended attribute",
-                Some(&error),
-            )?;
+            fail(diagnostics, "extended-attribute", "failed to apply macOS symlink extended attribute", Some(&error))?;
             continue;
         }
         let mut actual = vec![0u8; value.len()];
         let copied = unsafe { fgetxattr(link_fd.as_raw_fd(), name.as_ptr(), actual.as_mut_ptr().cast(), actual.len(), 0, 0) };
         if copied != value.len() as libc::ssize_t || actual != value {
-            fail(
-                diagnostics,
-                "extended-attribute",
-                "macOS symlink extended attribute did not verify after restoration",
-                None,
-            )?;
+            fail(diagnostics, "extended-attribute", "macOS symlink extended attribute did not verify after restoration", None)?;
         }
     }
 
@@ -2838,25 +2623,11 @@ fn apply_restored_macos_symlink_metadata(
     if let Some(encoded) = metadata.primary_records.get("LIBARCHIVE.creationtime") {
         let (seconds, nanoseconds) = parse_timestamp(encoded)?;
         common_attr |= 0x0000_0200;
-        times.push(libc::timespec {
-            tv_sec: seconds,
-            tv_nsec: i64::from(nanoseconds),
-        });
+        times.push(libc::timespec { tv_sec: seconds, tv_nsec: i64::from(nanoseconds) });
     }
     let (seconds, nanoseconds) = metadata.portable_mirror.mtime;
-    times.push(libc::timespec {
-        tv_sec: seconds,
-        tv_nsec: i64::from(nanoseconds),
-    });
-    let attributes = AttrList {
-        bitmap_count: 5,
-        reserved: 0,
-        common_attr,
-        volume_attr: 0,
-        directory_attr: 0,
-        file_attr: 0,
-        fork_attr: 0,
-    };
+    times.push(libc::timespec { tv_sec: seconds, tv_nsec: i64::from(nanoseconds) });
+    let attributes = AttrList { bitmap_count: 5, reserved: 0, common_attr, volume_attr: 0, directory_attr: 0, file_attr: 0, fork_attr: 0 };
     if unsafe {
         fsetattrlist(
             link_fd.as_raw_fd(),
@@ -2876,14 +2647,9 @@ fn apply_restored_macos_symlink_metadata(
             let actual = unsafe { actual.assume_init() };
             actual.st_mtime == seconds
                 && actual.st_mtime_nsec == i64::from(nanoseconds)
-                && metadata
-                    .primary_records
-                    .get("LIBARCHIVE.creationtime")
-                    .map(|encoded| parse_timestamp(encoded))
-                    .transpose()?
-                    .is_none_or(|(birth_seconds, birth_nanoseconds)| {
-                        actual.st_birthtime == birth_seconds && actual.st_birthtime_nsec == i64::from(birth_nanoseconds)
-                    })
+                && metadata.primary_records.get("LIBARCHIVE.creationtime").map(|encoded| parse_timestamp(encoded)).transpose()?.is_none_or(
+                    |(birth_seconds, birth_nanoseconds)| actual.st_birthtime == birth_seconds && actual.st_birthtime_nsec == i64::from(birth_nanoseconds),
+                )
         } else {
             false
         };
@@ -2934,10 +2700,7 @@ pub(crate) fn remove_existing_leaf_if_needed(destination: &PreparedDestination) 
             if metadata.file_type().is_dir() {
                 return Err(FormatError::UnsafeOverwrite);
             }
-            destination
-                .parent
-                .remove_file_or_symlink(&destination.leaf)
-                .map_err(|_| FormatError::FilesystemExtractionFailed("failed to remove old file"))
+            destination.parent.remove_file_or_symlink(&destination.leaf).map_err(|_| FormatError::FilesystemExtractionFailed("failed to remove old file"))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(_) => Err(FormatError::FilesystemExtractionFailed("failed to inspect destination")),
@@ -2967,10 +2730,7 @@ pub(crate) fn create_directory(destination: &PreparedDestination) -> Result<(), 
     match create_dir_restrictive(&destination.parent, &destination.leaf) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            let metadata = destination
-                .parent
-                .symlink_metadata(&destination.leaf)
-                .map_err(|_| FormatError::UnsafeOverwrite)?;
+            let metadata = destination.parent.symlink_metadata(&destination.leaf).map_err(|_| FormatError::UnsafeOverwrite)?;
             let file_type = metadata.file_type();
             if file_type.is_symlink() {
                 Err(FormatError::UnsafeArchivePath)
@@ -2990,10 +2750,8 @@ fn create_hardlink(destination: &PreparedDestination, target: &PreparedDestinati
     }
     match target.parent.hard_link(&target.leaf, &destination.parent, &destination.leaf) {
         Ok(()) => {
-            let metadata = destination
-                .parent
-                .symlink_metadata(&destination.leaf)
-                .map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect hardlink"))?;
+            let metadata =
+                destination.parent.symlink_metadata(&destination.leaf).map_err(|_| FormatError::FilesystemExtractionFailed("failed to inspect hardlink"))?;
             if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
                 let _ = destination.parent.remove_file_or_symlink(&destination.leaf);
                 return Err(FormatError::UnsafeArchivePath);
@@ -3035,11 +2793,7 @@ fn create_symlink(destination: &PreparedDestination, target: &[u8], options: Saf
     if target.starts_with('/') && !options.allow_absolute_symlinks {
         return Err(FormatError::UnsafeArchivePath);
     }
-    let res = if target.starts_with('/') {
-        do_create_symlink(destination, target)
-    } else {
-        destination.parent.symlink_file(target, &destination.leaf)
-    };
+    let res = if target.starts_with('/') { do_create_symlink(destination, target) } else { destination.parent.symlink_file(target, &destination.leaf) };
     match res {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Err(FormatError::UnsafeOverwrite),
@@ -3072,23 +2826,13 @@ fn create_posix_special_object(
     let (object_mode, device) = match kind {
         TarEntryKind::Fifo => (libc::S_IFIFO | permission_mode, 0),
         TarEntryKind::CharacterDevice | TarEntryKind::BlockDevice => {
-            let major = metadata
-                .primary_records
-                .get("TZAP.posix.device-major")
-                .ok_or(FormatError::InvalidArchive("device major number is missing"))?;
-            let minor = metadata
-                .primary_records
-                .get("TZAP.posix.device-minor")
-                .ok_or(FormatError::InvalidArchive("device minor number is missing"))?;
+            let major = metadata.primary_records.get("TZAP.posix.device-major").ok_or(FormatError::InvalidArchive("device major number is missing"))?;
+            let minor = metadata.primary_records.get("TZAP.posix.device-minor").ok_or(FormatError::InvalidArchive("device minor number is missing"))?;
             let major = parse_minimal_decimal_u64(major, "device major")?;
             let minor = parse_minimal_decimal_u64(minor, "device minor")?;
             let major = libc::c_uint::try_from(major).map_err(|_| FormatError::ReaderUnsupported("device major exceeds host ABI"))?;
             let minor = libc::c_uint::try_from(minor).map_err(|_| FormatError::ReaderUnsupported("device minor exceeds host ABI"))?;
-            let type_mode = if kind == TarEntryKind::CharacterDevice {
-                libc::S_IFCHR
-            } else {
-                libc::S_IFBLK
-            };
+            let type_mode = if kind == TarEntryKind::CharacterDevice { libc::S_IFCHR } else { libc::S_IFBLK };
             (type_mode | permission_mode, libc::makedev(major, minor))
         }
         _ => {
@@ -3168,10 +2912,7 @@ fn create_posix_special_object(
             "failed to apply special-object mode",
         )?;
     }
-    for (key, name) in [
-        ("SCHILY.acl.access", "system.posix_acl_access"),
-        ("SCHILY.acl.default", "system.posix_acl_default"),
-    ] {
+    for (key, name) in [("SCHILY.acl.access", "system.posix_acl_access"), ("SCHILY.acl.default", "system.posix_acl_default")] {
         let Some(text) = metadata.primary_records.get(key) else {
             continue;
         };
@@ -3220,11 +2961,7 @@ fn create_posix_special_object(
                 diagnostics,
                 MetadataDiagnostic::new(
                     path,
-                    if system_xattr_name(&name, "linux") {
-                        "linux-backup-v1"
-                    } else {
-                        "posix-backup-v1"
-                    },
+                    if system_xattr_name(&name, "linux") { "linux-backup-v1" } else { "posix-backup-v1" },
                     "extended-attribute",
                     MetadataOperation::Restore,
                     MetadataDiagnosticStatus::Failed,
@@ -3242,11 +2979,7 @@ fn create_posix_special_object(
                 diagnostics,
                 MetadataDiagnostic::new(
                     path,
-                    if system_xattr_name(&name, "linux") {
-                        "linux-backup-v1"
-                    } else {
-                        "posix-backup-v1"
-                    },
+                    if system_xattr_name(&name, "linux") { "linux-backup-v1" } else { "posix-backup-v1" },
                     "extended-attribute",
                     MetadataOperation::Restore,
                     MetadataDiagnosticStatus::Failed,
@@ -3259,16 +2992,7 @@ fn create_posix_special_object(
         }
     }
     let (seconds, nanoseconds) = metadata.portable_mirror.mtime;
-    let times = [
-        libc::timespec {
-            tv_sec: 0,
-            tv_nsec: libc::UTIME_OMIT,
-        },
-        libc::timespec {
-            tv_sec: seconds as _,
-            tv_nsec: nanoseconds as libc::c_long,
-        },
-    ];
+    let times = [libc::timespec { tv_sec: 0, tv_nsec: libc::UTIME_OMIT }, libc::timespec { tv_sec: seconds as _, tv_nsec: nanoseconds as libc::c_long }];
     // SAFETY: the path points to the pinned object and `times` contains two valid timespecs.
     if unsafe { libc::utimensat(libc::AT_FDCWD, proc_c.as_ptr(), times.as_ptr(), 0) } != 0 {
         let error = std::io::Error::last_os_error();
@@ -3289,13 +3013,7 @@ fn create_posix_special_object(
         )?;
     }
     if kind == TarEntryKind::Fifo {
-        let fd = unsafe {
-            libc::openat(
-                destination.parent.as_raw_fd(),
-                leaf.as_ptr(),
-                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            )
-        };
+        let fd = unsafe { libc::openat(destination.parent.as_raw_fd(), leaf.as_ptr(), libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
         if fd < 0 {
             let error = std::io::Error::last_os_error();
             return record_metadata_application_failure(
@@ -3346,23 +3064,13 @@ fn create_posix_special_object(
     let (object_mode, device) = match kind {
         TarEntryKind::Fifo => (u32::from(libc::S_IFIFO) | permission_mode, 0),
         TarEntryKind::CharacterDevice | TarEntryKind::BlockDevice => {
-            let major = metadata
-                .primary_records
-                .get("TZAP.posix.device-major")
-                .ok_or(FormatError::InvalidArchive("device major number is missing"))?;
-            let minor = metadata
-                .primary_records
-                .get("TZAP.posix.device-minor")
-                .ok_or(FormatError::InvalidArchive("device minor number is missing"))?;
+            let major = metadata.primary_records.get("TZAP.posix.device-major").ok_or(FormatError::InvalidArchive("device major number is missing"))?;
+            let minor = metadata.primary_records.get("TZAP.posix.device-minor").ok_or(FormatError::InvalidArchive("device minor number is missing"))?;
             let major = libc::c_int::try_from(parse_minimal_decimal_u64(major, "device major")?)
                 .map_err(|_| FormatError::ReaderUnsupported("device major exceeds host ABI"))?;
             let minor = libc::c_int::try_from(parse_minimal_decimal_u64(minor, "device minor")?)
                 .map_err(|_| FormatError::ReaderUnsupported("device minor exceeds host ABI"))?;
-            let type_mode = if kind == TarEntryKind::CharacterDevice {
-                libc::S_IFCHR
-            } else {
-                libc::S_IFBLK
-            };
+            let type_mode = if kind == TarEntryKind::CharacterDevice { libc::S_IFCHR } else { libc::S_IFBLK };
             (u32::from(type_mode) | permission_mode, libc::makedev(major, minor))
         }
         _ => {
@@ -3464,10 +3172,7 @@ fn create_windows_reparse_object(
         .iter()
         .find(|record| record.kind == "windows.reparse-data")
         .ok_or(FormatError::InvalidArchive("Windows reparse object lacks exact reparse data"))?;
-    let payload = record
-        .capture_report_payload
-        .as_deref()
-        .ok_or(FormatError::InvalidArchive("Windows reparse data was not retained"))?;
+    let payload = record.capture_report_payload.as_deref().ok_or(FormatError::InvalidArchive("Windows reparse data was not retained"))?;
     let tag = validate_windows_essential_reparse_data(payload)?;
     const IO_REPARSE_TAG_SYMLINK: u32 = 0xA000_000C;
     if (kind == TarEntryKind::Symlink) != (tag == IO_REPARSE_TAG_SYMLINK) {
@@ -3486,11 +3191,7 @@ fn create_windows_reparse_object(
     if options.overwrite_existing {
         remove_existing_leaf_if_needed(destination)?;
     }
-    let mut rollback = WindowsReparseRollback {
-        destination,
-        directory: directory_object,
-        armed: false,
-    };
+    let mut rollback = WindowsReparseRollback { destination, directory: directory_object, armed: false };
 
     let file = if directory_object {
         destination.parent.create_dir(&destination.leaf).map_err(|error| {
@@ -3512,19 +3213,14 @@ fn create_windows_reparse_object(
             .map_err(|_| FormatError::FilesystemExtractionFailed("failed to open Windows reparse directory"))?
     } else {
         let mut open = create_new_file_options();
-        open.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
-        destination
-            .parent
-            .open_with(&destination.leaf, &open)
-            .map(cap_std::fs::File::into_std)
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    FormatError::UnsafeOverwrite
-                } else {
-                    FormatError::FilesystemExtractionFailed("failed to create Windows reparse file")
-                }
-            })?
+        open.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT).share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+        destination.parent.open_with(&destination.leaf, &open).map(cap_std::fs::File::into_std).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                FormatError::UnsafeOverwrite
+            } else {
+                FormatError::FilesystemExtractionFailed("failed to create Windows reparse file")
+            }
+        })?
     };
     rollback.armed = true;
 
@@ -3551,16 +3247,7 @@ fn create_windows_reparse_object(
     let mut actual = vec![0u8; 16 * 1024];
     // SAFETY: the handle is live and the output allocation remains valid for the synchronous call.
     if unsafe {
-        DeviceIoControl(
-            handle,
-            FSCTL_GET_REPARSE_POINT,
-            ptr::null(),
-            0,
-            actual.as_mut_ptr().cast(),
-            actual.len() as u32,
-            &mut bytes_returned,
-            ptr::null_mut(),
-        )
+        DeviceIoControl(handle, FSCTL_GET_REPARSE_POINT, ptr::null(), 0, actual.as_mut_ptr().cast(), actual.len() as u32, &mut bytes_returned, ptr::null_mut())
     } == 0
         || actual.get(..bytes_returned as usize) != Some(payload)
     {

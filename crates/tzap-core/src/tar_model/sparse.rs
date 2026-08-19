@@ -10,10 +10,7 @@ pub(crate) fn punch_linux_sparse_holes(file: &fs::File, logical_size: u64, exten
         if extent.offset > cursor {
             punch_linux_sparse_hole(file, cursor, extent.offset - cursor)?;
         }
-        cursor = extent
-            .offset
-            .checked_add(extent.length)
-            .ok_or(FormatError::InvalidArchive("sparse extent overflow"))?;
+        cursor = extent.offset.checked_add(extent.length).ok_or(FormatError::InvalidArchive("sparse extent overflow"))?;
     }
     if cursor < logical_size {
         punch_linux_sparse_hole(file, cursor, logical_size - cursor)?;
@@ -64,10 +61,10 @@ where
             }
         }
     };
-    let extent_bytes = layout.extents.iter().try_fold(0u64, |sum, extent| {
-        sum.checked_add(extent.length)
-            .ok_or(FormatError::InvalidArchive("sparse extent byte count overflow"))
-    })?;
+    let extent_bytes = layout
+        .extents
+        .iter()
+        .try_fold(0u64, |sum, extent| sum.checked_add(extent.length).ok_or(FormatError::InvalidArchive("sparse extent byte count overflow")))?;
     if consumed.checked_add(extent_bytes).is_none_or(|value| value != stored_size) {
         return Err(FormatError::InvalidArchive("sparse primary stored size does not match its map").into());
     }
@@ -140,23 +137,11 @@ pub(crate) fn prepare_windows_sparse_file(file: &fs::File, logical_size: u64) ->
     let mut bytes_returned = 0u32;
     // SAFETY: the file handle is live; FSCTL_SET_SPARSE accepts null input and output buffers for
     // the default "set sparse" operation, and the call is synchronous.
-    if unsafe {
-        DeviceIoControl(
-            file.as_raw_handle().cast(),
-            FSCTL_SET_SPARSE,
-            ptr::null(),
-            0,
-            ptr::null_mut(),
-            0,
-            &mut bytes_returned,
-            ptr::null_mut(),
-        )
-    } == 0
+    if unsafe { DeviceIoControl(file.as_raw_handle().cast(), FSCTL_SET_SPARSE, ptr::null(), 0, ptr::null_mut(), 0, &mut bytes_returned, ptr::null_mut()) } == 0
     {
         return Err(FormatError::FilesystemExtractionFailed("destination filesystem cannot mark sparse output"));
     }
-    file.set_len(logical_size)
-        .map_err(|_| FormatError::FilesystemExtractionFailed("failed to size sparse output"))
+    file.set_len(logical_size).map_err(|_| FormatError::FilesystemExtractionFailed("failed to size sparse output"))
 }
 
 #[cfg(windows)]
@@ -176,10 +161,7 @@ pub(crate) fn query_windows_sparse_ranges(file: &fs::File, logical_size: u64) ->
     let mut query_start = 0u64;
     let mut extents = Vec::<SparseExtent>::new();
     while query_start < logical_size {
-        let mut query = FILE_ALLOCATED_RANGE_BUFFER {
-            FileOffset: query_start as i64,
-            Length: logical_size_i64 - query_start as i64,
-        };
+        let mut query = FILE_ALLOCATED_RANGE_BUFFER { FileOffset: query_start as i64, Length: logical_size_i64 - query_start as i64 };
         let mut output = [FILE_ALLOCATED_RANGE_BUFFER::default(); QUERY_BATCH];
         let mut bytes_returned = 0u32;
         // SAFETY: the live handle and fixed-size buffers remain valid for this synchronous call.
@@ -212,14 +194,10 @@ pub(crate) fn query_windows_sparse_ranges(file: &fs::File, logical_size: u64) ->
                 return Err(FormatError::FilesystemExtractionFailed("Windows returned an invalid restored sparse range"));
             }
             let offset = range.FileOffset as u64;
-            let end = offset
-                .checked_add(range.Length as u64)
-                .ok_or(FormatError::FilesystemExtractionFailed("restored sparse range overflow"))?
-                .min(logical_size);
+            let end =
+                offset.checked_add(range.Length as u64).ok_or(FormatError::FilesystemExtractionFailed("restored sparse range overflow"))?.min(logical_size);
             if offset >= logical_size || end <= offset {
-                return Err(FormatError::FilesystemExtractionFailed(
-                    "Windows returned an out-of-bounds restored sparse range",
-                ));
+                return Err(FormatError::FilesystemExtractionFailed("Windows returned an out-of-bounds restored sparse range"));
             }
             if let Some(previous) = extents.last_mut() {
                 let previous_end = previous.offset + previous.length;
@@ -330,25 +308,20 @@ fn rename_open_file_noreplace(file: &fs::File, destination_parent: &CapDir, dest
             buffer.truncate(length);
             break buffer;
         }
-        capacity = length
-            .checked_add(1)
-            .ok_or(FormatError::FilesystemExtractionFailed("destination path length overflow"))?;
+        capacity = length.checked_add(1).ok_or(FormatError::FilesystemExtractionFailed("destination path length overflow"))?;
     };
     if !name.ends_with(&[b'\\' as u16]) {
         name.push(b'\\' as u16);
     }
     name.extend_from_slice(&leaf);
-    let name_byte_len = name
-        .len()
-        .checked_mul(size_of::<u16>())
-        .ok_or(FormatError::FilesystemExtractionFailed("destination file name is too large to publish"))?;
+    let name_byte_len =
+        name.len().checked_mul(size_of::<u16>()).ok_or(FormatError::FilesystemExtractionFailed("destination file name is too large to publish"))?;
     // Windows' documented FILE_RENAME_INFO allocation formula includes the structure's embedded
     // one-unit FileName field in addition to FileNameLength. Preserve that trailing zeroed space:
     // on ARM64, passing only offset_of(FileName) + FileNameLength can make NTFS consume adjacent
     // bytes as an unintended filename suffix when the exact allocation ends on an 8-byte boundary.
-    let byte_len = size_of::<FILE_RENAME_INFO>()
-        .checked_add(name_byte_len)
-        .ok_or(FormatError::FilesystemExtractionFailed("destination rename buffer overflow"))?;
+    let byte_len =
+        size_of::<FILE_RENAME_INFO>().checked_add(name_byte_len).ok_or(FormatError::FilesystemExtractionFailed("destination rename buffer overflow"))?;
     let storage_len = byte_len.div_ceil(size_of::<usize>());
     let mut storage = vec![0usize; storage_len];
     let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
@@ -390,9 +363,7 @@ pub(crate) fn publish_regular_file(
 
     #[cfg(windows)]
     {
-        temp_file
-            .sync_data()
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        temp_file.sync_data().map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
         if let Err(error) = rename_open_file_noreplace(&temp_file, &destination.parent, &destination.leaf) {
             let _ = destination.parent.remove_file_or_symlink(temp_leaf);
             return Err(error);
@@ -405,9 +376,7 @@ pub(crate) fn publish_regular_file(
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt as _;
 
-        temp_file
-            .sync_data()
-            .map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        temp_file.sync_data().map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
         let source = CString::new(temp_leaf.as_os_str().as_bytes()).map_err(|_| FormatError::UnsafeArchivePath)?;
         let target = CString::new(destination.leaf.as_os_str().as_bytes()).map_err(|_| FormatError::UnsafeArchivePath)?;
         // libc does not expose renameat2 on every Linux libc target, so invoke the
@@ -460,10 +429,7 @@ pub(crate) fn publish_regular_file(
     let mut temp_file = temp_file;
 
     #[cfg(all(not(windows), not(target_os = "linux")))]
-    let copy_result = temp_file
-        .seek(SeekFrom::Start(0))
-        .and_then(|_| std::io::copy(&mut temp_file, &mut output))
-        .and_then(|_| output.sync_data());
+    let copy_result = temp_file.seek(SeekFrom::Start(0)).and_then(|_| std::io::copy(&mut temp_file, &mut output)).and_then(|_| output.sync_data());
 
     #[cfg(all(not(windows), not(target_os = "linux")))]
     if copy_result.is_err() {

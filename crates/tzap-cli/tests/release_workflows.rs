@@ -12,9 +12,7 @@ fn read_workspace_file(path: &str) -> String {
 fn assert_contains_in_order(text: &str, labels: &[&str]) {
     let mut offset = 0usize;
     for label in labels {
-        let relative = text[offset..]
-            .find(label)
-            .unwrap_or_else(|| panic!("missing {label:?} after byte offset {offset}"));
+        let relative = text[offset..].find(label).unwrap_or_else(|| panic!("missing {label:?} after byte offset {offset}"));
         offset += relative + label.len();
     }
 }
@@ -154,28 +152,8 @@ fn release_workflow_uploads_checksum_artifacts() {
     let workflow = read_workspace_file(".github/workflows/release.yml");
 
     assert!(workflow.contains("permissions:\n  contents: read\n\njobs:"));
-    assert_contains_in_order(
-        &workflow,
-        &[
-            "build:",
-            "permissions:",
-            "contents: read",
-            "id-token: write",
-            "attestations: write",
-            "strategy:",
-        ],
-    );
-    assert_contains_in_order(
-        &workflow,
-        &[
-            "publish:",
-            "permissions:",
-            "contents: write",
-            "id-token: write",
-            "attestations: write",
-            "steps:",
-        ],
-    );
+    assert_contains_in_order(&workflow, &["build:", "permissions:", "contents: read", "id-token: write", "attestations: write", "strategy:"]);
+    assert_contains_in_order(&workflow, &["publish:", "permissions:", "contents: write", "id-token: write", "attestations: write", "steps:"]);
     assert!(workflow.contains("id-token: write"));
     assert!(workflow.contains("attestations: write"));
     assert!(!workflow.contains("artifact-metadata: write"));
@@ -199,16 +177,7 @@ fn release_workflow_uploads_checksum_artifacts() {
     assert!(workflow.contains("HOMEBREW_NO_SANDBOX_LINUX: 1"));
     assert_contains_in_order(
         &workflow,
-        &[
-            "publish:",
-            "needs:",
-            "- build",
-            "- homebrew",
-            "Merge checksum manifest",
-            "Sign checksum manifest",
-            "Attest checksum manifest",
-            "Publish release",
-        ],
+        &["publish:", "needs:", "- build", "- homebrew", "Merge checksum manifest", "Sign checksum manifest", "Attest checksum manifest", "Publish release"],
     );
 }
 

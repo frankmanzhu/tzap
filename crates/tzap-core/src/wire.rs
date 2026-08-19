@@ -93,10 +93,7 @@ impl VolumeHeader {
             return Err(FormatError::ZeroStripeWidth);
         }
         if self.volume_index >= self.stripe_width {
-            return Err(FormatError::VolumeIndexOutOfRange {
-                volume_index: self.volume_index,
-                stripe_width: self.stripe_width,
-            });
+            return Err(FormatError::VolumeIndexOutOfRange { volume_index: self.volume_index, stripe_width: self.stripe_width });
         }
         if self.crypto_header_offset != VOLUME_HEADER_LEN as u32 {
             return Err(FormatError::NonCanonicalCryptoHeaderOffset(self.crypto_header_offset));
@@ -161,10 +158,7 @@ impl CryptoHeaderFixed {
 
         let length = read_u32(bytes, 4)?;
         if length != volume_crypto_header_length {
-            return Err(FormatError::CryptoHeaderLengthMismatch {
-                fixed: length,
-                volume: volume_crypto_header_length,
-            });
+            return Err(FormatError::CryptoHeaderLengthMismatch { fixed: length, volume: volume_crypto_header_length });
         }
         if length > READER_MAX_CRYPTO_HEADER_LEN {
             return Err(FormatError::ReaderResourceLimitExceeded {
@@ -211,17 +205,11 @@ impl CryptoHeaderFixed {
             (AeadAlgo::None, KdfAlgo::None) => {}
             (aead_algo, KdfAlgo::Raw | KdfAlgo::Argon2id | KdfAlgo::RecipientWrap) if aead_algo.is_encrypted() => {}
             _ => {
-                return Err(FormatError::InvalidProtectionMode {
-                    aead_algo: self.aead_algo,
-                    kdf_algo: self.kdf_algo,
-                });
+                return Err(FormatError::InvalidProtectionMode { aead_algo: self.aead_algo, kdf_algo: self.kdf_algo });
             }
         }
         if self.has_dictionary > 1 {
-            return Err(FormatError::InvalidBoolean {
-                field: "has_dictionary",
-                value: self.has_dictionary,
-            });
+            return Err(FormatError::InvalidBoolean { field: "has_dictionary", value: self.has_dictionary });
         }
         if self.stripe_width == 0 {
             return Err(FormatError::ZeroStripeWidth);
@@ -234,10 +222,7 @@ impl CryptoHeaderFixed {
             });
         }
         if self.volume_loss_tolerance as u32 >= self.stripe_width {
-            return Err(FormatError::VolumeLossToleranceOutOfRange {
-                volume_loss_tolerance: self.volume_loss_tolerance,
-                stripe_width: self.stripe_width,
-            });
+            return Err(FormatError::VolumeLossToleranceOutOfRange { volume_loss_tolerance: self.volume_loss_tolerance, stripe_width: self.stripe_width });
         }
         if self.bit_rot_buffer_pct > 100 {
             return Err(FormatError::BitRotBufferPctTooLarge(self.bit_rot_buffer_pct));
@@ -246,21 +231,12 @@ impl CryptoHeaderFixed {
             return Err(FormatError::ZeroDataShardMaximum { field: "fec_data_shards" });
         }
         if self.index_fec_data_shards == 0 {
-            return Err(FormatError::ZeroDataShardMaximum {
-                field: "index_fec_data_shards",
-            });
+            return Err(FormatError::ZeroDataShardMaximum { field: "index_fec_data_shards" });
         }
         if self.index_root_fec_data_shards == 0 {
-            return Err(FormatError::ZeroDataShardMaximum {
-                field: "index_root_fec_data_shards",
-            });
+            return Err(FormatError::ZeroDataShardMaximum { field: "index_root_fec_data_shards" });
         }
-        validate_fec_class_shards(
-            "fec_data_shards + fec_parity_shards",
-            self.fec_data_shards,
-            self.fec_parity_shards,
-            READER_MAX_FEC_CLASS_SHARDS,
-        )?;
+        validate_fec_class_shards("fec_data_shards + fec_parity_shards", self.fec_data_shards, self.fec_parity_shards, READER_MAX_FEC_CLASS_SHARDS)?;
         validate_fec_class_shards(
             "index_fec_data_shards + index_fec_parity_shards",
             self.index_fec_data_shards,
@@ -280,17 +256,10 @@ impl CryptoHeaderFixed {
             return Err(FormatError::ZeroEnvelopeTargetSize);
         }
         if self.chunk_size > self.envelope_target_size {
-            return Err(FormatError::ChunkSizeExceedsEnvelopeTarget {
-                chunk_size: self.chunk_size,
-                envelope_target_size: self.envelope_target_size,
-            });
+            return Err(FormatError::ChunkSizeExceedsEnvelopeTarget { chunk_size: self.chunk_size, envelope_target_size: self.envelope_target_size });
         }
         if self.chunk_size > READER_MAX_CHUNK_SIZE {
-            return Err(FormatError::ReaderResourceLimitExceeded {
-                field: "chunk_size",
-                cap: READER_MAX_CHUNK_SIZE as u64,
-                actual: self.chunk_size as u64,
-            });
+            return Err(FormatError::ReaderResourceLimitExceeded { field: "chunk_size", cap: READER_MAX_CHUNK_SIZE as u64, actual: self.chunk_size as u64 });
         }
         if self.envelope_target_size > READER_MAX_ENVELOPE_TARGET_SIZE {
             return Err(FormatError::ReaderResourceLimitExceeded {
@@ -309,11 +278,7 @@ impl CryptoHeaderFixed {
         validate_fec_class_data_shards("index_fec_data_shards", self.index_fec_data_shards, self.block_size)?;
         validate_fec_class_data_shards("index_root_fec_data_shards", self.index_root_fec_data_shards, self.block_size)?;
         if self.block_size > READER_MAX_BLOCK_SIZE {
-            return Err(FormatError::ReaderResourceLimitExceeded {
-                field: "block_size",
-                cap: READER_MAX_BLOCK_SIZE as u64,
-                actual: self.block_size as u64,
-            });
+            return Err(FormatError::ReaderResourceLimitExceeded { field: "block_size", cap: READER_MAX_BLOCK_SIZE as u64, actual: self.block_size as u64 });
         }
         if self.max_path_length > READER_MAX_PATH_LENGTH {
             return Err(FormatError::ReaderResourceLimitExceeded {
@@ -355,11 +320,7 @@ impl CryptoHeaderFixed {
 fn validate_fec_class_shards(field: &'static str, data_shards: u16, parity_shards: u16, cap: u32) -> Result<(), FormatError> {
     let total = data_shards as u32 + parity_shards as u32;
     if total > cap {
-        return Err(FormatError::ReaderResourceLimitExceeded {
-            field,
-            cap: cap as u64,
-            actual: total as u64,
-        });
+        return Err(FormatError::ReaderResourceLimitExceeded { field, cap: cap as u64, actual: total as u64 });
     }
     Ok(())
 }
@@ -367,11 +328,7 @@ fn validate_fec_class_shards(field: &'static str, data_shards: u16, parity_shard
 fn validate_fec_class_data_shards(field: &'static str, data_shards: u16, block_size: u32) -> Result<(), FormatError> {
     let max_data_shards = u32::MAX as u64 / block_size as u64;
     if (data_shards as u64) > max_data_shards {
-        return Err(FormatError::ReaderResourceLimitExceeded {
-            field,
-            cap: max_data_shards,
-            actual: data_shards as u64,
-        });
+        return Err(FormatError::ReaderResourceLimitExceeded { field, cap: max_data_shards, actual: data_shards as u64 });
     }
     Ok(())
 }
@@ -411,10 +368,7 @@ pub fn scan_crypto_extension_tlvs(bytes: &[u8]) -> Result<Vec<ExtensionTlv<'_>>,
         if bytes.len() - offset < length {
             return Err(FormatError::TruncatedExtensionPayload);
         }
-        extensions.push(ExtensionTlv {
-            tag,
-            value: &bytes[offset..offset + length],
-        });
+        extensions.push(ExtensionTlv { tag, value: &bytes[offset..offset + length] });
         offset += length;
     }
 }
@@ -513,9 +467,7 @@ impl KeyWrapTableV1 {
             }
 
             let table_length = u32_len(
-                KEY_WRAP_TABLE_HEADER_LEN
-                    .checked_add(recipients.len())
-                    .ok_or(FormatError::WriterUnsupported("key-wrap table length overflow"))?,
+                KEY_WRAP_TABLE_HEADER_LEN.checked_add(recipients.len()).ok_or(FormatError::WriterUnsupported("key-wrap table length overflow"))?,
                 "KeyWrapTableV1 table_length",
             )?;
             if self.table_length != 0 && self.table_length != table_length {
@@ -555,11 +507,7 @@ impl KeyWrapTableV1 {
             });
         }
         if bytes.len() < KEY_WRAP_TABLE_HEADER_LEN {
-            return Err(FormatError::InvalidLength {
-                structure: "KeyWrapTableV1",
-                expected: KEY_WRAP_TABLE_HEADER_LEN,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "KeyWrapTableV1", expected: KEY_WRAP_TABLE_HEADER_LEN, actual: bytes.len() });
         }
         expect_magic("KeyWrapTableV1", TZKW_MAGIC, &bytes[0..4])?;
 
@@ -581,11 +529,7 @@ impl KeyWrapTableV1 {
             return Err(FormatError::InvalidArchive("KeyWrapTableV1 length does not match KdfParams"));
         }
         if declared_length as usize != bytes.len() {
-            return Err(FormatError::InvalidLength {
-                structure: "KeyWrapTableV1",
-                expected: declared_length as usize,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "KeyWrapTableV1", expected: declared_length as usize, actual: bytes.len() });
         }
 
         let flags = read_u32(bytes, 16)?;
@@ -619,9 +563,8 @@ impl KeyWrapTableV1 {
         if records_offset != KEY_WRAP_TABLE_HEADER_LEN as u32 {
             return Err(FormatError::InvalidArchive("KeyWrapTableV1 records_offset must be 96"));
         }
-        let records_end = records_offset
-            .checked_add(records_length)
-            .ok_or(FormatError::InvalidArchive("KeyWrapTableV1 records_offset + records_length overflow"))?;
+        let records_end =
+            records_offset.checked_add(records_length).ok_or(FormatError::InvalidArchive("KeyWrapTableV1 records_offset + records_length overflow"))?;
         if records_end != declared_length {
             return Err(FormatError::InvalidArchive("KeyWrapTableV1 records_offset and records_length are inconsistent"));
         }
@@ -693,14 +636,10 @@ impl RecipientRecordV1 {
             self.record_length
         };
         if self.recipient_identity_length != 0 && self.recipient_identity_length != computed_identity_length {
-            return Err(FormatError::InvalidArchive(
-                "RecipientRecordV1 identity length is inconsistent with payload size",
-            ));
+            return Err(FormatError::InvalidArchive("RecipientRecordV1 identity length is inconsistent with payload size"));
         }
         if self.profile_payload_length != 0 && self.profile_payload_length != computed_profile_payload_length {
-            return Err(FormatError::InvalidArchive(
-                "RecipientRecordV1 payload length is inconsistent with payload size",
-            ));
+            return Err(FormatError::InvalidArchive("RecipientRecordV1 payload length is inconsistent with payload size"));
         }
 
         let mut digest = Sha256::new();
@@ -725,11 +664,7 @@ impl RecipientRecordV1 {
 
     pub fn parse(bytes: &[u8]) -> Result<(Self, usize), FormatError> {
         if bytes.len() < KEY_WRAP_RECORD_HEADER_LEN {
-            return Err(FormatError::InvalidLength {
-                structure: "RecipientRecordV1",
-                expected: KEY_WRAP_RECORD_HEADER_LEN,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "RecipientRecordV1", expected: KEY_WRAP_RECORD_HEADER_LEN, actual: bytes.len() });
         }
 
         let record_length = read_u32(bytes, 0)?;
@@ -738,20 +673,14 @@ impl RecipientRecordV1 {
             return Err(FormatError::InvalidArchive("RecipientRecordV1 record_length is too small"));
         }
         if record_length > bytes.len() {
-            return Err(FormatError::InvalidLength {
-                structure: "RecipientRecordV1",
-                expected: record_length,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "RecipientRecordV1", expected: record_length, actual: bytes.len() });
         }
 
         let profile_id = read_u16(bytes, 4)?;
         let recipient_identity_type = read_u16(bytes, 6)?;
         let flags = read_u32(bytes, 8)?;
         if flags != 0 {
-            return Err(FormatError::NonZeroReserved {
-                structure: "RecipientRecordV1",
-            });
+            return Err(FormatError::NonZeroReserved { structure: "RecipientRecordV1" });
         }
         let recipient_identity_length = read_u32(bytes, 12)?;
         let profile_payload_length = read_u32(bytes, 16)?;
@@ -812,18 +741,11 @@ impl<'a> CryptoHeader<'a> {
             });
         }
         if bytes.len() != declared_len {
-            return Err(FormatError::InvalidLength {
-                structure: "CryptoHeader",
-                expected: declared_len,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "CryptoHeader", expected: declared_len, actual: bytes.len() });
         }
         let min_len = CRYPTO_HEADER_FIXED_LEN + 2 + CRYPTO_EXTENSION_HEADER_LEN + CRYPTO_HEADER_HMAC_LEN;
         if bytes.len() < min_len {
-            return Err(FormatError::CryptoHeaderTooShort {
-                min: min_len,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::CryptoHeaderTooShort { min: min_len, actual: bytes.len() });
         }
 
         let fixed = CryptoHeaderFixed::parse(&bytes[..CRYPTO_HEADER_FIXED_LEN], volume_crypto_header_length)?;
@@ -833,13 +755,7 @@ impl<'a> CryptoHeader<'a> {
         let extensions = scan_crypto_extension_tlvs(extension_bytes)?;
         let header_hmac = read_array_32(bytes, hmac_offset)?;
 
-        Ok(Self {
-            fixed,
-            kdf_params,
-            extensions,
-            header_hmac,
-            hmac_covered_bytes: &bytes[..hmac_offset],
-        })
+        Ok(Self { fixed, kdf_params, extensions, header_hmac, hmac_covered_bytes: &bytes[..hmac_offset] })
     }
 
     pub fn validate_extension_semantics(&self) -> Result<(), FormatError> {
@@ -949,10 +865,7 @@ impl ManifestFooter {
         if self.index_root_data_block_count == 0 || self.index_root_encrypted_size == 0 {
             return Err(FormatError::EmptyIndexRootExtent);
         }
-        let expected = self
-            .index_root_data_block_count
-            .checked_mul(block_size)
-            .ok_or(FormatError::IndexRootSizeMismatch)?;
+        let expected = self.index_root_data_block_count.checked_mul(block_size).ok_or(FormatError::IndexRootSizeMismatch)?;
         if expected != self.index_root_encrypted_size {
             return Err(FormatError::IndexRootSizeMismatch);
         }
@@ -1120,11 +1033,7 @@ impl RootAuthFooterV1 {
         }
         let min_len = ROOT_AUTH_FOOTER_FIXED_LEN + 4;
         if bytes.len() < min_len {
-            return Err(FormatError::InvalidLength {
-                structure: "RootAuthFooterV1",
-                expected: min_len,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "RootAuthFooterV1", expected: min_len, actual: bytes.len() });
         }
         expect_magic("RootAuthFooterV1", TZRA_MAGIC, &bytes[0..4])?;
         let version = read_u16(bytes, 4)?;
@@ -1134,11 +1043,7 @@ impl RootAuthFooterV1 {
         let root_auth_spec_id = read_array_24(bytes, 6)?;
         let footer_length = read_u32(bytes, 30)?;
         if footer_length as usize != bytes.len() {
-            return Err(FormatError::InvalidLength {
-                structure: "RootAuthFooterV1",
-                expected: footer_length as usize,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "RootAuthFooterV1", expected: footer_length as usize, actual: bytes.len() });
         }
         if read_u32(bytes, 34)? != 0 {
             return Err(FormatError::InvalidArchive("RootAuthFooterV1 flags must be zero"));
@@ -1149,20 +1054,14 @@ impl RootAuthFooterV1 {
         }
         let volume_format_rev = read_u16(bytes, 72)?;
         if root_auth_spec_id != root_auth_spec_id_for_revision(format_version, volume_format_rev)? {
-            return Err(FormatError::InvalidArchive(
-                "RootAuthFooterV1 root_auth_spec_id does not match volume_format_rev",
-            ));
+            return Err(FormatError::InvalidArchive("RootAuthFooterV1 root_auth_spec_id does not match volume_format_rev"));
         }
         let signer_identity_length = read_u32(bytes, 78)?;
         let authenticator_value_length = read_u32(bytes, 82)?;
         validate_root_auth_variable_lengths(signer_identity_length as usize, authenticator_value_length as usize)?;
         let expected = root_auth_footer_length(signer_identity_length as usize, authenticator_value_length as usize)?;
         if expected != footer_length {
-            return Err(FormatError::InvalidLength {
-                structure: "RootAuthFooterV1",
-                expected: expected as usize,
-                actual: footer_length as usize,
-            });
+            return Err(FormatError::InvalidLength { structure: "RootAuthFooterV1", expected: expected as usize, actual: footer_length as usize });
         }
         expect_zero("RootAuthFooterV1", &bytes[286..318])?;
         let crc_offset = bytes.len() - 4;
@@ -1299,9 +1198,7 @@ impl CriticalMetadataImage {
         let fixed_len = critical_metadata_image_fixed_len(self.volume_format_rev)?;
         let region_count = u16::try_from(self.regions.len()).map_err(|_| FormatError::InvalidArchive("CriticalMetadataImage has too many regions"))?;
         let variable_len = self.regions.iter().try_fold(0usize, |total, region| {
-            total
-                .checked_add(region.encoded_len())
-                .ok_or(FormatError::InvalidArchive("CriticalMetadataImage length overflow"))
+            total.checked_add(region.encoded_len()).ok_or(FormatError::InvalidArchive("CriticalMetadataImage length overflow"))
         })?;
         let mut bytes = vec![
             0u8;
@@ -1356,11 +1253,7 @@ impl CriticalMetadataImage {
 
     pub fn parse(bytes: &[u8]) -> Result<Self, FormatError> {
         if bytes.len() < 8 + IMAGE_CRC_LEN {
-            return Err(FormatError::InvalidLength {
-                structure: "CriticalMetadataImageV1",
-                expected: 8 + IMAGE_CRC_LEN,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "CriticalMetadataImageV1", expected: 8 + IMAGE_CRC_LEN, actual: bytes.len() });
         }
         expect_magic("CriticalMetadataImageV1", TZMI_MAGIC, &bytes[0..4])?;
         let version = read_u16(bytes, 4)?;
@@ -1370,21 +1263,14 @@ impl CriticalMetadataImage {
         let volume_format_rev = read_u16(bytes, 6)?;
         let fixed_len = critical_metadata_image_fixed_len(volume_format_rev)?;
         if bytes.len() < fixed_len + IMAGE_CRC_LEN {
-            return Err(FormatError::InvalidLength {
-                structure: "CriticalMetadataImageV1",
-                expected: fixed_len + IMAGE_CRC_LEN,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "CriticalMetadataImageV1", expected: fixed_len + IMAGE_CRC_LEN, actual: bytes.len() });
         }
         let layout_flags = read_u32(bytes, 48)?;
         if layout_flags & !0x0000_0003 != 0 {
             return Err(FormatError::InvalidArchive("CriticalMetadataImage layout_flags has unknown bits"));
         }
         expect_zero("CriticalMetadataImageV1", &bytes[350..364])?;
-        let expected_crc_offset = bytes
-            .len()
-            .checked_sub(IMAGE_CRC_LEN)
-            .ok_or(FormatError::InvalidArchive("CriticalMetadataImage length underflow"))?;
+        let expected_crc_offset = bytes.len().checked_sub(IMAGE_CRC_LEN).ok_or(FormatError::InvalidArchive("CriticalMetadataImage length underflow"))?;
         expect_crc("CriticalMetadataImageV1", &bytes[..expected_crc_offset], read_u32(bytes, expected_crc_offset)?)?;
 
         let serialized_region_count = read_u16(bytes, 348)? as usize;
@@ -1392,11 +1278,7 @@ impl CriticalMetadataImage {
         let mut regions = Vec::with_capacity(serialized_region_count);
         for _ in 0..serialized_region_count {
             if cursor + SERIALIZED_REGION_HEADER_LEN > expected_crc_offset {
-                return Err(FormatError::InvalidLength {
-                    structure: "SerializedRegion",
-                    expected: cursor + SERIALIZED_REGION_HEADER_LEN,
-                    actual: bytes.len(),
-                });
+                return Err(FormatError::InvalidLength { structure: "SerializedRegion", expected: cursor + SERIALIZED_REGION_HEADER_LEN, actual: bytes.len() });
             }
             let region_type = read_u16(bytes, cursor)?;
             if read_u16(bytes, cursor + 2)? != 0 {
@@ -1405,21 +1287,11 @@ impl CriticalMetadataImage {
             let offset = read_u64(bytes, cursor + 4)?;
             let length = read_u32(bytes, cursor + 12)? as usize;
             cursor += SERIALIZED_REGION_HEADER_LEN;
-            let end = cursor
-                .checked_add(length)
-                .ok_or(FormatError::InvalidArchive("SerializedRegion length overflow"))?;
+            let end = cursor.checked_add(length).ok_or(FormatError::InvalidArchive("SerializedRegion length overflow"))?;
             if end > expected_crc_offset {
-                return Err(FormatError::InvalidLength {
-                    structure: "SerializedRegion",
-                    expected: end,
-                    actual: bytes.len(),
-                });
+                return Err(FormatError::InvalidLength { structure: "SerializedRegion", expected: end, actual: bytes.len() });
             }
-            regions.push(SerializedRegion {
-                region_type,
-                offset,
-                bytes: bytes[cursor..end].to_vec(),
-            });
+            regions.push(SerializedRegion { region_type, offset, bytes: bytes[cursor..end].to_vec() });
             cursor = end;
         }
         if cursor != expected_crc_offset {
@@ -1534,25 +1406,17 @@ pub struct CriticalMetadataRecoveryShard {
 
 impl CriticalMetadataRecoveryShard {
     pub fn parse(bytes: &[u8], shard_size: usize) -> Result<Self, FormatError> {
-        let expected = CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN
-            .checked_add(shard_size)
-            .ok_or(FormatError::InvalidArchive("CMRA shard length overflow"))?;
+        let expected = CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN.checked_add(shard_size).ok_or(FormatError::InvalidArchive("CMRA shard length overflow"))?;
         expect_len("CriticalMetadataRecoveryShard", expected, bytes.len())?;
         expect_magic("CriticalMetadataRecoveryShard", TZCS_MAGIC, &bytes[0..4])?;
         if bytes[7] != 0 {
-            return Err(FormatError::NonZeroReserved {
-                structure: "CriticalMetadataRecoveryShard",
-            });
+            return Err(FormatError::NonZeroReserved { structure: "CriticalMetadataRecoveryShard" });
         }
         let shard_role = bytes[6];
         if shard_role > 1 {
             return Err(FormatError::InvalidArchive("CriticalMetadataRecoveryShard has unknown role"));
         }
-        expect_crc(
-            "CriticalMetadataRecoveryShard",
-            &[&bytes[..12], &bytes[CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN..]].concat(),
-            read_u32(bytes, 12)?,
-        )?;
+        expect_crc("CriticalMetadataRecoveryShard", &[&bytes[..12], &bytes[CRITICAL_METADATA_RECOVERY_SHARD_HEADER_LEN..]].concat(), read_u32(bytes, 12)?)?;
         let shard_payload_length = read_u32(bytes, 8)?;
         if shard_payload_length as usize > shard_size {
             return Err(FormatError::InvalidArchive("CriticalMetadataRecoveryShard payload length exceeds shard size"));
@@ -1723,24 +1587,9 @@ impl BootstrapSidecarHeader {
 
     pub fn validate_packed_layout(&self, file_size: u64) -> Result<(), FormatError> {
         let mut cursor = BOOTSTRAP_SIDECAR_HEADER_LEN as u64;
-        cursor = self.validate_section_cursor(
-            self.has_manifest_footer(),
-            self.manifest_footer_offset,
-            self.manifest_footer_length as u64,
-            cursor,
-        )?;
-        cursor = self.validate_section_cursor(
-            self.has_index_root_records(),
-            self.index_root_records_offset,
-            self.index_root_records_length,
-            cursor,
-        )?;
-        cursor = self.validate_section_cursor(
-            self.has_dictionary_records(),
-            self.dictionary_records_offset,
-            self.dictionary_records_length,
-            cursor,
-        )?;
+        cursor = self.validate_section_cursor(self.has_manifest_footer(), self.manifest_footer_offset, self.manifest_footer_length as u64, cursor)?;
+        cursor = self.validate_section_cursor(self.has_index_root_records(), self.index_root_records_offset, self.index_root_records_length, cursor)?;
+        cursor = self.validate_section_cursor(self.has_dictionary_records(), self.dictionary_records_offset, self.dictionary_records_length, cursor)?;
         if cursor != file_size {
             return Err(FormatError::NonCanonicalBootstrapSidecarLayout);
         }
@@ -1818,9 +1667,7 @@ fn is_known_extension(ext_tag: u16) -> bool {
 
 fn validate_known_extension(ext_tag: u16, value: &[u8]) -> Result<(), FormatError> {
     match ext_tag {
-        0x0001 | 0x0002 | 0x0005 => std::str::from_utf8(value)
-            .map(|_| ())
-            .map_err(|_| FormatError::MalformedKnownExtension(ext_tag)),
+        0x0001 | 0x0002 | 0x0005 => std::str::from_utf8(value).map(|_| ()).map_err(|_| FormatError::MalformedKnownExtension(ext_tag)),
         0x0003 => {
             if value.len() == 8 {
                 Ok(())
@@ -1897,11 +1744,7 @@ fn read_array_32(bytes: &[u8], offset: usize) -> Result<[u8; 32], FormatError> {
 fn read_u16(bytes: &[u8], offset: usize) -> Result<u16, FormatError> {
     let array: [u8; 2] = bytes
         .get(offset..offset + 2)
-        .ok_or(FormatError::InvalidLength {
-            structure: "u16",
-            expected: offset + 2,
-            actual: bytes.len(),
-        })?
+        .ok_or(FormatError::InvalidLength { structure: "u16", expected: offset + 2, actual: bytes.len() })?
         .try_into()
         .expect("slice length checked");
     Ok(u16::from_le_bytes(array))
@@ -1910,11 +1753,7 @@ fn read_u16(bytes: &[u8], offset: usize) -> Result<u16, FormatError> {
 fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, FormatError> {
     let array: [u8; 4] = bytes
         .get(offset..offset + 4)
-        .ok_or(FormatError::InvalidLength {
-            structure: "u32",
-            expected: offset + 4,
-            actual: bytes.len(),
-        })?
+        .ok_or(FormatError::InvalidLength { structure: "u32", expected: offset + 4, actual: bytes.len() })?
         .try_into()
         .expect("slice length checked");
     Ok(u32::from_le_bytes(array))
@@ -1923,11 +1762,7 @@ fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, FormatError> {
 fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, FormatError> {
     let array: [u8; 8] = bytes
         .get(offset..offset + 8)
-        .ok_or(FormatError::InvalidLength {
-            structure: "u64",
-            expected: offset + 8,
-            actual: bytes.len(),
-        })?
+        .ok_or(FormatError::InvalidLength { structure: "u64", expected: offset + 8, actual: bytes.len() })?
         .try_into()
         .expect("slice length checked");
     Ok(u64::from_le_bytes(array))
@@ -1936,11 +1771,7 @@ fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, FormatError> {
 fn read_i64(bytes: &[u8], offset: usize) -> Result<i64, FormatError> {
     let array: [u8; 8] = bytes
         .get(offset..offset + 8)
-        .ok_or(FormatError::InvalidLength {
-            structure: "i64",
-            expected: offset + 8,
-            actual: bytes.len(),
-        })?
+        .ok_or(FormatError::InvalidLength { structure: "i64", expected: offset + 8, actual: bytes.len() })?
         .try_into()
         .expect("slice length checked");
     Ok(i64::from_le_bytes(array))
@@ -2025,10 +1856,7 @@ mod tests {
         let identity_digest = digest.finalize();
 
         let mut bytes = vec![0u8; KEY_WRAP_RECORD_HEADER_LEN];
-        let record_length = KEY_WRAP_RECORD_HEADER_LEN
-            .checked_add(identity.len())
-            .and_then(|value| value.checked_add(profile_payload.len()))
-            .unwrap() as u32;
+        let record_length = KEY_WRAP_RECORD_HEADER_LEN.checked_add(identity.len()).and_then(|value| value.checked_add(profile_payload.len())).unwrap() as u32;
         write_u16(&mut bytes, 4, profile_id);
         write_u16(&mut bytes, 6, 2);
         write_u32(&mut bytes, 12, identity.len() as u32);
@@ -2165,26 +1993,12 @@ mod tests {
 
         let mut crypto = crypto_fixed().to_bytes();
         crypto[0] ^= 0x01;
-        assert_eq!(
-            CryptoHeaderFixed::parse(&crypto, crypto_fixed().length).unwrap_err(),
-            FormatError::BadMagic {
-                structure: "CryptoHeaderFixed"
-            }
-        );
+        assert_eq!(CryptoHeaderFixed::parse(&crypto, crypto_fixed().length).unwrap_err(), FormatError::BadMagic { structure: "CryptoHeaderFixed" });
 
-        let record = BlockRecord {
-            block_index: 0,
-            kind: BlockKind::PayloadData,
-            flags: BLOCK_LAST_DATA_FLAG,
-            payload: vec![7; 4096],
-            record_crc32c: 0,
-        };
+        let record = BlockRecord { block_index: 0, kind: BlockKind::PayloadData, flags: BLOCK_LAST_DATA_FLAG, payload: vec![7; 4096], record_crc32c: 0 };
         let mut block = record.to_bytes();
         block[0] ^= 0x01;
-        assert_eq!(
-            BlockRecord::parse(&block, 4096).unwrap_err(),
-            FormatError::BadMagic { structure: "BlockRecord" }
-        );
+        assert_eq!(BlockRecord::parse(&block, 4096).unwrap_err(), FormatError::BadMagic { structure: "BlockRecord" });
 
         let footer = ManifestFooter {
             archive_uuid: uuid(),
@@ -2201,10 +2015,7 @@ mod tests {
         };
         let mut manifest = footer.to_bytes();
         manifest[0] ^= 0x01;
-        assert_eq!(
-            ManifestFooter::parse(&manifest).unwrap_err(),
-            FormatError::BadMagic { structure: "ManifestFooter" }
-        );
+        assert_eq!(ManifestFooter::parse(&manifest).unwrap_err(), FormatError::BadMagic { structure: "ManifestFooter" });
 
         let trailer = VolumeTrailer {
             archive_uuid: uuid(),
@@ -2222,10 +2033,7 @@ mod tests {
         };
         let mut trailer_bytes = trailer.to_bytes();
         trailer_bytes[0] ^= 0x01;
-        assert_eq!(
-            VolumeTrailer::parse(&trailer_bytes).unwrap_err(),
-            FormatError::BadMagic { structure: "VolumeTrailer" }
-        );
+        assert_eq!(VolumeTrailer::parse(&trailer_bytes).unwrap_err(), FormatError::BadMagic { structure: "VolumeTrailer" });
 
         let sidecar = BootstrapSidecarHeader {
             archive_uuid: uuid(),
@@ -2242,12 +2050,7 @@ mod tests {
         };
         let mut sidecar_bytes = sidecar.to_bytes();
         sidecar_bytes[0] ^= 0x01;
-        assert_eq!(
-            BootstrapSidecarHeader::parse(&sidecar_bytes).unwrap_err(),
-            FormatError::BadMagic {
-                structure: "BootstrapSidecarHeader"
-            }
-        );
+        assert_eq!(BootstrapSidecarHeader::parse(&sidecar_bytes).unwrap_err(), FormatError::BadMagic { structure: "BootstrapSidecarHeader" });
     }
 
     #[test]
@@ -2263,26 +2066,15 @@ mod tests {
     fn crypto_header_fixed_rejects_unsupported_profile_values() {
         let mut header = crypto_fixed();
         header.compression_algo = CompressionAlgo::None;
-        assert_eq!(
-            CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(),
-            FormatError::UnsupportedCompression(CompressionAlgo::None)
-        );
+        assert_eq!(CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(), FormatError::UnsupportedCompression(CompressionAlgo::None));
 
         let mut header = crypto_fixed();
         header.block_size = 4097;
-        assert_eq!(
-            CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(),
-            FormatError::OddBlockSize(4097)
-        );
+        assert_eq!(CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(), FormatError::OddBlockSize(4097));
 
         let mut bytes = crypto_fixed().to_bytes();
         bytes[47] = 1;
-        assert_eq!(
-            CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(),
-            FormatError::NonZeroReserved {
-                structure: "CryptoHeaderFixed"
-            }
-        );
+        assert_eq!(CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(), FormatError::NonZeroReserved { structure: "CryptoHeaderFixed" });
     }
 
     #[test]
@@ -2315,10 +2107,7 @@ mod tests {
     fn key_wrap_table_parse_rejects_table_record_count_and_length_mismatch() {
         let (table_bytes, table_length) = key_wrap_table_bytes();
         let parsed = KeyWrapTableV1::parse(&table_bytes, &uuid(), &session(), table_length, 2);
-        assert_eq!(
-            parsed.unwrap_err(),
-            FormatError::InvalidArchive("KeyWrapTableV1 recipient_record_count does not match KdfParams")
-        );
+        assert_eq!(parsed.unwrap_err(), FormatError::InvalidArchive("KeyWrapTableV1 recipient_record_count does not match KdfParams"));
 
         let mut bad = table_bytes.clone();
         write_u32(&mut bad, 8, table_length + 1);
@@ -2332,11 +2121,7 @@ mod tests {
     fn key_wrap_table_parse_rejects_short_table_without_panic() {
         assert_eq!(
             KeyWrapTableV1::parse(&[0u8; 3], &uuid(), &session(), 3, 0),
-            Err(FormatError::InvalidLength {
-                structure: "KeyWrapTableV1",
-                expected: KEY_WRAP_TABLE_HEADER_LEN,
-                actual: 3,
-            })
+            Err(FormatError::InvalidLength { structure: "KeyWrapTableV1", expected: KEY_WRAP_TABLE_HEADER_LEN, actual: 3 })
         );
     }
 
@@ -2346,10 +2131,7 @@ mod tests {
 
         let mut bad_magic = table_bytes.clone();
         bad_magic[0] = b'X';
-        assert_eq!(
-            KeyWrapTableV1::parse(&bad_magic, &uuid(), &session(), table_length, 1),
-            Err(FormatError::BadMagic { structure: "KeyWrapTableV1" })
-        );
+        assert_eq!(KeyWrapTableV1::parse(&bad_magic, &uuid(), &session(), table_length, 1), Err(FormatError::BadMagic { structure: "KeyWrapTableV1" }));
 
         let mut bad_version = table_bytes.clone();
         write_u16(&mut bad_version, 4, 2);
@@ -2388,17 +2170,11 @@ mod tests {
 
         let mut bad_digest = table.clone();
         bad_digest[20] ^= 1;
-        assert_eq!(
-            RecipientRecordV1::parse(&bad_digest).unwrap_err(),
-            FormatError::InvalidArchive("RecipientRecordV1 recipient_identity_digest mismatch")
-        );
+        assert_eq!(RecipientRecordV1::parse(&bad_digest).unwrap_err(), FormatError::InvalidArchive("RecipientRecordV1 recipient_identity_digest mismatch"));
 
         let mut bad_len = table.clone();
         write_u32(&mut bad_len, 0, 12);
-        assert_eq!(
-            RecipientRecordV1::parse(&bad_len).unwrap_err(),
-            FormatError::InvalidArchive("RecipientRecordV1 record_length is too small")
-        );
+        assert_eq!(RecipientRecordV1::parse(&bad_len).unwrap_err(), FormatError::InvalidArchive("RecipientRecordV1 record_length is too small"));
     }
 
     #[test]
@@ -2421,23 +2197,14 @@ mod tests {
         let mut header = crypto_fixed();
         header.aead_algo = AeadAlgo::None;
         header.kdf_algo = KdfAlgo::Raw;
-        assert_eq!(
-            header.validate_supported_profile().unwrap_err(),
-            FormatError::InvalidProtectionMode {
-                aead_algo: AeadAlgo::None,
-                kdf_algo: KdfAlgo::Raw,
-            }
-        );
+        assert_eq!(header.validate_supported_profile().unwrap_err(), FormatError::InvalidProtectionMode { aead_algo: AeadAlgo::None, kdf_algo: KdfAlgo::Raw });
 
         let mut header = crypto_fixed();
         header.aead_algo = AeadAlgo::AesGcmSiv256;
         header.kdf_algo = KdfAlgo::None;
         assert_eq!(
             header.validate_supported_profile().unwrap_err(),
-            FormatError::InvalidProtectionMode {
-                aead_algo: AeadAlgo::AesGcmSiv256,
-                kdf_algo: KdfAlgo::None,
-            }
+            FormatError::InvalidProtectionMode { aead_algo: AeadAlgo::AesGcmSiv256, kdf_algo: KdfAlgo::None }
         );
 
         let mut header = crypto_fixed();
@@ -2445,10 +2212,7 @@ mod tests {
         header.kdf_algo = KdfAlgo::RecipientWrap;
         assert_eq!(
             header.validate_supported_profile().unwrap_err(),
-            FormatError::InvalidProtectionMode {
-                aead_algo: AeadAlgo::None,
-                kdf_algo: KdfAlgo::RecipientWrap,
-            }
+            FormatError::InvalidProtectionMode { aead_algo: AeadAlgo::None, kdf_algo: KdfAlgo::RecipientWrap }
         );
 
         let mut header = crypto_fixed();
@@ -2461,74 +2225,32 @@ mod tests {
     fn crypto_header_fixed_rejects_parameter_mutation_matrix() {
         let mut bytes = crypto_fixed().to_bytes();
         write_u16(&mut bytes, 8, 99);
-        assert_eq!(
-            CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(),
-            FormatError::UnknownCompressionAlgo(99)
-        );
+        assert_eq!(CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(), FormatError::UnknownCompressionAlgo(99));
 
         let mut bytes = crypto_fixed().to_bytes();
         write_u16(&mut bytes, 10, 99);
-        assert_eq!(
-            CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(),
-            FormatError::UnknownAeadAlgo(99)
-        );
+        assert_eq!(CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(), FormatError::UnknownAeadAlgo(99));
 
         let mut bytes = crypto_fixed().to_bytes();
         write_u16(&mut bytes, 12, 99);
-        assert_eq!(
-            CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(),
-            FormatError::UnknownFecAlgo(99)
-        );
+        assert_eq!(CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(), FormatError::UnknownFecAlgo(99));
 
         let mut bytes = crypto_fixed().to_bytes();
         write_u16(&mut bytes, 14, 99);
-        assert_eq!(
-            CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(),
-            FormatError::UnknownKdfAlgo(99)
-        );
+        assert_eq!(CryptoHeaderFixed::parse(&bytes, crypto_fixed().length).unwrap_err(), FormatError::UnknownKdfAlgo(99));
 
         let cases: Vec<(&'static str, CryptoHeaderFixed, FormatError)> = vec![
-            (
-                "unsupported FEC None",
-                CryptoHeaderFixed {
-                    fec_algo: FecAlgo::None,
-                    ..crypto_fixed()
-                },
-                FormatError::UnsupportedFec(FecAlgo::None),
-            ),
-            (
-                "unsupported FEC Wirehair",
-                CryptoHeaderFixed {
-                    fec_algo: FecAlgo::Wirehair,
-                    ..crypto_fixed()
-                },
-                FormatError::UnsupportedFec(FecAlgo::Wirehair),
-            ),
+            ("unsupported FEC None", CryptoHeaderFixed { fec_algo: FecAlgo::None, ..crypto_fixed() }, FormatError::UnsupportedFec(FecAlgo::None)),
+            ("unsupported FEC Wirehair", CryptoHeaderFixed { fec_algo: FecAlgo::Wirehair, ..crypto_fixed() }, FormatError::UnsupportedFec(FecAlgo::Wirehair)),
             (
                 "invalid dictionary flag",
-                CryptoHeaderFixed {
-                    has_dictionary: 2,
-                    ..crypto_fixed()
-                },
-                FormatError::InvalidBoolean {
-                    field: "has_dictionary",
-                    value: 2,
-                },
+                CryptoHeaderFixed { has_dictionary: 2, ..crypto_fixed() },
+                FormatError::InvalidBoolean { field: "has_dictionary", value: 2 },
             ),
-            (
-                "zero stripe width",
-                CryptoHeaderFixed {
-                    stripe_width: 0,
-                    ..crypto_fixed()
-                },
-                FormatError::ZeroStripeWidth,
-            ),
+            ("zero stripe width", CryptoHeaderFixed { stripe_width: 0, ..crypto_fixed() }, FormatError::ZeroStripeWidth),
             (
                 "stripe width cap",
-                CryptoHeaderFixed {
-                    stripe_width: READER_MAX_STRIPE_WIDTH + 1,
-                    ..crypto_fixed()
-                },
+                CryptoHeaderFixed { stripe_width: READER_MAX_STRIPE_WIDTH + 1, ..crypto_fixed() },
                 FormatError::ReaderResourceLimitExceeded {
                     field: "stripe_width",
                     cap: READER_MAX_STRIPE_WIDTH as u64,
@@ -2537,88 +2259,33 @@ mod tests {
             ),
             (
                 "loss tolerance must be below stripe width",
-                CryptoHeaderFixed {
-                    stripe_width: 2,
-                    volume_loss_tolerance: 2,
-                    ..crypto_fixed()
-                },
-                FormatError::VolumeLossToleranceOutOfRange {
-                    volume_loss_tolerance: 2,
-                    stripe_width: 2,
-                },
+                CryptoHeaderFixed { stripe_width: 2, volume_loss_tolerance: 2, ..crypto_fixed() },
+                FormatError::VolumeLossToleranceOutOfRange { volume_loss_tolerance: 2, stripe_width: 2 },
             ),
-            (
-                "bit rot pct cap",
-                CryptoHeaderFixed {
-                    bit_rot_buffer_pct: 101,
-                    ..crypto_fixed()
-                },
-                FormatError::BitRotBufferPctTooLarge(101),
-            ),
+            ("bit rot pct cap", CryptoHeaderFixed { bit_rot_buffer_pct: 101, ..crypto_fixed() }, FormatError::BitRotBufferPctTooLarge(101)),
             (
                 "zero payload data shards",
-                CryptoHeaderFixed {
-                    fec_data_shards: 0,
-                    ..crypto_fixed()
-                },
+                CryptoHeaderFixed { fec_data_shards: 0, ..crypto_fixed() },
                 FormatError::ZeroDataShardMaximum { field: "fec_data_shards" },
             ),
             (
                 "zero index data shards",
-                CryptoHeaderFixed {
-                    index_fec_data_shards: 0,
-                    ..crypto_fixed()
-                },
-                FormatError::ZeroDataShardMaximum {
-                    field: "index_fec_data_shards",
-                },
+                CryptoHeaderFixed { index_fec_data_shards: 0, ..crypto_fixed() },
+                FormatError::ZeroDataShardMaximum { field: "index_fec_data_shards" },
             ),
             (
                 "zero index root data shards",
-                CryptoHeaderFixed {
-                    index_root_fec_data_shards: 0,
-                    ..crypto_fixed()
-                },
-                FormatError::ZeroDataShardMaximum {
-                    field: "index_root_fec_data_shards",
-                },
+                CryptoHeaderFixed { index_root_fec_data_shards: 0, ..crypto_fixed() },
+                FormatError::ZeroDataShardMaximum { field: "index_root_fec_data_shards" },
             ),
-            (
-                "zero chunk size",
-                CryptoHeaderFixed {
-                    chunk_size: 0,
-                    ..crypto_fixed()
-                },
-                FormatError::ZeroChunkSize,
-            ),
-            (
-                "zero envelope target size",
-                CryptoHeaderFixed {
-                    envelope_target_size: 0,
-                    ..crypto_fixed()
-                },
-                FormatError::ZeroEnvelopeTargetSize,
-            ),
+            ("zero chunk size", CryptoHeaderFixed { chunk_size: 0, ..crypto_fixed() }, FormatError::ZeroChunkSize),
+            ("zero envelope target size", CryptoHeaderFixed { envelope_target_size: 0, ..crypto_fixed() }, FormatError::ZeroEnvelopeTargetSize),
             (
                 "chunk exceeds envelope",
-                CryptoHeaderFixed {
-                    chunk_size: 4096,
-                    envelope_target_size: 2048,
-                    ..crypto_fixed()
-                },
-                FormatError::ChunkSizeExceedsEnvelopeTarget {
-                    chunk_size: 4096,
-                    envelope_target_size: 2048,
-                },
+                CryptoHeaderFixed { chunk_size: 4096, envelope_target_size: 2048, ..crypto_fixed() },
+                FormatError::ChunkSizeExceedsEnvelopeTarget { chunk_size: 4096, envelope_target_size: 2048 },
             ),
-            (
-                "block size too small",
-                CryptoHeaderFixed {
-                    block_size: 2048,
-                    ..crypto_fixed()
-                },
-                FormatError::BlockSizeTooSmall(2048),
-            ),
+            ("block size too small", CryptoHeaderFixed { block_size: 2048, ..crypto_fixed() }, FormatError::BlockSizeTooSmall(2048)),
         ];
 
         for (name, header, expected) in cases {
@@ -2643,22 +2310,14 @@ mod tests {
         header.envelope_target_size = header.chunk_size;
         assert_eq!(
             CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(),
-            FormatError::ReaderResourceLimitExceeded {
-                field: "chunk_size",
-                cap: READER_MAX_CHUNK_SIZE as u64,
-                actual: (READER_MAX_CHUNK_SIZE + 1) as u64,
-            }
+            FormatError::ReaderResourceLimitExceeded { field: "chunk_size", cap: READER_MAX_CHUNK_SIZE as u64, actual: (READER_MAX_CHUNK_SIZE + 1) as u64 }
         );
 
         let mut header = crypto_fixed();
         header.block_size = READER_MAX_BLOCK_SIZE + 2;
         assert_eq!(
             CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(),
-            FormatError::ReaderResourceLimitExceeded {
-                field: "block_size",
-                cap: READER_MAX_BLOCK_SIZE as u64,
-                actual: (READER_MAX_BLOCK_SIZE + 2) as u64,
-            }
+            FormatError::ReaderResourceLimitExceeded { field: "block_size", cap: READER_MAX_BLOCK_SIZE as u64, actual: (READER_MAX_BLOCK_SIZE + 2) as u64 }
         );
 
         let mut header = crypto_fixed();
@@ -2703,11 +2362,7 @@ mod tests {
         let max_data_shards = u32::MAX as u64 / header.block_size as u64;
         assert_eq!(
             CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(),
-            FormatError::ReaderResourceLimitExceeded {
-                field: "fec_data_shards",
-                cap: max_data_shards,
-                actual: 4_096,
-            }
+            FormatError::ReaderResourceLimitExceeded { field: "fec_data_shards", cap: max_data_shards, actual: 4_096 }
         );
 
         let mut header = crypto_fixed();
@@ -2717,11 +2372,7 @@ mod tests {
         let max_data_shards = u32::MAX as u64 / header.block_size as u64;
         assert_eq!(
             CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(),
-            FormatError::ReaderResourceLimitExceeded {
-                field: "index_fec_data_shards",
-                cap: max_data_shards,
-                actual: 4_096,
-            }
+            FormatError::ReaderResourceLimitExceeded { field: "index_fec_data_shards", cap: max_data_shards, actual: 4_096 }
         );
 
         let mut header = crypto_fixed();
@@ -2730,11 +2381,7 @@ mod tests {
         let max_data_shards = u32::MAX as u64 / header.block_size as u64;
         assert_eq!(
             CryptoHeaderFixed::parse(&header.to_bytes(), header.length).unwrap_err(),
-            FormatError::ReaderResourceLimitExceeded {
-                field: "index_root_fec_data_shards",
-                cap: max_data_shards,
-                actual: 4_096,
-            }
+            FormatError::ReaderResourceLimitExceeded { field: "index_root_fec_data_shards", cap: max_data_shards, actual: 4_096 }
         );
     }
 
@@ -2786,10 +2433,7 @@ mod tests {
 
         let mut bytes = raw_crypto_header_bytes();
         write_u16(&mut bytes, CRYPTO_HEADER_FIXED_LEN, KdfAlgo::Argon2id as u16);
-        assert_eq!(
-            CryptoHeader::parse(&bytes, bytes.len() as u32).unwrap_err(),
-            FormatError::KdfAlgoTagMismatch { expected: 0, actual: 1 }
-        );
+        assert_eq!(CryptoHeader::parse(&bytes, bytes.len() as u32).unwrap_err(), FormatError::KdfAlgoTagMismatch { expected: 0, actual: 1 });
     }
 
     #[test]
@@ -2801,10 +2445,7 @@ mod tests {
         write_u32(&mut fixed_longer, 4, (canonical.len() + 1) as u32);
         assert_eq!(
             CryptoHeader::parse(&fixed_longer, fixed_longer.len() as u32).unwrap_err(),
-            FormatError::CryptoHeaderLengthMismatch {
-                fixed: (canonical.len() + 1) as u32,
-                volume: canonical.len() as u32,
-            }
+            FormatError::CryptoHeaderLengthMismatch { fixed: (canonical.len() + 1) as u32, volume: canonical.len() as u32 }
         );
 
         let longer_volume_len = (canonical.len() + 1) as u32;
@@ -2812,59 +2453,35 @@ mod tests {
         padded.insert(canonical.len() - CRYPTO_HEADER_HMAC_LEN, 0);
         assert_eq!(
             CryptoHeader::parse(&padded, longer_volume_len).unwrap_err(),
-            FormatError::CryptoHeaderLengthMismatch {
-                fixed: canonical.len() as u32,
-                volume: longer_volume_len,
-            }
+            FormatError::CryptoHeaderLengthMismatch { fixed: canonical.len() as u32, volume: longer_volume_len }
         );
 
         let mut fixed_shorter = canonical.clone();
         write_u32(&mut fixed_shorter, 4, (canonical.len() - 1) as u32);
         assert_eq!(
             CryptoHeader::parse(&fixed_shorter, fixed_shorter.len() as u32).unwrap_err(),
-            FormatError::CryptoHeaderLengthMismatch {
-                fixed: (canonical.len() - 1) as u32,
-                volume: canonical.len() as u32,
-            }
+            FormatError::CryptoHeaderLengthMismatch { fixed: (canonical.len() - 1) as u32, volume: canonical.len() as u32 }
         );
     }
 
     #[test]
     fn crypto_extension_semantics_reject_forbidden_duplicate_and_critical() {
         let duplicate = vec![ExtensionTlv { tag: 0x0001, value: b"one" }, ExtensionTlv { tag: 0x0001, value: b"two" }];
-        assert_eq!(
-            validate_crypto_extension_semantics(&duplicate).unwrap_err(),
-            FormatError::DuplicateKnownExtension(0x0001)
-        );
+        assert_eq!(validate_crypto_extension_semantics(&duplicate).unwrap_err(), FormatError::DuplicateKnownExtension(0x0001));
 
         let forbidden = vec![ExtensionTlv { tag: 0x8004, value: b"" }];
-        assert_eq!(
-            validate_crypto_extension_semantics(&forbidden).unwrap_err(),
-            FormatError::ForbiddenExtensionTag(0x0004)
-        );
+        assert_eq!(validate_crypto_extension_semantics(&forbidden).unwrap_err(), FormatError::ForbiddenExtensionTag(0x0004));
 
         let unknown_critical = vec![ExtensionTlv { tag: 0x8123, value: b"" }];
-        assert_eq!(
-            validate_crypto_extension_semantics(&unknown_critical).unwrap_err(),
-            FormatError::UnknownCriticalExtension(0x0123)
-        );
+        assert_eq!(validate_crypto_extension_semantics(&unknown_critical).unwrap_err(), FormatError::UnknownCriticalExtension(0x0123));
 
         let malformed_known = vec![ExtensionTlv { tag: 0x0003, value: b"short" }];
-        assert_eq!(
-            validate_crypto_extension_semantics(&malformed_known).unwrap_err(),
-            FormatError::MalformedKnownExtension(0x0003)
-        );
+        assert_eq!(validate_crypto_extension_semantics(&malformed_known).unwrap_err(), FormatError::MalformedKnownExtension(0x0003));
     }
 
     #[test]
     fn block_record_round_trips_and_validates_crc() {
-        let record = BlockRecord {
-            block_index: 0,
-            kind: BlockKind::PayloadData,
-            flags: BLOCK_LAST_DATA_FLAG,
-            payload: vec![7; 4096],
-            record_crc32c: 0,
-        };
+        let record = BlockRecord { block_index: 0, kind: BlockKind::PayloadData, flags: BLOCK_LAST_DATA_FLAG, payload: vec![7; 4096], record_crc32c: 0 };
         let bytes = record.to_bytes();
         let parsed = BlockRecord::parse(&bytes, 4096).unwrap();
         assert_eq!(parsed.kind, BlockKind::PayloadData);
@@ -2872,10 +2489,7 @@ mod tests {
 
         let mut corrupted = bytes;
         corrupted[20] ^= 1;
-        assert_eq!(
-            BlockRecord::parse(&corrupted, 4096).unwrap_err(),
-            FormatError::BadCrc { structure: "BlockRecord" }
-        );
+        assert_eq!(BlockRecord::parse(&corrupted, 4096).unwrap_err(), FormatError::BadCrc { structure: "BlockRecord" });
     }
 
     #[test]
@@ -2905,29 +2519,17 @@ mod tests {
 
         let mut corrupted_crc = bytes;
         corrupted_crc[covered_len] ^= 0x80;
-        assert_eq!(
-            BlockRecord::parse(&corrupted_crc, record.payload.len()).unwrap_err(),
-            FormatError::BadCrc { structure: "BlockRecord" }
-        );
+        assert_eq!(BlockRecord::parse(&corrupted_crc, record.payload.len()).unwrap_err(), FormatError::BadCrc { structure: "BlockRecord" });
     }
 
     #[test]
     fn block_record_rejects_reserved_kind_flags_and_parity_last_flag() {
-        let mut record = BlockRecord {
-            block_index: 0,
-            kind: BlockKind::PayloadData,
-            flags: 0x02,
-            payload: vec![0; 4096],
-            record_crc32c: 0,
-        };
+        let mut record = BlockRecord { block_index: 0, kind: BlockKind::PayloadData, flags: 0x02, payload: vec![0; 4096], record_crc32c: 0 };
         assert_eq!(BlockRecord::parse(&record.to_bytes(), 4096).unwrap_err(), FormatError::InvalidBlockFlags(0x02));
 
         record.kind = BlockKind::PayloadParity;
         record.flags = BLOCK_LAST_DATA_FLAG;
-        assert_eq!(
-            BlockRecord::parse(&record.to_bytes(), 4096).unwrap_err(),
-            FormatError::ParityBlockHasLastDataFlag
-        );
+        assert_eq!(BlockRecord::parse(&record.to_bytes(), 4096).unwrap_err(), FormatError::ParityBlockHasLastDataFlag);
 
         let mut bytes = record.to_bytes();
         bytes[12] = 10;
@@ -2964,10 +2566,7 @@ mod tests {
 
         let mut bad = footer.clone();
         bad.index_root_encrypted_size = 4096;
-        assert_eq!(
-            ManifestFooter::parse(&bad.to_bytes()).unwrap().validate_index_root_extent(4096).unwrap_err(),
-            FormatError::IndexRootSizeMismatch
-        );
+        assert_eq!(ManifestFooter::parse(&bad.to_bytes()).unwrap().validate_index_root_extent(4096).unwrap_err(), FormatError::IndexRootSizeMismatch);
     }
 
     #[test]
@@ -2991,10 +2590,7 @@ mod tests {
 
         let mut bad = trailer;
         bad.manifest_footer_length = 100;
-        assert_eq!(
-            VolumeTrailer::parse(&bad.to_bytes()).unwrap_err(),
-            FormatError::InvalidManifestFooterLength(100)
-        );
+        assert_eq!(VolumeTrailer::parse(&bad.to_bytes()).unwrap_err(), FormatError::InvalidManifestFooterLength(100));
     }
 
     #[test]
@@ -3026,23 +2622,14 @@ mod tests {
 
         let mut bad_crc = bytes.clone();
         bad_crc[100] ^= 0x40;
-        assert_eq!(
-            RootAuthFooterV1::parse(&bad_crc).unwrap_err(),
-            FormatError::BadCrc { structure: "RootAuthFooterV1" }
-        );
+        assert_eq!(RootAuthFooterV1::parse(&bad_crc).unwrap_err(), FormatError::BadCrc { structure: "RootAuthFooterV1" });
 
         let mut bad_len = bytes;
         write_u32(&mut bad_len, 30, 1);
         let crc_offset = bad_len.len() - 4;
         let crc = crc32c(&bad_len[..crc_offset]);
         write_u32(&mut bad_len, crc_offset, crc);
-        assert!(matches!(
-            RootAuthFooterV1::parse(&bad_len).unwrap_err(),
-            FormatError::InvalidLength {
-                structure: "RootAuthFooterV1",
-                ..
-            }
-        ));
+        assert!(matches!(RootAuthFooterV1::parse(&bad_len).unwrap_err(), FormatError::InvalidLength { structure: "RootAuthFooterV1", .. }));
 
         let mut legacy_revision = footer.to_bytes().unwrap();
         write_u16(&mut legacy_revision, 72, 43);
@@ -3089,24 +2676,17 @@ mod tests {
             header_crc32c: 0,
         };
         let parsed = BootstrapSidecarHeader::parse(&header.to_bytes()).unwrap();
-        parsed
-            .validate_packed_layout(BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + MANIFEST_FOOTER_LEN as u64 + 40)
-            .unwrap();
+        parsed.validate_packed_layout(BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + MANIFEST_FOOTER_LEN as u64 + 40).unwrap();
 
         let mut bad = header.clone();
         bad.flags |= 0x08;
-        assert_eq!(
-            BootstrapSidecarHeader::parse(&bad.to_bytes()).unwrap_err(),
-            FormatError::UnknownBootstrapSidecarFlags(0x0b)
-        );
+        assert_eq!(BootstrapSidecarHeader::parse(&bad.to_bytes()).unwrap_err(), FormatError::UnknownBootstrapSidecarFlags(0x0b));
 
         let mut bad = header;
         bad.index_root_records_offset += 1;
         let parsed = BootstrapSidecarHeader::parse(&bad.to_bytes()).unwrap();
         assert_eq!(
-            parsed
-                .validate_packed_layout(BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + MANIFEST_FOOTER_LEN as u64 + 40)
-                .unwrap_err(),
+            parsed.validate_packed_layout(BOOTSTRAP_SIDECAR_HEADER_LEN as u64 + MANIFEST_FOOTER_LEN as u64 + 40).unwrap_err(),
             FormatError::NonCanonicalBootstrapSidecarLayout
         );
     }

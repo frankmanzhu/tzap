@@ -11,31 +11,12 @@ use tzap_core::{
 };
 
 pub(crate) fn run_list(quiet: bool, args: ListArgs) -> Result<()> {
-    let ListArgs {
-        archive,
-        password_stdin,
-        password,
-        keyfile,
-        recipient_key,
-        insecure_zero_key,
-        bootstrap,
-        volumes,
-        long,
-        json,
-        jobs,
-    } = args;
+    let ListArgs { archive, password_stdin, password, keyfile, recipient_key, insecure_zero_key, bootstrap, volumes, long, json, jobs } = args;
 
     let reader_options = reader_options(resolve_jobs(jobs)?);
     reject_multi_volume_bootstrap(1 + volumes.len(), bootstrap.as_deref())?;
     if archive == "-" {
-        reject_archive_stdin_list_options(
-            &volumes,
-            password_stdin,
-            password,
-            keyfile.as_deref(),
-            recipient_key.as_deref(),
-            insecure_zero_key,
-        )?;
+        reject_archive_stdin_list_options(&volumes, password_stdin, password, keyfile.as_deref(), recipient_key.as_deref(), insecure_zero_key)?;
         let bootstrap_bytes = read_optional_bootstrap_sidecar(bootstrap.as_deref())?;
         let stdin = io::stdin();
         let report = if let Some(keyfile) = keyfile.as_deref() {

@@ -48,10 +48,7 @@ fn corrupt_v45_terminal_recovery(volume: &mut [u8]) {
 
 #[test]
 fn golden_fixtures_are_deterministic_and_readable() {
-    let files = [
-        RegularFile::new("alpha.txt", b"alpha payload"),
-        RegularFile::new("dir/beta.txt", b"beta payload"),
-    ];
+    let files = [RegularFile::new("alpha.txt", b"alpha payload"), RegularFile::new("dir/beta.txt", b"beta payload")];
     let one = write_archive(&files, &master_key(), deterministic_options(0x11)).unwrap();
     let two = write_archive(&files, &master_key(), deterministic_options(0x11)).unwrap();
 
@@ -65,12 +62,7 @@ fn golden_fixtures_are_deterministic_and_readable() {
 
 #[test]
 fn mutation_fixture_generator_rejects_authentication_and_revision_mutations() {
-    let archive = write_archive(
-        &[RegularFile::new("mutate.txt", b"mutation target")],
-        &master_key(),
-        deterministic_options(0x21),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("mutate.txt", b"mutation target")], &master_key(), deterministic_options(0x21)).unwrap();
 
     for revision in [VOLUME_FORMAT_REV - 1, READER_MAX_SUPPORTED_VOLUME_FORMAT_REV + 1] {
         let mut mutated = archive.bytes.clone();
@@ -91,20 +83,14 @@ fn mutation_fixture_generator_rejects_authentication_and_revision_mutations() {
     let header = VolumeHeader::parse(&crypto_hmac[..VOLUME_HEADER_LEN]).unwrap();
     let crypto_hmac_offset = header.crypto_header_offset as usize + header.crypto_header_length as usize - CRYPTO_HEADER_HMAC_LEN;
     crypto_hmac[crypto_hmac_offset] ^= 0x01;
-    assert_eq!(
-        open_archive(&crypto_hmac, &master_key()).unwrap_err(),
-        FormatError::HmacMismatch { structure: "CryptoHeader" }
-    );
+    assert_eq!(open_archive(&crypto_hmac, &master_key()).unwrap_err(), FormatError::HmacMismatch { structure: "CryptoHeader" });
 
     let mut trailer_hmac = archive.bytes.clone();
     let trailer_hmac_offset = final_locator(&trailer_hmac).volume_trailer_offset as usize + 96;
     trailer_hmac[trailer_hmac_offset] ^= 0x01;
     open_archive(&trailer_hmac, &master_key()).unwrap().verify().unwrap();
     corrupt_v45_terminal_recovery(&mut trailer_hmac);
-    assert_eq!(
-        open_archive(&trailer_hmac, &master_key()).unwrap_err(),
-        FormatError::InvalidArchive("no valid v45 CMRA candidate found")
-    );
+    assert_eq!(open_archive(&trailer_hmac, &master_key()).unwrap_err(), FormatError::InvalidArchive("no valid v45 CMRA candidate found"));
 
     let mut payload_tamper = archive.bytes.clone();
     let crypto_header_offset = header.crypto_header_offset as usize;
@@ -116,10 +102,7 @@ fn mutation_fixture_generator_rejects_authentication_and_revision_mutations() {
     let crc_offset = record_offset + 16 + block_size;
     let crc = crc32c::crc32c(&payload_tamper[record_offset..crc_offset]);
     payload_tamper[crc_offset..crc_offset + 4].copy_from_slice(&crc.to_le_bytes());
-    assert_eq!(
-        open_archive(&payload_tamper, &master_key()).unwrap().verify().unwrap_err(),
-        FormatError::AeadFailure
-    );
+    assert_eq!(open_archive(&payload_tamper, &master_key()).unwrap().verify().unwrap_err(), FormatError::AeadFailure);
 }
 
 #[test]
@@ -134,12 +117,7 @@ fn minimal_file_entry_frame_range_corpus_cases() {
         vec![envelope_entry(0, 0, 16, 0, 1)],
         path.to_vec(),
     );
-    IndexShard::parse(
-        &single_frame,
-        &locating_shard(0, 1, path_hash, path_hash, single_frame.len()),
-        MetadataLimits::default(),
-    )
-    .unwrap();
+    IndexShard::parse(&single_frame, &locating_shard(0, 1, path_hash, path_hash, single_frame.len()), MetadataLimits::default()).unwrap();
 
     let spanning_partial_final = index_shard_bytes(
         0,
@@ -148,12 +126,7 @@ fn minimal_file_entry_frame_range_corpus_cases() {
         vec![envelope_entry(0, 0, 32, 0, 2)],
         path.to_vec(),
     );
-    IndexShard::parse(
-        &spanning_partial_final,
-        &locating_shard(0, 1, path_hash, path_hash, spanning_partial_final.len()),
-        MetadataLimits::default(),
-    )
-    .unwrap();
+    IndexShard::parse(&spanning_partial_final, &locating_shard(0, 1, path_hash, path_hash, spanning_partial_final.len()), MetadataLimits::default()).unwrap();
 
     let non_minimal = index_shard_bytes(
         0,
@@ -163,27 +136,14 @@ fn minimal_file_entry_frame_range_corpus_cases() {
         path.to_vec(),
     );
     assert_eq!(
-        IndexShard::parse(
-            &non_minimal,
-            &locating_shard(0, 1, path_hash, path_hash, non_minimal.len()),
-            MetadataLimits::default(),
-        )
-        .unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "FileEntry",
-            reason: "frame range is not minimal",
-        }
+        IndexShard::parse(&non_minimal, &locating_shard(0, 1, path_hash, path_hash, non_minimal.len()), MetadataLimits::default(),).unwrap_err(),
+        FormatError::InvalidMetadata { structure: "FileEntry", reason: "frame range is not minimal" }
     );
 }
 
 #[test]
 fn exact_file_lookup_is_independent_from_directory_hints() {
-    let archive = write_archive(
-        &[RegularFile::new("foo", b"regular file named foo")],
-        &master_key(),
-        deterministic_options(0x31),
-    )
-    .unwrap();
+    let archive = write_archive(&[RegularFile::new("foo", b"regular file named foo")], &master_key(), deterministic_options(0x31)).unwrap();
     let opened = open_archive(&archive.bytes, &master_key()).unwrap();
 
     assert!(opened.index_root.directory_hint_shards.is_empty());
@@ -204,10 +164,7 @@ fn exact_file_lookup_is_independent_from_directory_hints() {
             entry_count: 1,
         }],
     };
-    assert!(misleading_hint_root
-        .candidate_shards_for_path(b"foo", MetadataLimits::default())
-        .unwrap()
-        .is_empty());
+    assert!(misleading_hint_root.candidate_shards_for_path(b"foo", MetadataLimits::default()).unwrap().is_empty());
 }
 
 #[test]
@@ -221,23 +178,13 @@ fn exact_directory_entry_and_descendant_hints_have_distinct_authority() {
         vec![envelope_entry(0, 0, 16, 0, 1)],
         dir.to_vec(),
     );
-    let parsed_exact = IndexShard::parse(
-        &exact_directory_shard,
-        &locating_shard(0, 1, dir_hash, dir_hash, exact_directory_shard.len()),
-        MetadataLimits::default(),
-    )
-    .unwrap();
+    let parsed_exact =
+        IndexShard::parse(&exact_directory_shard, &locating_shard(0, 1, dir_hash, dir_hash, exact_directory_shard.len()), MetadataLimits::default()).unwrap();
     assert_eq!(parsed_exact.lookup_file_index(dir), Some(0));
 
     let hint_table = directory_hint_table_bytes(
         3,
-        vec![DirectoryHintEntry {
-            dir_hash,
-            path_offset: 0,
-            path_length: dir.len() as u32,
-            shard_list_start_index: 0,
-            shard_count: 1,
-        }],
+        vec![DirectoryHintEntry { dir_hash, path_offset: 0, path_length: dir.len() as u32, shard_list_start_index: 0, shard_count: 1 }],
         vec![0],
         dir.to_vec(),
     );
@@ -270,10 +217,7 @@ fn directory_hint_equal_start_ordering_uses_last_hash_before_index() {
     let z = [0x90; 8];
     let file_hash = hash_prefix(b"foo/bar");
     let canonical = IndexRoot {
-        header: IndexRootHeader {
-            file_count: 1,
-            ..IndexRootHeader::empty()
-        },
+        header: IndexRootHeader { file_count: 1, ..IndexRootHeader::empty() },
         shards: vec![ShardEntry {
             shard_index: 0,
             first_block_index: 10,
@@ -316,10 +260,7 @@ fn directory_hint_equal_start_ordering_uses_last_hash_before_index() {
     inverted.directory_hint_shards.swap(0, 1);
     assert_eq!(
         IndexRoot::parse(&inverted.to_bytes(), false, MetadataLimits::default()).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "IndexRoot",
-            reason: "DirectoryHintShardEntry rows are not sorted",
-        }
+        FormatError::InvalidMetadata { structure: "IndexRoot", reason: "DirectoryHintShardEntry rows are not sorted" }
     );
 }
 
@@ -329,37 +270,17 @@ fn metadata_path_hash_bindings_reject_silent_misroutes() {
     let wrong_file_hash = hash_prefix(b"other-file.txt");
     let mut wrong_file = file_entry(file_path, 0, 0, 1, 0, 1536, 1);
     wrong_file.path_hash = wrong_file_hash;
-    let file_shard = index_shard_bytes(
-        0,
-        vec![wrong_file],
-        vec![frame_entry(0, 0, 0, 16, 1536, 0)],
-        vec![envelope_entry(0, 0, 16, 0, 1)],
-        file_path.to_vec(),
-    );
+    let file_shard = index_shard_bytes(0, vec![wrong_file], vec![frame_entry(0, 0, 0, 16, 1536, 0)], vec![envelope_entry(0, 0, 16, 0, 1)], file_path.to_vec());
     assert_eq!(
-        IndexShard::parse(
-            &file_shard,
-            &locating_shard(0, 1, wrong_file_hash, wrong_file_hash, file_shard.len()),
-            MetadataLimits::default(),
-        )
-        .unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "FileEntry",
-            reason: "path hash does not match string-pool path",
-        }
+        IndexShard::parse(&file_shard, &locating_shard(0, 1, wrong_file_hash, wrong_file_hash, file_shard.len()), MetadataLimits::default(),).unwrap_err(),
+        FormatError::InvalidMetadata { structure: "FileEntry", reason: "path hash does not match string-pool path" }
     );
 
     let dir_path = b"hash-dir";
     let wrong_dir_hash = hash_prefix(b"other-dir");
     let hint_table = directory_hint_table_bytes(
         5,
-        vec![DirectoryHintEntry {
-            dir_hash: wrong_dir_hash,
-            path_offset: 0,
-            path_length: dir_path.len() as u32,
-            shard_list_start_index: 0,
-            shard_count: 1,
-        }],
+        vec![DirectoryHintEntry { dir_hash: wrong_dir_hash, path_offset: 0, path_length: dir_path.len() as u32, shard_list_start_index: 0, shard_count: 1 }],
         vec![0],
         dir_path.to_vec(),
     );
@@ -381,10 +302,7 @@ fn metadata_path_hash_bindings_reject_silent_misroutes() {
             MetadataLimits::default(),
         )
         .unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "DirectoryHintEntry",
-            reason: "dir_hash does not match string-pool path",
-        }
+        FormatError::InvalidMetadata { structure: "DirectoryHintEntry", reason: "dir_hash does not match string-pool path" }
     );
 }
 
@@ -394,20 +312,11 @@ fn reserved_file_entry_flags_are_rejected_before_lookup() {
     let path_hash = hash_prefix(path);
     let mut flagged = file_entry(path, 0, 0, 1, 0, 1536, 1);
     flagged.flags = EXTENDED_METADATA_V1 | (1 << 6);
-    let shard = index_shard_bytes(
-        0,
-        vec![flagged],
-        vec![frame_entry(0, 0, 0, 16, 1536, 0)],
-        vec![envelope_entry(0, 0, 16, 0, 1)],
-        path.to_vec(),
-    );
+    let shard = index_shard_bytes(0, vec![flagged], vec![frame_entry(0, 0, 0, 16, 1536, 0)], vec![envelope_entry(0, 0, 16, 0, 1)], path.to_vec());
 
     assert_eq!(
         IndexShard::parse(&shard, &locating_shard(0, 1, path_hash, path_hash, shard.len()), MetadataLimits::default(),).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "FileEntry",
-            reason: "unknown revision-45 flags are non-zero",
-        }
+        FormatError::InvalidMetadata { structure: "FileEntry", reason: "unknown revision-45 flags are non-zero" }
     );
 }
 
@@ -429,10 +338,7 @@ fn hash_prefix_ordering_is_raw_digest_byte_order() {
     let rejected = index_root_with_shard_hashes(vec![(0, high, high), (1, low, low)]);
     assert_eq!(
         IndexRoot::parse(&rejected.to_bytes(), false, MetadataLimits::default()).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "IndexRoot",
-            reason: "ShardEntry rows are not sorted",
-        }
+        FormatError::InvalidMetadata { structure: "IndexRoot", reason: "ShardEntry rows are not sorted" }
     );
 }
 
@@ -441,47 +347,27 @@ fn hash_prefix_ordering_rejects_little_endian_integer_reinterpretation() {
     let raw_low_but_le_high = [0x00, 0x00, 0, 0, 0, 0, 0, 0x02];
     let raw_high_but_le_low = [0x01, 0x00, 0, 0, 0, 0, 0, 0x00];
 
-    let raw_byte_order = index_root_with_shard_hashes(vec![
-        (0, raw_low_but_le_high, raw_low_but_le_high),
-        (1, raw_high_but_le_low, raw_high_but_le_low),
-    ]);
+    let raw_byte_order = index_root_with_shard_hashes(vec![(0, raw_low_but_le_high, raw_low_but_le_high), (1, raw_high_but_le_low, raw_high_but_le_low)]);
     IndexRoot::parse(&raw_byte_order.to_bytes(), false, MetadataLimits::default()).unwrap();
 
-    let little_endian_integer_order = index_root_with_shard_hashes(vec![
-        (0, raw_high_but_le_low, raw_high_but_le_low),
-        (1, raw_low_but_le_high, raw_low_but_le_high),
-    ]);
+    let little_endian_integer_order =
+        index_root_with_shard_hashes(vec![(0, raw_high_but_le_low, raw_high_but_le_low), (1, raw_low_but_le_high, raw_low_but_le_high)]);
     assert_eq!(
         IndexRoot::parse(&little_endian_integer_order.to_bytes(), false, MetadataLimits::default(),).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "IndexRoot",
-            reason: "ShardEntry rows are not sorted",
-        }
+        FormatError::InvalidMetadata { structure: "IndexRoot", reason: "ShardEntry rows are not sorted" }
     );
 }
 
 #[test]
 fn argon2id_profile_vector_is_pinned() {
-    let params = KdfParams::Argon2id {
-        t_cost: 1,
-        m_cost_kib: 8,
-        parallelism: 1,
-        salt: b"12345678".to_vec(),
-    };
+    let params = KdfParams::Argon2id { t_cost: 1, m_cost_kib: 8, parallelism: 1, salt: b"12345678".to_vec() };
     let master = MasterKey::derive_from_passphrase(&params, "e\u{301}").unwrap();
 
     assert_eq!(hex::encode(master.0), "24709642204c04bf88fb36550c478769eb10a0400c0493c9695d30fbf7082241");
 
-    assert!(MasterKey::derive_from_passphrase(
-        &KdfParams::Argon2id {
-            t_cost: 0,
-            m_cost_kib: 8,
-            parallelism: 1,
-            salt: b"12345678".to_vec(),
-        },
-        "e\u{301}",
-    )
-    .is_err());
+    assert!(
+        MasterKey::derive_from_passphrase(&KdfParams::Argon2id { t_cost: 0, m_cost_kib: 8, parallelism: 1, salt: b"12345678".to_vec() }, "e\u{301}",).is_err()
+    );
 }
 
 #[test]
@@ -494,39 +380,15 @@ fn hkdf_subkey_and_nonce_vectors_are_literal() {
 
     assert_eq!(hex::encode(subkeys.enc_key), "fdcc2d13c382611e7734a32394569baab5dd642e22ee82979dd4696651593276");
     assert_eq!(hex::encode(subkeys.mac_key), "08cb773f32e45da15f29fdd991e7a18ca67089a3ec88065fee88545cadd044d3");
-    assert_eq!(
-        hex::encode(subkeys.nonce_seed),
-        "acfc4ce61dadfbf0d28f5ec6f9b93948dc4856581e04df659ed6e2ae395cf467"
-    );
-    assert_eq!(
-        hex::encode(subkeys.index_root_key),
-        "d2617cad0621d674f971871f8546385e2fd4382e231678f7220f4806bd96cfa4"
-    );
-    assert_eq!(
-        hex::encode(subkeys.index_shard_key),
-        "0c230a67fb429145383c317a09c61da356b0da3e2b4b8118ce4319267297bfe4"
-    );
-    assert_eq!(
-        hex::encode(subkeys.dictionary_key),
-        "de521049dcb6775dd857cb8be9cb79272ee59b4dd24c9f4cd7bc85c6151b7598"
-    );
-    assert_eq!(
-        hex::encode(subkeys.dir_hint_key),
-        "fa750e7ff0353c78b5e6ef1cb992198d6e80289510d277ef28e777f3c8ef7a2d"
-    );
-    assert_eq!(
-        hex::encode(subkeys.index_nonce_seed),
-        "d394349347fb27c9a6f9a7518ca5e5747315624a56f012242f122b2d37dd6d6b"
-    );
+    assert_eq!(hex::encode(subkeys.nonce_seed), "acfc4ce61dadfbf0d28f5ec6f9b93948dc4856581e04df659ed6e2ae395cf467");
+    assert_eq!(hex::encode(subkeys.index_root_key), "d2617cad0621d674f971871f8546385e2fd4382e231678f7220f4806bd96cfa4");
+    assert_eq!(hex::encode(subkeys.index_shard_key), "0c230a67fb429145383c317a09c61da356b0da3e2b4b8118ce4319267297bfe4");
+    assert_eq!(hex::encode(subkeys.dictionary_key), "de521049dcb6775dd857cb8be9cb79272ee59b4dd24c9f4cd7bc85c6151b7598");
+    assert_eq!(hex::encode(subkeys.dir_hint_key), "fa750e7ff0353c78b5e6ef1cb992198d6e80289510d277ef28e777f3c8ef7a2d");
+    assert_eq!(hex::encode(subkeys.index_nonce_seed), "d394349347fb27c9a6f9a7518ca5e5747315624a56f012242f122b2d37dd6d6b");
 
-    assert_eq!(
-        hex::encode(derive_nonce(&subkeys.nonce_seed, b"envelope", &archive_uuid, &session_id, 7, 12,).unwrap()),
-        "cfeb02d3a8c9089af250f096"
-    );
-    assert_eq!(
-        hex::encode(derive_nonce(&subkeys.nonce_seed, b"idxroot", &archive_uuid, &session_id, 0, 12,).unwrap()),
-        "439d845528c52fc6140fcd13"
-    );
+    assert_eq!(hex::encode(derive_nonce(&subkeys.nonce_seed, b"envelope", &archive_uuid, &session_id, 7, 12,).unwrap()), "cfeb02d3a8c9089af250f096");
+    assert_eq!(hex::encode(derive_nonce(&subkeys.nonce_seed, b"idxroot", &archive_uuid, &session_id, 0, 12,).unwrap()), "439d845528c52fc6140fcd13");
     assert_eq!(
         hex::encode(derive_nonce(&subkeys.nonce_seed, b"dict", &archive_uuid, &session_id, 0, 24,).unwrap()),
         "0d8694130bdc757c8acde58dec9c23bf5a0f69ad62727414"
@@ -566,10 +428,7 @@ fn aead_combined_output_tag_is_final_and_authenticated() {
 fn reed_solomon_gf16_wire_vector_is_pinned() {
     let data = vec![vec![0x01, 0x00, 0x02, 0x00], vec![0x03, 0x00, 0x04, 0x00]];
 
-    assert_eq!(
-        encode_parity_gf16(&data, 2).unwrap(),
-        vec![vec![0x04, 0x88, 0x04, 0xf0], vec![0x02, 0x78, 0x05, 0xf0]]
-    );
+    assert_eq!(encode_parity_gf16(&data, 2).unwrap(), vec![vec![0x04, 0x88, 0x04, 0xf0], vec![0x02, 0x78, 0x05, 0xf0]]);
 
     assert_eq!(encode_parity_gf16(&[vec![0u8; 3]], 1).unwrap_err(), FormatError::FecOddShardSize);
 }
@@ -579,10 +438,7 @@ fn directory_hint_counter_uniqueness_and_non_row_position_values() {
     let h = [0x20; 8];
     let file_hash = hash_prefix(b"child.txt");
     let root = IndexRoot {
-        header: IndexRootHeader {
-            file_count: 1,
-            ..IndexRootHeader::empty()
-        },
+        header: IndexRootHeader { file_count: 1, ..IndexRootHeader::empty() },
         shards: vec![ShardEntry {
             shard_index: 0,
             first_block_index: 1,
@@ -625,10 +481,7 @@ fn directory_hint_counter_uniqueness_and_non_row_position_values() {
     duplicate.directory_hint_shards[1].hint_shard_index = 77;
     assert_eq!(
         IndexRoot::parse(&duplicate.to_bytes(), false, MetadataLimits::default()).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "DirectoryHintShardEntry",
-            reason: "duplicate hint shard index",
-        }
+        FormatError::InvalidMetadata { structure: "DirectoryHintShardEntry", reason: "duplicate hint shard index" }
     );
 }
 
@@ -647,32 +500,20 @@ fn shard_boundary_metadata_bindings_are_checked() {
     let mut wrong_count = locating_shard(7, 2, path_hash, path_hash, shard.len());
     assert_eq!(
         IndexShard::parse(&shard, &wrong_count, MetadataLimits::default()).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "IndexShard",
-            reason: "file count does not match locating ShardEntry",
-        }
+        FormatError::InvalidMetadata { structure: "IndexShard", reason: "file count does not match locating ShardEntry" }
     );
 
     wrong_count.file_count = 1;
     wrong_count.first_path_hash = [0; 8];
     assert_eq!(
         IndexShard::parse(&shard, &wrong_count, MetadataLimits::default()).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "IndexShard",
-            reason: "first FileEntry hash does not match ShardEntry",
-        }
+        FormatError::InvalidMetadata { structure: "IndexShard", reason: "first FileEntry hash does not match ShardEntry" }
     );
 
     let dir_hash = hash_prefix(b"dir");
     let table = directory_hint_table_bytes(
         4,
-        vec![DirectoryHintEntry {
-            dir_hash,
-            path_offset: 0,
-            path_length: 3,
-            shard_list_start_index: 0,
-            shard_count: 1,
-        }],
+        vec![DirectoryHintEntry { dir_hash, path_offset: 0, path_length: 3, shard_list_start_index: 0, shard_count: 1 }],
         vec![0],
         b"dir".to_vec(),
     );
@@ -693,10 +534,7 @@ fn shard_boundary_metadata_bindings_are_checked() {
     wrong_dir_bounds.last_dir_hash = [0xff; 8];
     assert_eq!(
         tzap_core::metadata::DirectoryHintTable::parse(&table, &wrong_dir_bounds, 1, MetadataLimits::default(),).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "DirectoryHintTable",
-            reason: "last DirectoryHintEntry hash does not match locating row",
-        }
+        FormatError::InvalidMetadata { structure: "DirectoryHintTable", reason: "last DirectoryHintEntry hash does not match locating row" }
     );
 
     let empty_table = directory_hint_table_bytes(4, Vec::new(), Vec::new(), Vec::new());
@@ -704,10 +542,7 @@ fn shard_boundary_metadata_bindings_are_checked() {
     zero_entries.entry_count = 0;
     assert_eq!(
         tzap_core::metadata::DirectoryHintTable::parse(&empty_table, &zero_entries, 1, MetadataLimits::default(),).unwrap_err(),
-        FormatError::InvalidMetadata {
-            structure: "DirectoryHintTable",
-            reason: "located directory hint shard is empty",
-        }
+        FormatError::InvalidMetadata { structure: "DirectoryHintTable", reason: "located directory hint shard is empty" }
     );
 }
 
@@ -715,10 +550,7 @@ fn shard_boundary_metadata_bindings_are_checked() {
 fn sparse_local_frame_offsets_allow_unrelated_frame_index_gaps() {
     let a = b"a.txt";
     let z = b"z.txt";
-    let mut file_rows = vec![
-        (a.as_slice(), file_entry(a, 0, 0, 1, 0, 1536, 1), 0u64),
-        (z.as_slice(), file_entry(z, 5, 2, 1, 0, 1536, 1), 1537u64),
-    ];
+    let mut file_rows = vec![(a.as_slice(), file_entry(a, 0, 0, 1, 0, 1536, 1), 0u64), (z.as_slice(), file_entry(z, 5, 2, 1, 0, 1536, 1), 1537u64)];
     file_rows.sort_by_key(|(path, _, start)| (hash_prefix(path), path.to_vec(), *start));
     let first_hash = hash_prefix(file_rows[0].0);
     let last_hash = hash_prefix(file_rows[1].0);
@@ -744,48 +576,30 @@ fn metadata_zstd_exactness_mutation_corpus() {
 
     let mut trailing = compressed.clone();
     trailing.push(0);
-    assert_eq!(
-        decompress_exact_zstd_frame(&trailing, plaintext.len()).unwrap_err(),
-        FormatError::TrailingBytesAfterZstdFrame
-    );
+    assert_eq!(decompress_exact_zstd_frame(&trailing, plaintext.len()).unwrap_err(), FormatError::TrailingBytesAfterZstdFrame);
 
     let mut concatenated = compressed.clone();
     concatenated.extend_from_slice(&compressed);
-    assert_eq!(
-        decompress_exact_zstd_frame(&concatenated, plaintext.len()).unwrap_err(),
-        FormatError::TrailingBytesAfterZstdFrame
-    );
+    assert_eq!(decompress_exact_zstd_frame(&concatenated, plaintext.len()).unwrap_err(), FormatError::TrailingBytesAfterZstdFrame);
 
     let skippable = [0x50, 0x2a, 0x4d, 0x18, 0, 0, 0, 0];
     assert_eq!(decompress_exact_zstd_frame(&skippable, 0).unwrap_err(), FormatError::NotStandardZstdFrame);
 
     assert_eq!(
         decompress_exact_zstd_frame(&compressed, plaintext.len() + 1).unwrap_err(),
-        FormatError::ZstdDecompressedSizeMismatch {
-            expected: plaintext.len() + 1,
-            actual: plaintext.len(),
-        }
+        FormatError::ZstdDecompressedSizeMismatch { expected: plaintext.len() + 1, actual: plaintext.len() }
     );
 }
 
 #[test]
 fn payload_zstd_frame_validity_rejects_arbitrary_and_truncated_frames() {
-    assert_eq!(
-        decompress_exact_zstd_frame(b"not a zstd payload frame", 24).unwrap_err(),
-        FormatError::NotStandardZstdFrame
-    );
+    assert_eq!(decompress_exact_zstd_frame(b"not a zstd payload frame", 24).unwrap_err(), FormatError::NotStandardZstdFrame);
 
     let plaintext = b"payload frame validity";
     let compressed = compress_zstd_frame(plaintext, 1).unwrap();
-    assert_eq!(
-        decompress_exact_zstd_frame(&compressed[..compressed.len() - 1], plaintext.len()).unwrap_err(),
-        FormatError::InvalidZstdFrame
-    );
+    assert_eq!(decompress_exact_zstd_frame(&compressed[..compressed.len() - 1], plaintext.len()).unwrap_err(), FormatError::InvalidZstdFrame);
 
-    assert_eq!(
-        decompress_exact_zstd_frame(&compressed[..4], plaintext.len()).unwrap_err(),
-        FormatError::InvalidZstdFrame
-    );
+    assert_eq!(decompress_exact_zstd_frame(&compressed[..4], plaintext.len()).unwrap_err(), FormatError::InvalidZstdFrame);
 }
 
 #[test]
@@ -826,21 +640,7 @@ fn volume_format_revision_freshness_is_pinned_to_current_revision() {
 
 #[test]
 fn cross_platform_path_rejections_are_host_independent() {
-    for path in [
-        "",
-        "/absolute",
-        "a//b",
-        "a/./b",
-        "a/../b",
-        "a\0b",
-        "a\\b",
-        "a:b",
-        "C:/drive",
-        "C:\\drive",
-        "\\\\server\\share",
-        "COM1",
-        "nul.txt",
-    ] {
+    for path in ["", "/absolute", "a//b", "a/./b", "a/../b", "a\0b", "a\\b", "a:b", "C:/drive", "C:\\drive", "\\\\server\\share", "COM1", "nul.txt"] {
         assert!(validate_file_path_bytes(path.as_bytes(), 4096).is_err(), "{path}");
         assert!(normalize_lookup_file_path(path, 4096).is_err(), "{path}");
     }
@@ -858,9 +658,7 @@ fn deterministic_round_trip_property_matrix() {
         (3, 2, 2, None),
         (4, 2, 1, Some(b"common words common words corpus dictionary".as_slice())),
     ] {
-        let contents = (0..file_count)
-            .map(|idx| (format!("dir/file-{idx}.txt"), format!("payload case {case} file {idx} common words")))
-            .collect::<Vec<_>>();
+        let contents = (0..file_count).map(|idx| (format!("dir/file-{idx}.txt"), format!("payload case {case} file {idx} common words"))).collect::<Vec<_>>();
         let files = contents.iter().map(|(path, data)| RegularFile::new(path, data.as_bytes())).collect::<Vec<_>>();
         let mut options = deterministic_options(0x70 + case);
         options.stripe_width = stripe_width;
@@ -900,10 +698,7 @@ fn reconstructed_tar_stream_fixture_matches_member_bindings() {
 
 fn index_root_with_shard_hashes(hashes: Vec<(u64, [u8; 8], [u8; 8])>) -> IndexRoot {
     IndexRoot {
-        header: IndexRootHeader {
-            file_count: hashes.len() as u64,
-            ..IndexRootHeader::empty()
-        },
+        header: IndexRootHeader { file_count: hashes.len() as u64, ..IndexRootHeader::empty() },
         shards: hashes
             .into_iter()
             .map(|(idx, first, last)| ShardEntry {
@@ -1000,11 +795,7 @@ fn directory_hint_table_bytes(hint_shard_index: u64, entries: Vec<DirectoryHintE
     .len();
     let entry_len = entries.first().map(|entry| entry.to_bytes().len()).unwrap_or(0);
     let shard_list_offset = if entries.is_empty() { 0 } else { header_len + entries.len() * entry_len };
-    let string_pool_offset = if string_pool.is_empty() {
-        0
-    } else {
-        shard_list_offset + shard_row_indexes.len() * 4
-    };
+    let string_pool_offset = if string_pool.is_empty() { 0 } else { shard_list_offset + shard_row_indexes.len() * 4 };
 
     let header = DirectoryHintTableHeader {
         version: 1,
@@ -1078,15 +869,7 @@ fn frame_entry(
     decompressed_size: u32,
     tar_stream_offset: u64,
 ) -> FrameEntry {
-    FrameEntry {
-        frame_index,
-        envelope_index,
-        offset_in_envelope,
-        compressed_size,
-        decompressed_size,
-        flags: 0,
-        tar_stream_offset,
-    }
+    FrameEntry { frame_index, envelope_index, offset_in_envelope, compressed_size, decompressed_size, flags: 0, tar_stream_offset }
 }
 
 fn envelope_entry(envelope_index: u64, first_block_index: u64, plaintext_size: u32, first_frame_index: u64, frame_count: u32) -> EnvelopeEntry {

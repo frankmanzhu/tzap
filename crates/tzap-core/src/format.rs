@@ -235,10 +235,7 @@ impl TryFrom<u8> for BlockKind {
 
 impl BlockKind {
     pub const fn is_data(self) -> bool {
-        matches!(
-            self,
-            Self::PayloadData | Self::IndexRootData | Self::IndexShardData | Self::DictionaryData | Self::DirectoryHintData
-        )
+        matches!(self, Self::PayloadData | Self::IndexRootData | Self::IndexShardData | Self::DictionaryData | Self::DirectoryHintData)
     }
 
     pub const fn is_parity(self) -> bool {
@@ -278,11 +275,7 @@ pub enum FormatError {
     #[error(
         "unsupported volume format revision {volume_format_rev} for format version {format_version}; reader supports up to {reader_max_supported_revision}"
     )]
-    UnsupportedVolumeFormatRevision {
-        format_version: u16,
-        volume_format_rev: u16,
-        reader_max_supported_revision: u16,
-    },
+    UnsupportedVolumeFormatRevision { format_version: u16, volume_format_rev: u16, reader_max_supported_revision: u16 },
 
     #[error("non-zero reserved bytes in {structure}")]
     NonZeroReserved { structure: &'static str },

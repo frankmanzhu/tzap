@@ -140,10 +140,7 @@ where
     validate_streaming_create_writer_options(options)?;
     let archive_path = normalize_lookup_file_path(archive_path, options.max_path_length)?;
     let archive = write_ordered_parallel_stream_archive_to_sink(master_key, options, kdf_params, root_auth, authenticator, None, sink, None, |writer| {
-        let mut payload = SizedRawPayloadReader {
-            reader: &mut reader,
-            remaining: input_size,
-        };
+        let mut payload = SizedRawPayloadReader { reader: &mut reader, remaining: input_size };
         writer.write_regular_member_from_reader(
             StreamingRegularMember {
                 archive_path,
@@ -163,10 +160,7 @@ where
         reject_trailing_raw_stdin_bytes(&mut reader)?;
         Ok(())
     })?;
-    Ok(StreamingRawWriterSummary {
-        archive,
-        input_bytes: input_size,
-    })
+    Ok(StreamingRawWriterSummary { archive, input_bytes: input_size })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -335,11 +329,8 @@ where
                 };
                 let path = canonical_main_path(&header, typeflag, &metadata, max_path_length)?;
                 let link_target = if typeflag == b'2' {
-                    let target = metadata
-                        .pax_linkpath
-                        .clone()
-                        .or_else(|| metadata.gnu_long_link.clone())
-                        .unwrap_or_else(|| nul_trimmed(&header[157..257]).to_vec());
+                    let target =
+                        metadata.pax_linkpath.clone().or_else(|| metadata.gnu_long_link.clone()).unwrap_or_else(|| nul_trimmed(&header[157..257]).to_vec());
                     crate::tar_model::validate_symlink_target(&path, &target)?;
                     Some(target)
                 } else {
@@ -383,14 +374,8 @@ where
                 match typeflag {
                     0 | b'0' => {
                         {
-                            let mut payload = LimitedTarPayloadReader {
-                                reader,
-                                remaining: effective_size,
-                                input_tar_bytes: &mut summary.input_tar_bytes,
-                            };
-                            let sparse_extents = sparse_logical_size
-                                .map(|logical_size| read_gnu_sparse_1_0_map(&mut payload, logical_size))
-                                .transpose()?;
+                            let mut payload = LimitedTarPayloadReader { reader, remaining: effective_size, input_tar_bytes: &mut summary.input_tar_bytes };
+                            let sparse_extents = sparse_logical_size.map(|logical_size| read_gnu_sparse_1_0_map(&mut payload, logical_size)).transpose()?;
                             let member = TarStdinRegularMember {
                                 path,
                                 entry_kind: SourceEntryKind::Regular,
@@ -505,12 +490,7 @@ fn read_gnu_sparse_1_0_map<R: Read>(payload: &mut LimitedTarPayloadReader<'_, R>
         actual: count_u64,
     })?;
     if count > MAX_SPARSE_EXTENTS {
-        return Err(FormatError::ReaderResourceLimitExceeded {
-            field: "sparse extent count",
-            cap: MAX_SPARSE_EXTENTS as u64,
-            actual: count_u64,
-        }
-        .into());
+        return Err(FormatError::ReaderResourceLimitExceeded { field: "sparse extent count", cap: MAX_SPARSE_EXTENTS as u64, actual: count_u64 }.into());
     }
     let mut extents = Vec::with_capacity(count);
     let mut previous_end = 0u64;
@@ -525,9 +505,7 @@ fn read_gnu_sparse_1_0_map<R: Read>(payload: &mut LimitedTarPayloadReader<'_, R>
         if end > logical_size {
             return Err(FormatError::InvalidArchive("GNU sparse extent exceeds logical size").into());
         }
-        extent_bytes = extent_bytes
-            .checked_add(length)
-            .ok_or(FormatError::InvalidArchive("GNU sparse extent byte count overflow"))?;
+        extent_bytes = extent_bytes.checked_add(length).ok_or(FormatError::InvalidArchive("GNU sparse extent byte count overflow"))?;
         extents.push(SparseExtent { offset, length });
         previous_end = end;
     }
@@ -617,12 +595,8 @@ fn drain_zero_blocks_to_eof<R: Read>(reader: &mut R, input_tar_bytes: &mut u64) 
 }
 
 fn canonical_main_path(header: &[u8], typeflag: u8, metadata: &LocalTarMetadata, max_path_length: u32) -> Result<Vec<u8>, FormatError> {
-    let mut path = metadata
-        .gnu_sparse_name
-        .clone()
-        .or_else(|| metadata.pax_path.clone())
-        .or_else(|| metadata.gnu_long_name.clone())
-        .unwrap_or_else(|| ustar_path(header));
+    let mut path =
+        metadata.gnu_sparse_name.clone().or_else(|| metadata.pax_path.clone()).or_else(|| metadata.gnu_long_name.clone()).unwrap_or_else(|| ustar_path(header));
     while path.starts_with(b"./") {
         path.drain(..2);
     }
@@ -672,10 +646,7 @@ fn parse_pax_records(payload: &[u8], metadata: &mut LocalTarMetadata) -> Result<
             return Err(FormatError::InvalidArchive("malformed PAX record"));
         }
         let body = &record[..record.len() - 1];
-        let eq = body
-            .iter()
-            .position(|byte| *byte == b'=')
-            .ok_or(FormatError::InvalidArchive("malformed PAX record"))?;
+        let eq = body.iter().position(|byte| *byte == b'=').ok_or(FormatError::InvalidArchive("malformed PAX record"))?;
         let key = std::str::from_utf8(&body[..eq]).map_err(|_| FormatError::InvalidArchive("malformed PAX key"))?;
         let value = &body[eq + 1..];
         match key {
@@ -704,10 +675,7 @@ fn parse_pax_records(payload: &[u8], metadata: &mut LocalTarMetadata) -> Result<
 
 fn verify_tar_checksum(header: &[u8]) -> Result<(), FormatError> {
     let expected = parse_tar_number(&header[148..156])?;
-    let actual = header[..148]
-        .iter()
-        .chain(header[156..].iter())
-        .fold(8u64 * 32, |sum, byte| sum + u64::from(*byte));
+    let actual = header[..148].iter().chain(header[156..].iter()).fold(8u64 * 32, |sum, byte| sum + u64::from(*byte));
     if actual != expected {
         return Err(FormatError::InvalidArchive("tar header checksum mismatch"));
     }
@@ -802,9 +770,7 @@ fn parse_pax_mtime(bytes: &[u8]) -> Result<ArchiveTimestamp, FormatError> {
         Some(_) => return Err(FormatError::InvalidArchive("malformed PAX mtime fraction")),
     };
     if integer.starts_with('-') && seconds == 0 && nanoseconds != 0 {
-        return Err(FormatError::WriterUnsupported(
-            "negative fractional PAX mtime between -1 and 0 has no canonical revision-45 encoding",
-        ));
+        return Err(FormatError::WriterUnsupported("negative fractional PAX mtime between -1 and 0 has no canonical revision-45 encoding"));
     }
     Ok(ArchiveTimestamp::new(seconds, nanoseconds))
 }
@@ -874,12 +840,7 @@ mod tests {
             source_os: "other-unix".into(),
             source_filesystem: "unknown".into(),
             mode_origin: PortableModeOrigin::Native,
-            posix_owner: Some(PortablePosixOwner {
-                uid: 0,
-                gid: 0,
-                uname: None,
-                gname: None,
-            }),
+            posix_owner: Some(PortablePosixOwner { uid: 0, gid: 0, uname: None, gname: None }),
             attributes: None,
             created: None,
             accessed: None,
@@ -914,11 +875,7 @@ mod tests {
     }
 
     fn multi_volume_options(stripe_width: u32) -> WriterOptions {
-        WriterOptions {
-            stripe_width,
-            volume_loss_tolerance: 0,
-            ..options()
-        }
+        WriterOptions { stripe_width, volume_loss_tolerance: 0, ..options() }
     }
 
     fn tar_stream(entries: &[(&str, &[u8])]) -> Vec<u8> {
@@ -1037,10 +994,7 @@ mod tests {
         while bytes.get(offset..offset + 4) == Some(b"TZBK") {
             let record = BlockRecord::parse(&bytes[offset..offset + record_len], block_size).unwrap();
             if record.kind.is_data() {
-                hashes.push((
-                    record.block_index,
-                    data_block_merkle_leaf_hash(record.block_index, record.kind, record.flags, &record.payload),
-                ));
+                hashes.push((record.block_index, data_block_merkle_leaf_hash(record.block_index, record.kind, record.flags, &record.payload)));
             }
             offset += record_len;
         }
@@ -1056,12 +1010,7 @@ mod tests {
 
     impl TinyReadCursor {
         fn new(data: Vec<u8>, max_chunk: usize) -> Self {
-            Self {
-                data,
-                cursor: 0,
-                max_chunk,
-                reads: 0,
-            }
+            Self { data, cursor: 0, max_chunk, reads: 0 }
         }
     }
 
@@ -1124,10 +1073,7 @@ mod tests {
 
     #[test]
     fn pax_mtime_preserves_fraction_and_pre_epoch_value() {
-        assert_eq!(
-            parse_pax_mtime(b"1700000000.123456789").unwrap(),
-            ArchiveTimestamp::new(1_700_000_000, 123_456_789)
-        );
+        assert_eq!(parse_pax_mtime(b"1700000000.123456789").unwrap(), ArchiveTimestamp::new(1_700_000_000, 123_456_789));
         assert_eq!(parse_pax_mtime(b"-1.5").unwrap(), ArchiveTimestamp::new(-1, 500_000_000));
         assert!(matches!(parse_pax_mtime(b"-0.5"), Err(FormatError::WriterUnsupported(_))));
     }
@@ -1219,10 +1165,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(matches!(
-            error,
-            ArchiveWriteError::Format(FormatError::InvalidArchive("raw stdin exceeds declared --stdin-size"))
-        ));
+        assert!(matches!(error, ArchiveWriteError::Format(FormatError::InvalidArchive("raw stdin exceeds declared --stdin-size"))));
     }
 
     #[test]
@@ -1280,10 +1223,7 @@ mod tests {
 
         let streaming = write_tar_stream_archive(&input[..], &master_key(), options).unwrap();
         let legacy = write_archive(
-            &[
-                tar_equivalent_regular_file("alpha.txt", b"alpha payload"),
-                tar_equivalent_regular_file("dir/beta.txt", b"beta payload"),
-            ],
+            &[tar_equivalent_regular_file("alpha.txt", b"alpha payload"), tar_equivalent_regular_file("dir/beta.txt", b"beta payload")],
             &master_key(),
             options,
         )
@@ -1300,10 +1240,7 @@ mod tests {
 
         let streaming = write_tar_stream_archive(&input[..], &master_key(), options).unwrap();
         let legacy = write_archive(
-            &[
-                tar_equivalent_regular_file("alpha.txt", b"alpha payload"),
-                tar_equivalent_regular_file("dir/beta.txt", b"beta payload"),
-            ],
+            &[tar_equivalent_regular_file("alpha.txt", b"alpha payload"), tar_equivalent_regular_file("dir/beta.txt", b"beta payload")],
             &master_key(),
             options,
         )
@@ -1373,10 +1310,7 @@ mod tests {
 
         assert_eq!(summary.input_member_count, 2);
         let opened = open_archive(&sink.volumes[0], &master_key()).unwrap();
-        assert_eq!(
-            opened.list_files().unwrap().into_iter().map(|entry| entry.path).collect::<Vec<_>>(),
-            vec!["dir", "dir/file.txt"]
-        );
+        assert_eq!(opened.list_files().unwrap().into_iter().map(|entry| entry.path).collect::<Vec<_>>(), vec!["dir", "dir/file.txt"]);
     }
 
     #[test]

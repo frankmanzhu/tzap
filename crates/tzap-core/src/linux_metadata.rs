@@ -31,29 +31,14 @@ pub fn capture_linux_metadata(input: &Path, symlink: bool) -> io::Result<NativeF
     let mut inline_xattr_bytes = 0usize;
     let mut captured_posix_acl = false;
     let metadata_path = metadata_only.then(|| PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd())));
-    for name in if let Some(path) = &metadata_path {
-        xattr::list_deref(path)
-    } else {
-        file.list_xattr()
-    }? {
+    for name in if let Some(path) = &metadata_path { xattr::list_deref(path) } else { file.list_xattr() }? {
         let name_bytes = name.as_bytes();
-        let Some(value) = if let Some(path) = &metadata_path {
-            xattr::get_deref(path, &name)
-        } else {
-            file.get_xattr(&name)
-        }?
-        else {
+        let Some(value) = if let Some(path) = &metadata_path { xattr::get_deref(path, &name) } else { file.get_xattr(&name) }? else {
             return Err(io::Error::other("xattr changed during metadata capture"));
         };
         if name_bytes == b"system.posix_acl_access" || name_bytes == b"system.posix_acl_default" {
-            let key = if name_bytes.ends_with(b"access") {
-                "SCHILY.acl.access"
-            } else {
-                "SCHILY.acl.default"
-            };
-            native
-                .primary_pax_records
-                .insert(key.into(), linux_posix_acl_xattr_to_schily(&value).map_err(io::Error::other)?);
+            let key = if name_bytes.ends_with(b"access") { "SCHILY.acl.access" } else { "SCHILY.acl.default" };
+            native.primary_pax_records.insert(key.into(), linux_posix_acl_xattr_to_schily(&value).map_err(io::Error::other)?);
             captured_posix_acl = true;
             native.required_profiles.push("posix-backup-v1".into());
             continue;
@@ -62,9 +47,7 @@ pub fn capture_linux_metadata(input: &Path, symlink: bool) -> io::Result<NativeF
     }
     if captured_posix_acl {
         native.primary_pax_records.insert("TZAP.acl.projection".into(), b"exact".to_vec());
-        native
-            .primary_pax_records
-            .insert("TZAP.acl.syntax".into(), b"schily-posix1e-extra-id-v1".to_vec());
+        native.primary_pax_records.insert("TZAP.acl.syntax".into(), b"schily-posix1e-extra-id-v1".to_vec());
     }
     if !metadata_only {
         capture_linux_inode_flags(&file, &mut native)?;
@@ -110,11 +93,7 @@ fn capture_xattr(native: &mut NativeFileMetadata, name: &[u8], value: Vec<u8>, i
         let mut record = NativeAuxiliaryMetadata::new(
             "generic.xattr",
             profile,
-            if profile == "linux-backup-v1" {
-                RestoreClass::System
-            } else {
-                RestoreClass::SameOs
-            },
+            if profile == "linux-backup-v1" { RestoreClass::System } else { RestoreClass::SameOs },
             value,
         );
         record.name_encoding = NativeAuxiliaryNameEncoding::Bytes;
@@ -163,10 +142,7 @@ fn system_time_timestamp(time: std::time::SystemTime) -> Option<ArchiveTimestamp
             if duration.as_secs() == 0 && duration.subsec_nanos() != 0 {
                 return None;
             }
-            Some(ArchiveTimestamp::new(
-                i64::try_from(-i128::from(duration.as_secs())).ok()?,
-                duration.subsec_nanos(),
-            ))
+            Some(ArchiveTimestamp::new(i64::try_from(-i128::from(duration.as_secs())).ok()?, duration.subsec_nanos()))
         }
     }
 }
@@ -174,9 +150,7 @@ fn system_time_timestamp(time: std::time::SystemTime) -> Option<ArchiveTimestamp
 fn capture_linux_times(identity: LinuxIdentity, native: &mut NativeFileMetadata) -> io::Result<()> {
     native.primary_pax_records.insert(
         "TZAP.unix.ctime-observed".into(),
-        ArchiveTimestamp::new(identity.ctime.0, identity.ctime.1 as u32)
-            .canonical_pax_value()
-            .map_err(io::Error::other)?,
+        ArchiveTimestamp::new(identity.ctime.0, identity.ctime.1 as u32).canonical_pax_value().map_err(io::Error::other)?,
     );
     // The ctime-observed record above always belongs to the linux-backup-v1
     // profile, so that profile must be selected whenever this capture runs.
@@ -184,9 +158,7 @@ fn capture_linux_times(identity: LinuxIdentity, native: &mut NativeFileMetadata)
     // where std cannot expose the birth time, e.g. musl.)
     native.required_profiles.push("linux-backup-v1".into());
     if let Some(created) = identity.created {
-        native
-            .primary_pax_records
-            .insert("LIBARCHIVE.creationtime".into(), created.canonical_pax_value().map_err(io::Error::other)?);
+        native.primary_pax_records.insert("LIBARCHIVE.creationtime".into(), created.canonical_pax_value().map_err(io::Error::other)?);
     }
     native.required_profiles.push("posix-backup-v1".into());
     Ok(())
@@ -195,17 +167,11 @@ fn capture_linux_times(identity: LinuxIdentity, native: &mut NativeFileMetadata)
 fn finish_native(native: &mut NativeFileMetadata) {
     native.required_profiles.sort();
     native.required_profiles.dedup();
-    native
-        .auxiliary_records
-        .sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
+    native.auxiliary_records.sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
 }
 
 fn open_linux_metadata_file(input: &Path) -> io::Result<(File, bool)> {
-    match fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(input)
-    {
+    match fs::OpenOptions::new().read(true).custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK).open(input) {
         Ok(file) => Ok((file, false)),
         Err(error)
             if error.raw_os_error() == Some(libc::ENXIO)
@@ -237,9 +203,7 @@ fn capture_linux_inode_flags(file: &File, native: &mut NativeFileMetadata) -> io
         }
         return Err(error);
     }
-    native
-        .primary_pax_records
-        .insert("TZAP.linux.fsflags".into(), format!("{:016x}", flags as u64).into_bytes());
+    native.primary_pax_records.insert("TZAP.linux.fsflags".into(), format!("{:016x}", flags as u64).into_bytes());
     native.required_profiles.push("linux-backup-v1".into());
     Ok(())
 }
@@ -254,18 +218,14 @@ fn capture_linux_project_id(file: &File, native: &mut NativeFileMetadata) -> io:
         return Err(error);
     }
     if attributes.fsx_projid != 0 {
-        native
-            .primary_pax_records
-            .insert("TZAP.linux.project-id".into(), attributes.fsx_projid.to_string().into_bytes());
+        native.primary_pax_records.insert("TZAP.linux.project-id".into(), attributes.fsx_projid.to_string().into_bytes());
         native.required_profiles.push("linux-backup-v1".into());
     }
     Ok(())
 }
 
 fn linux_project_id_ioctl_unavailable(error: &io::Error) -> bool {
-    error
-        .raw_os_error()
-        .is_some_and(|code| code == libc::ENOTTY || code == libc::EOPNOTSUPP || code == libc::EINVAL || code == libc::ENOSYS)
+    error.raw_os_error().is_some_and(|code| code == libc::ENOTTY || code == libc::EOPNOTSUPP || code == libc::EINVAL || code == libc::ENOSYS)
 }
 
 #[cfg(test)]

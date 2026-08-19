@@ -3,14 +3,7 @@ use super::*;
 
 #[test]
 fn cli_keygen_help_includes_output_and_force_flags() {
-    let output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["keygen", "--help"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let output = Command::cargo_bin("tzap").unwrap().args(["keygen", "--help"]).assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8_lossy(&output);
 
     assert!(stdout.contains("Generate a random 32-byte raw key"));
@@ -21,14 +14,7 @@ fn cli_keygen_help_includes_output_and_force_flags() {
 
 #[test]
 fn cli_signing_keygen_help_includes_keypair_outputs() {
-    let output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["signing-keygen", "--help"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let output = Command::cargo_bin("tzap").unwrap().args(["signing-keygen", "--help"]).assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8_lossy(&output);
 
     assert!(stdout.contains("Generate an Ed25519 RootAuth signing keypair"));
@@ -49,16 +35,7 @@ fn cli_create_rejects_password_source_conflicts() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--password",
-            "--password-stdin",
-            "-o",
-            output.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "--password", "--password-stdin", "-o", output.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("cannot be used with"));
@@ -120,20 +97,11 @@ fn cli_create_list_verify_and_extract_with_keyfile() {
         .assert()
         .success()
         .stderr(predicate::str::contains("created 1 member(s), 16 bytes in, "))
-        .stderr(predicate::str::contains(
-            "1 volume(s), data:parity 224:1, no volume-loss tolerance, bit-rot buffer 5%",
-        ));
+        .stderr(predicate::str::contains("1 volume(s), data:parity 224:1, no volume-loss tolerance, bit-rot buffer 5%"));
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "list",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bootstrap",
-            bootstrap.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), "--bootstrap", bootstrap.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("hello.txt\n"));
@@ -147,15 +115,7 @@ fn cli_create_list_verify_and_extract_with_keyfile() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-C",
-            extract_dir.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "-C", extract_dir.to_str().unwrap(), archive.to_str().unwrap(), "hello.txt"])
         .assert()
         .success();
 
@@ -182,14 +142,7 @@ fn cli_create_list_verify_and_extract_with_recipient_wrap() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--recipient-cert",
-            recipient_cert_path.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--recipient-cert", recipient_cert_path.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success()
         .stderr(predicate::str::contains("key wrap: recipient certificate"));
@@ -279,12 +232,7 @@ fn cli_verify_accepts_multivolume_recipient_wrap() {
     let (recipient_cert, recipient_key) = test_x25519_recipient_cert();
     fs::write(&recipient_key_path, recipient_key).unwrap();
     let record = wrap_master_key_for_recipient(
-        ArchiveIdentity {
-            archive_uuid,
-            session_id,
-            format_version: FORMAT_VERSION,
-            volume_format_rev: VOLUME_FORMAT_REV_45,
-        },
+        ArchiveIdentity { archive_uuid, session_id, format_version: FORMAT_VERSION, volume_format_rev: VOLUME_FORMAT_REV_45 },
         &recipient_cert.to_der().unwrap(),
         &master.0,
         KeyWrapSuite::X25519HkdfSha256ChaCha20Poly1305,
@@ -293,13 +241,7 @@ fn cli_verify_accepts_multivolume_recipient_wrap() {
     let archive = write_archive_with_recipient_wrap_records(
         &[RegularFile::new("wrapped.txt", b"multi recipient wrapped\n")],
         &master,
-        WriterOptions {
-            stripe_width: 2,
-            volume_loss_tolerance: 0,
-            archive_uuid: Some(archive_uuid),
-            session_id: Some(session_id),
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 2, volume_loss_tolerance: 0, archive_uuid: Some(archive_uuid), session_id: Some(session_id), ..WriterOptions::default() },
         vec![record],
     )
     .unwrap();
@@ -309,13 +251,7 @@ fn cli_verify_accepts_multivolume_recipient_wrap() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "verify",
-            "--recipient-key",
-            recipient_key_path.to_str().unwrap(),
-            volume0.to_str().unwrap(),
-            volume1.to_str().unwrap(),
-        ])
+        .args(["verify", "--recipient-key", recipient_key_path.to_str().unwrap(), volume0.to_str().unwrap(), volume1.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("OK"));
@@ -417,14 +353,7 @@ fn cli_create_with_password_stdin_reports_key_mode_and_can_be_verified() {
 
 #[test]
 fn cli_keygen_stdout_emits_hex_key_and_newline() {
-    let output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["keygen", "--stdout"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let output = Command::cargo_bin("tzap").unwrap().args(["keygen", "--stdout"]).assert().success().get_output().stdout.clone();
 
     assert_eq!(output.len(), 65, "expected 64 hex chars plus newline");
     assert_eq!(output.last(), Some(&b'\n'));
@@ -447,14 +376,7 @@ fn cli_keygen_with_global_quiet_suppresses_success_summary() {
 
 #[test]
 fn cli_keygen_with_global_quiet_stdout_still_outputs_hex_key() {
-    let output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["keygen", "--quiet", "--stdout"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let output = Command::cargo_bin("tzap").unwrap().args(["keygen", "--quiet", "--stdout"]).assert().success().get_output().stdout.clone();
 
     assert_eq!(output.len(), 65, "expected 64 hex chars plus newline");
     assert_eq!(output.last(), Some(&b'\n'));
@@ -466,11 +388,7 @@ fn cli_keygen_writes_keyfile_output_with_force_semantics() {
     let temp = tempdir().unwrap();
     let keyfile = temp.path().join("seed.hex");
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["keygen", "--output", keyfile.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["keygen", "--output", keyfile.to_str().unwrap()]).assert().success();
     assert!(keyfile.exists());
     let written = fs::read_to_string(&keyfile).unwrap();
     assert_eq!(written.len(), 65);
@@ -490,11 +408,7 @@ fn cli_keygen_writes_keyfile_output_with_force_semantics() {
         .code(1)
         .stderr(predicate::str::contains("already exists"));
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["keygen", "--force", "--output", keyfile.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["keygen", "--force", "--output", keyfile.to_str().unwrap()]).assert().success();
 }
 
 #[test]
@@ -505,13 +419,7 @@ fn cli_signing_keygen_writes_restrictive_secret_output() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "signing-keygen",
-            "--secret-output",
-            secret.to_str().unwrap(),
-            "--public-output",
-            public.to_str().unwrap(),
-        ])
+        .args(["signing-keygen", "--secret-output", secret.to_str().unwrap(), "--public-output", public.to_str().unwrap()])
         .assert()
         .success();
 
@@ -533,14 +441,7 @@ fn cli_signing_keygen_rejects_aliased_secret_and_public_outputs() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "signing-keygen",
-            "--force",
-            "--secret-output",
-            secret.to_str().unwrap(),
-            "--public-output",
-            public_alias.to_str().unwrap(),
-        ])
+        .args(["signing-keygen", "--force", "--secret-output", secret.to_str().unwrap(), "--public-output", public_alias.to_str().unwrap()])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("must be different paths"));
@@ -549,12 +450,7 @@ fn cli_signing_keygen_rejects_aliased_secret_and_public_outputs() {
 
 #[test]
 fn cli_keygen_rejects_missing_output_path_without_stdout_or_output() {
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["keygen"])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("required"));
+    Command::cargo_bin("tzap").unwrap().args(["keygen"]).assert().code(2).stderr(predicate::str::contains("required"));
 }
 
 #[test]
@@ -703,27 +599,13 @@ fn cli_keyfile_raw_bytes_and_hex_with_whitespace_are_accepted() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            raw_keyfile.to_str().unwrap(),
-            "-o",
-            output_raw.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", raw_keyfile.to_str().unwrap(), "-o", output_raw.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            hex_keyfile.to_str().unwrap(),
-            "-o",
-            output_hex.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", hex_keyfile.to_str().unwrap(), "-o", output_hex.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 }
@@ -744,28 +626,14 @@ fn cli_keyfile_with_invalid_hex_and_wrong_length_is_rejected() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            invalid_hex.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", invalid_hex.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("non-hex"));
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            invalid_len.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", invalid_len.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("keyfile must contain either 32 raw bytes or 64 hex characters"));
@@ -802,14 +670,7 @@ fn cli_extract_with_password_prompt_and_stdin_fallback() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--password",
-            "-C",
-            output_dir.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "secret.txt",
-        ])
+        .args(["extract", "--password", "-C", output_dir.to_str().unwrap(), archive.to_str().unwrap(), "secret.txt"])
         .write_stdin(passphrase)
         .assert()
         .success()
@@ -886,14 +747,7 @@ fn cli_extract_with_passphrase_is_supported_and_safe() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--password-stdin",
-            "--directory",
-            output.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "secret.txt",
-        ])
+        .args(["extract", "--password-stdin", "--directory", output.to_str().unwrap(), archive.to_str().unwrap(), "secret.txt"])
         .write_stdin(passphrase)
         .assert()
         .success();

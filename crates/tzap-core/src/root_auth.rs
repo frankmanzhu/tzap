@@ -104,11 +104,7 @@ struct RootAuthRevisionParams {
 fn root_auth_revision_params(format_version: u16, volume_format_rev: u16) -> Result<RootAuthRevisionParams, FormatError> {
     let root_auth_spec_id = root_auth_spec_id_for_revision(format_version, volume_format_rev)?;
     if volume_format_rev != VOLUME_FORMAT_REV_45 {
-        return Err(FormatError::UnsupportedVolumeFormatRevision {
-            format_version,
-            volume_format_rev,
-            reader_max_supported_revision: VOLUME_FORMAT_REV_45,
-        });
+        return Err(FormatError::UnsupportedVolumeFormatRevision { format_version, volume_format_rev, reader_max_supported_revision: VOLUME_FORMAT_REV_45 });
     }
     Ok(RootAuthRevisionParams {
         root_auth_spec_id,
@@ -263,10 +259,8 @@ pub fn data_block_merkle_root_for_revision(format_version: u16, volume_format_re
         return Ok(empty_data_block_merkle_root(params));
     }
 
-    let leaf_hashes = leaves
-        .iter()
-        .map(|leaf| data_block_merkle_leaf_hash_with_params(params, leaf.block_index, leaf.kind, leaf.flags, &leaf.payload))
-        .collect::<Vec<_>>();
+    let leaf_hashes =
+        leaves.iter().map(|leaf| data_block_merkle_leaf_hash_with_params(params, leaf.block_index, leaf.kind, leaf.flags, &leaf.payload)).collect::<Vec<_>>();
     Ok(data_block_merkle_root_from_leaf_hashes_with_params(params, &leaf_hashes))
 }
 
@@ -289,10 +283,10 @@ pub fn data_block_merkle_leaf_hash_for_revision(
 
 fn data_block_merkle_leaf_hash_with_params(params: RootAuthRevisionParams, block_index: u64, kind: BlockKind, flags: u8, payload: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(&[0x00]);
+    hasher.update([0x00]);
     hasher.update(params.data_block_merkle_domain);
-    hasher.update(&block_index.to_le_bytes());
-    hasher.update(&[kind as u8, flags]);
+    hasher.update(block_index.to_le_bytes());
+    hasher.update([kind as u8, flags]);
     hasher.update(payload);
     let mut out = [0u8; 32];
     out.copy_from_slice(&hasher.finalize());
@@ -327,10 +321,10 @@ fn data_block_merkle_root_from_leaf_hashes_with_params(params: RootAuthRevisionP
                 next.push(level[idx]);
             } else {
                 let mut hasher = Sha256::new();
-                hasher.update(&[0x01]);
+                hasher.update([0x01]);
                 hasher.update(params.data_block_merkle_domain);
-                hasher.update(&level[idx]);
-                hasher.update(&level[idx + 1]);
+                hasher.update(level[idx]);
+                hasher.update(level[idx + 1]);
                 let mut node_hash = [0u8; 32];
                 node_hash.copy_from_slice(&hasher.finalize());
                 next.push(node_hash);
@@ -473,15 +467,9 @@ mod tests {
     #[test]
     fn root_auth_wrappers_use_current_revision_domains() {
         let descriptor = root_auth_descriptor_digest(1, 1, b"identity", 64, 512).unwrap();
-        assert_eq!(
-            descriptor,
-            root_auth_descriptor_digest_for_revision(FORMAT_VERSION, VOLUME_FORMAT_REV, 1, 1, b"identity", 64, 512,).unwrap()
-        );
+        assert_eq!(descriptor, root_auth_descriptor_digest_for_revision(FORMAT_VERSION, VOLUME_FORMAT_REV, 1, 1, b"identity", 64, 512,).unwrap());
 
-        assert_eq!(
-            index_digest(b"index-root"),
-            index_digest_for_revision(FORMAT_VERSION, VOLUME_FORMAT_REV, b"index-root").unwrap()
-        );
+        assert_eq!(index_digest(b"index-root"), index_digest_for_revision(FORMAT_VERSION, VOLUME_FORMAT_REV, b"index-root").unwrap());
         assert_eq!(
             data_block_merkle_root_from_leaf_hashes(&[[9; 32], [10; 32]]),
             data_block_merkle_root_from_leaf_hashes_for_revision(FORMAT_VERSION, VOLUME_FORMAT_REV, &[[9; 32], [10; 32]],).unwrap()

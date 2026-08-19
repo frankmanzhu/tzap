@@ -92,11 +92,7 @@ fn create_windows_relative_symlink(path: &Path, target: &str) -> bool {
         reparse.extend_from_slice(&unit.to_le_bytes());
     }
 
-    let file = fs::OpenOptions::new()
-        .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(path)
-        .unwrap();
+    let file = fs::OpenOptions::new().access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT).open(path).unwrap();
     let mut returned = 0u32;
     // SAFETY: the handle and complete relative-symlink reparse buffer remain live for the
     // synchronous call. Creating the fixture this way does not require symlink privilege.
@@ -176,34 +172,18 @@ fn test_tar_padding(len: usize) -> usize {
 fn create_layout_defaults_scale_by_input_size() {
     assert_eq!(
         default_create_layout(Some(LARGE_CREATE_LAYOUT_THRESHOLD)),
-        CreateLayout {
-            block_size: 64 * 1024,
-            chunk_size: 256 * 1024,
-            envelope_target_size: 1024 * 1024,
-        }
+        CreateLayout { block_size: 64 * 1024, chunk_size: 256 * 1024, envelope_target_size: 1024 * 1024 }
     );
     assert_eq!(
         default_create_layout(Some(LARGE_CREATE_LAYOUT_THRESHOLD + 1)),
-        CreateLayout {
-            block_size: 1024 * 1024,
-            chunk_size: 32 * 1024 * 1024,
-            envelope_target_size: 64 * 1024 * 1024,
-        }
+        CreateLayout { block_size: 1024 * 1024, chunk_size: 32 * 1024 * 1024, envelope_target_size: 64 * 1024 * 1024 }
     );
     assert_eq!(default_create_layout(None), default_create_layout(Some(LARGE_CREATE_LAYOUT_THRESHOLD + 1)));
 }
 
 #[test]
 fn create_layout_chunk_override_grows_implicit_envelope() {
-    let layout = resolve_create_layout(
-        CreateLayoutOverrides {
-            chunk_size: Some("4M"),
-            envelope_size: None,
-            block_size: None,
-        },
-        Some(1024),
-    )
-    .unwrap();
+    let layout = resolve_create_layout(CreateLayoutOverrides { chunk_size: Some("4M"), envelope_size: None, block_size: None }, Some(1024)).unwrap();
 
     assert_eq!(layout.chunk_size, 4 * 1024 * 1024);
     assert_eq!(layout.envelope_target_size, 4 * 1024 * 1024);
@@ -234,16 +214,9 @@ fn create_groups_selected_hardlinks_under_deterministic_canonical_target() {
 fn tar_stdin_signer_failure_removes_temporary_archive_output() {
     let temp = tempfile::tempdir().unwrap();
     let output = temp.path().join("failed.tzap");
-    let key = CreateKey {
-        master_key: test_master_key(),
-        kdf_params: KdfParams::Raw,
-    };
-    let root_auth = RootAuthWriterConfig {
-        authenticator_id: 0x9001,
-        signer_identity_type: 0x9002,
-        signer_identity: b"test signer",
-        authenticator_value_length: 64,
-    };
+    let key = CreateKey { master_key: test_master_key(), kdf_params: KdfParams::Raw };
+    let root_auth =
+        RootAuthWriterConfig { authenticator_id: 0x9001, signer_identity_type: 0x9002, signer_identity: b"test signer", authenticator_value_length: 64 };
     let mut authenticator = |_request: &RootAuthSigningRequest| Err(FormatError::WriterUnsupported("test signer failed"));
     let mut input = Cursor::new(test_tar_stream(&[("signed.txt", b"signed")]));
 
@@ -251,12 +224,7 @@ fn tar_stdin_signer_failure_removes_temporary_archive_output() {
         output.to_str().unwrap(),
         &mut input,
         &key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         Some(root_auth),
         Some(&mut authenticator),
         false,
@@ -274,16 +242,9 @@ fn raw_spool_multi_volume_signer_failure_removes_temporary_archive_outputs_and_s
     let volume_0 = create_output_paths(output.to_str().unwrap(), 3)[0].clone();
     let volume_1 = create_output_paths(output.to_str().unwrap(), 3)[1].clone();
     let volume_2 = create_output_paths(output.to_str().unwrap(), 3)[2].clone();
-    let key = CreateKey {
-        master_key: test_master_key(),
-        kdf_params: KdfParams::Raw,
-    };
-    let root_auth = RootAuthWriterConfig {
-        authenticator_id: 0x9001,
-        signer_identity_type: 0x9002,
-        signer_identity: b"test signer",
-        authenticator_value_length: 64,
-    };
+    let key = CreateKey { master_key: test_master_key(), kdf_params: KdfParams::Raw };
+    let root_auth =
+        RootAuthWriterConfig { authenticator_id: 0x9001, signer_identity_type: 0x9002, signer_identity: b"test signer", authenticator_value_length: 64 };
     let mut authenticator = |_request: &RootAuthSigningRequest| Err(FormatError::WriterUnsupported("test signer failed"));
     let payload = (0..150_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
     let spool_path;
@@ -306,12 +267,7 @@ fn raw_spool_multi_volume_signer_failure_removes_temporary_archive_outputs_and_s
             "raw/spooled.bin",
             known_size_source.size(),
             &key,
-            WriterOptions {
-                stripe_width: 3,
-                volume_loss_tolerance: 0,
-                bit_rot_buffer_pct: 0,
-                ..WriterOptions::default()
-            },
+            WriterOptions { stripe_width: 3, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
             Some(root_auth),
             Some(&mut authenticator),
             false,
@@ -334,18 +290,8 @@ fn read_kdf_params_rejects_stripe_width_mismatch_before_returning_kdf() {
     let archive = write_archive_with_kdf(
         &[RegularFile::new("file.txt", b"contents")],
         &test_master_key(),
-        WriterOptions {
-            archive_uuid: Some([0x11; 16]),
-            session_id: Some([0x22; 16]),
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
-        &KdfParams::Argon2id {
-            t_cost: 1,
-            m_cost_kib: 8,
-            parallelism: 1,
-            salt: vec![0x33; 8],
-        },
+        WriterOptions { archive_uuid: Some([0x11; 16]), session_id: Some([0x22; 16]), bit_rot_buffer_pct: 0, ..WriterOptions::default() },
+        &KdfParams::Argon2id { t_cost: 1, m_cost_kib: 8, parallelism: 1, salt: vec![0x33; 8] },
     )
     .unwrap();
     let mut bytes = archive.bytes;
@@ -355,10 +301,7 @@ fn read_kdf_params_rejects_stripe_width_mismatch_before_returning_kdf() {
 
     let err = read_kdf_params_from_volume(&bytes).unwrap_err();
 
-    assert_eq!(
-        err.downcast_ref::<FormatError>(),
-        Some(&FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ"))
-    );
+    assert_eq!(err.downcast_ref::<FormatError>(), Some(&FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ")));
 }
 
 #[test]
@@ -488,40 +431,21 @@ fn classify_format_error_covers_unsupported_revision_group() {
         FormatError::UnsupportedFec(FecAlgo::Wirehair),
         FormatError::UnsupportedBootstrapSidecarVersion(3),
     ] {
-        assert_format_diagnostic(
-            &err,
-            "unsupported-revision",
-            EXIT_UNSUPPORTED_REVISION,
-            "upgrade tzap or use a reader that supports this archive revision",
-        );
+        assert_format_diagnostic(&err, "unsupported-revision", EXIT_UNSUPPORTED_REVISION, "upgrade tzap or use a reader that supports this archive revision");
     }
 }
 
 #[test]
 fn classify_format_error_covers_corrupt_header_structures() {
-    for err in [
-        FormatError::BadMagic { structure: "VolumeTrailer" },
-        FormatError::BadMagic { structure: "ManifestFooter" },
-    ] {
-        assert_format_diagnostic(
-            &err,
-            "corrupt-header",
-            EXIT_CORRUPT_ARCHIVE,
-            "verify the archive header/trailer bytes and source file path",
-        );
+    for err in [FormatError::BadMagic { structure: "VolumeTrailer" }, FormatError::BadMagic { structure: "ManifestFooter" }] {
+        assert_format_diagnostic(&err, "corrupt-header", EXIT_CORRUPT_ARCHIVE, "verify the archive header/trailer bytes and source file path");
     }
     for err in [
         FormatError::BadCrc { structure: "VolumeHeader" },
         FormatError::BadCrc { structure: "VolumeTrailer" },
         FormatError::BadCrc { structure: "ManifestFooter" },
-        FormatError::InvalidMetadata {
-            structure: "VolumeHeader",
-            reason: "bad field",
-        },
-        FormatError::InvalidMetadata {
-            structure: "ManifestFooter",
-            reason: "bad field",
-        },
+        FormatError::InvalidMetadata { structure: "VolumeHeader", reason: "bad field" },
+        FormatError::InvalidMetadata { structure: "ManifestFooter", reason: "bad field" },
     ] {
         assert_format_diagnostic(&err, "corrupt-header", EXIT_CORRUPT_ARCHIVE, "inspect archive metadata and source file path");
     }
@@ -529,17 +453,8 @@ fn classify_format_error_covers_corrupt_header_structures() {
 
 #[test]
 fn classify_format_error_covers_wrong_key_group() {
-    for err in [
-        FormatError::HmacMismatch { structure: "CryptoHeader" },
-        FormatError::KeyMaterialMismatch,
-        FormatError::InvalidRawMasterKeyLength,
-    ] {
-        assert_format_diagnostic(
-            &err,
-            "wrong-key",
-            EXIT_WRONG_KEY,
-            "confirm the archive key source (passphrase/raw key/recipient key)",
-        );
+    for err in [FormatError::HmacMismatch { structure: "CryptoHeader" }, FormatError::KeyMaterialMismatch, FormatError::InvalidRawMasterKeyLength] {
+        assert_format_diagnostic(&err, "wrong-key", EXIT_WRONG_KEY, "confirm the archive key source (passphrase/raw key/recipient key)");
     }
 }
 
@@ -556,12 +471,7 @@ fn classify_format_error_covers_corrupt_archive_and_missing_volume() {
         FormatError::InvalidArchive("complete volume set has missing global blocks"),
         FormatError::InvalidArchive("missing volume count exceeds volume_loss_tolerance"),
     ] {
-        assert_format_diagnostic(
-            &err,
-            "missing-volume",
-            EXIT_CORRUPT_ARCHIVE,
-            "add the missing archive volume(s) or confirm volume-loss tolerance",
-        );
+        assert_format_diagnostic(&err, "missing-volume", EXIT_CORRUPT_ARCHIVE, "add the missing archive volume(s) or confirm volume-loss tolerance");
     }
 }
 
@@ -591,18 +501,10 @@ fn classify_format_error_covers_corrupt_payload_group() {
     for err in [FormatError::HmacMismatch { structure: "PayloadBlock" }, FormatError::AeadFailure] {
         assert_format_diagnostic(&err, "corrupt-payload", EXIT_CORRUPT_ARCHIVE, "verify archive payload integrity");
     }
-    assert_format_diagnostic(
-        &FormatError::BadCrc { structure: "PayloadBlock" },
-        "corrupt-payload",
-        EXIT_CORRUPT_ARCHIVE,
-        "verify payload integrity",
-    );
+    assert_format_diagnostic(&FormatError::BadCrc { structure: "PayloadBlock" }, "corrupt-payload", EXIT_CORRUPT_ARCHIVE, "verify payload integrity");
     for structure in ["IndexRoot", "FrameEntry", "EnvelopeEntry"] {
         assert_format_diagnostic(
-            &FormatError::InvalidMetadata {
-                structure,
-                reason: "bad table",
-            },
+            &FormatError::InvalidMetadata { structure, reason: "bad table" },
             "corrupt-payload",
             EXIT_CORRUPT_ARCHIVE,
             "inspect archive metadata tables and payload",
@@ -634,26 +536,13 @@ fn classify_format_error_covers_unsafe_path() {
         EXIT_UNSAFE_PATH,
         "archive contains unsafe paths; extract paths should be reviewed first",
     );
-    assert_format_diagnostic(
-        &FormatError::UnsafeOverwrite,
-        "unsafe-path",
-        EXIT_UNSAFE_PATH,
-        "add --overwrite if overwriting existing files is intended",
-    );
+    assert_format_diagnostic(&FormatError::UnsafeOverwrite, "unsafe-path", EXIT_UNSAFE_PATH, "add --overwrite if overwriting existing files is intended");
 }
 
 #[test]
 fn classify_format_error_covers_unsupported_feature_fallback() {
-    for err in [
-        FormatError::ReaderUnsupported("unrelated reader limitation"),
-        FormatError::WriterUnsupported("unrelated writer limitation"),
-    ] {
-        assert_format_diagnostic(
-            &err,
-            "unsupported-feature",
-            EXIT_UNSUPPORTED_FEATURE,
-            "use a supported archive shape or upgrade tzap",
-        );
+    for err in [FormatError::ReaderUnsupported("unrelated reader limitation"), FormatError::WriterUnsupported("unrelated writer limitation")] {
+        assert_format_diagnostic(&err, "unsupported-feature", EXIT_UNSUPPORTED_FEATURE, "use a supported archive shape or upgrade tzap");
     }
 }
 
@@ -711,11 +600,7 @@ fn classify_error_maps_wrapped_core_errors_and_fallbacks() {
 
 #[test]
 fn classify_io_error_covers_kinds_and_actions() {
-    for kind in [
-        std::io::ErrorKind::PermissionDenied,
-        std::io::ErrorKind::NotFound,
-        std::io::ErrorKind::AlreadyExists,
-    ] {
+    for kind in [std::io::ErrorKind::PermissionDenied, std::io::ErrorKind::NotFound, std::io::ErrorKind::AlreadyExists] {
         let diagnostic = classify_io_error(&std::io::Error::new(kind, "io"));
         assert_eq!(diagnostic.label, "io-error");
         assert_eq!(diagnostic.exit_code, EXIT_IO);
@@ -736,20 +621,14 @@ fn unsupported_revision_error_json_covers_all_branches() {
     assert_eq!(payload["label"], "unsupported-revision");
     assert_eq!(payload["observed"]["format_version"], serde_json::json!(2));
     assert_eq!(payload["supported"]["format_version"], serde_json::json!(FORMAT_VERSION));
-    assert_eq!(
-        payload["supported"]["max_volume_format_rev"],
-        serde_json::json!(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
-    );
+    assert_eq!(payload["supported"]["max_volume_format_rev"], serde_json::json!(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV));
 
     let no_format_cause = anyhow!("plain io failure");
     let payload = unsupported_revision_error_json(&no_format_cause, "upgrade tzap or use a reader that supports this archive revision");
     assert_eq!(payload["label"], "unsupported-revision");
     assert!(payload.get("observed").unwrap().is_null());
     assert_eq!(payload["supported"]["format_version"], serde_json::json!(FORMAT_VERSION));
-    assert_eq!(
-        payload["supported"]["max_volume_format_rev"],
-        serde_json::json!(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV)
-    );
+    assert_eq!(payload["supported"]["max_volume_format_rev"], serde_json::json!(READER_MAX_SUPPORTED_VOLUME_FORMAT_REV));
     assert_eq!(payload["action"], "upgrade tzap or use a reader that supports this archive revision");
 }
 
@@ -772,10 +651,7 @@ fn metadata_diagnostic_lines_use_stable_cli_warning_prefix() {
         },
     );
 
-    assert_eq!(
-        line,
-        "tzap: degraded-metadata: path/in/archive: gnu-sparse: sparse-layout: Plan/Unsupported: unsupported sparse-file PAX metadata was ignored"
-    );
+    assert_eq!(line, "tzap: degraded-metadata: path/in/archive: gnu-sparse: sparse-layout: Plan/Unsupported: unsupported sparse-file PAX metadata was ignored");
 }
 
 #[test]
@@ -1027,18 +903,8 @@ fn metadata_verification_stdout_lines_cover_partial_and_policy_counts() {
                 "a",
                 CaptureStatus::Complete,
                 vec![
-                    RestorePolicyCapability {
-                        policy: RestorePolicy::Content,
-                        policy_complete: true,
-                        degraded_restore_available: false,
-                        reason: None,
-                    },
-                    RestorePolicyCapability {
-                        policy: RestorePolicy::Portable,
-                        policy_complete: true,
-                        degraded_restore_available: false,
-                        reason: None,
-                    },
+                    RestorePolicyCapability { policy: RestorePolicy::Content, policy_complete: true, degraded_restore_available: false, reason: None },
+                    RestorePolicyCapability { policy: RestorePolicy::Portable, policy_complete: true, degraded_restore_available: false, reason: None },
                 ],
                 vec![],
             ),
@@ -1077,12 +943,7 @@ fn metadata_verification_stdout_lines_cover_partial_and_policy_counts() {
         entries: vec![test_entry_verification(
             "a",
             CaptureStatus::Complete,
-            vec![RestorePolicyCapability {
-                policy: RestorePolicy::Portable,
-                policy_complete: true,
-                degraded_restore_available: false,
-                reason: None,
-            }],
+            vec![RestorePolicyCapability { policy: RestorePolicy::Portable, policy_complete: true, degraded_restore_available: false, reason: None }],
             vec![],
         )],
     };
@@ -1124,10 +985,7 @@ fn filesystem_scan_captures_linux_native_profile_and_user_xattr() {
     let native = capture_native_file_metadata(&path, identity).unwrap();
 
     assert_eq!(native.required_profiles, vec!["linux-backup-v1", "posix-backup-v1"]);
-    assert_eq!(
-        native.primary_pax_records.get("LIBARCHIVE.xattr.user.tzap-test").map(Vec::as_slice),
-        Some(b"bWV0YWRhdGE".as_slice())
-    );
+    assert_eq!(native.primary_pax_records.get("LIBARCHIVE.xattr.user.tzap-test").map(Vec::as_slice), Some(b"bWV0YWRhdGE".as_slice()));
     assert!(native.primary_pax_records.contains_key("TZAP.linux.fsflags"));
     assert!(native.primary_pax_records.contains_key("TZAP.unix.ctime-observed"));
     if identity.creation_time.is_some() {
@@ -1168,12 +1026,7 @@ fn filesystem_scan_and_restore_preserve_linux_fifo() {
     write_archive_sources_to_sink_ordered_parallel(
         &specs,
         &key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         &KdfParams::Raw,
         None,
         None,
@@ -1200,10 +1053,7 @@ fn filesystem_scan_and_restore_preserve_linux_fifo() {
     let restored = fs::symlink_metadata(output.join("events.fifo")).unwrap();
     assert!(restored.file_type().is_fifo());
     assert_eq!(readonly_mode(&restored) & 0o777, 0o660);
-    assert_eq!(
-        xattr::get(output.join("events.fifo"), "system.posix_acl_access").unwrap().unwrap(),
-        expected_acl
-    );
+    assert_eq!(xattr::get(output.join("events.fifo"), "system.posix_acl_access").unwrap().unwrap(), expected_acl);
 }
 
 #[cfg(target_os = "linux")]
@@ -1230,12 +1080,7 @@ fn filesystem_scan_discovers_linux_sparse_extents() {
     write_archive_sources_to_sink_ordered_parallel(
         &specs,
         &key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         &KdfParams::Raw,
         None,
         None,
@@ -1263,11 +1108,7 @@ fn filesystem_scan_discovers_linux_sparse_extents() {
     assert_eq!(restored.metadata().unwrap().len(), logical_size);
     let restored_extents = query_linux_sparse_extents(&restored, logical_size).unwrap();
     use std::os::unix::fs::MetadataExt as _;
-    assert!(
-        restored_extents.is_some(),
-        "restored output should remain sparse; source extents={extents:?}, blocks={}",
-        restored.metadata().unwrap().blocks()
-    );
+    assert!(restored_extents.is_some(), "restored output should remain sparse; source extents={extents:?}, blocks={}", restored.metadata().unwrap().blocks());
     let restored_extents = restored_extents.unwrap();
     assert!(restored_extents.iter().map(|extent| extent.length).sum::<u64>() < logical_size);
     let bytes = fs::read(restored_path).unwrap();
@@ -1284,12 +1125,7 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
     xattr::set(&path, "com.tzap.test", b"metadata").unwrap();
     xattr::set(&path, "com.apple.FinderInfo", &[0x5a; 32]).unwrap();
     xattr::set(&path, "com.apple.ResourceFork", b"resource fork").unwrap();
-    let acl_status = std::process::Command::new("chmod")
-        .arg("+a")
-        .arg("everyone deny delete")
-        .arg(&path)
-        .status()
-        .unwrap();
+    let acl_status = std::process::Command::new("chmod").arg("+a").arg("everyone deny delete").arg(&path).status().unwrap();
     assert!(acl_status.success());
     let identity = input_identity(&fs::metadata(&path).unwrap()).unwrap();
 
@@ -1298,16 +1134,8 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
     assert_eq!(shared.native, native, "CLI and reusable TZAP metadata capture must remain identical");
 
     assert_eq!(native.required_profiles, vec!["macos-backup-v1", "posix-backup-v1"]);
-    assert_eq!(
-        native.primary_pax_records.get("LIBARCHIVE.xattr.com.tzap.test").map(Vec::as_slice),
-        Some(b"bWV0YWRhdGE".as_slice())
-    );
-    for key in [
-        "LIBARCHIVE.creationtime",
-        "TZAP.unix.ctime-observed",
-        "TZAP.macos.st-flags",
-        "TZAP.acl.projection",
-    ] {
+    assert_eq!(native.primary_pax_records.get("LIBARCHIVE.xattr.com.tzap.test").map(Vec::as_slice), Some(b"bWV0YWRhdGE".as_slice()));
+    for key in ["LIBARCHIVE.creationtime", "TZAP.unix.ctime-observed", "TZAP.macos.st-flags", "TZAP.acl.projection"] {
         assert!(native.primary_pax_records.contains_key(key), "{key}");
     }
     let finder_info = native.auxiliary_records.iter().find(|record| record.kind == "macos.finder-info").unwrap();
@@ -1318,20 +1146,13 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
     assert_eq!(resource_fork.logical_size, b"resource fork".len() as u64);
     let acl = native.auxiliary_records.iter().find(|record| record.kind == "macos.acl-native").unwrap();
     assert!(!acl.payload.is_empty());
-    assert_eq!(
-        acl.meta.get("TZAP.aux.meta.acl-format").map(Vec::as_slice),
-        Some(b"darwin-acl-external-v1".as_slice())
-    );
+    assert_eq!(acl.meta.get("TZAP.aux.meta.acl-format").map(Vec::as_slice), Some(b"darwin-acl-external-v1".as_slice()));
 
     // `RegularFile` is the convenience in-memory source and cannot reopen a streamed
     // filesystem fork. Keep this parser/writer assertion independent from the InputSpec
     // streaming integration test by substituting the same bytes as an in-memory record.
     let mut archive_native = native.clone();
-    let resource_index = archive_native
-        .auxiliary_records
-        .iter()
-        .position(|record| record.kind == "macos.resource-fork")
-        .unwrap();
+    let resource_index = archive_native.auxiliary_records.iter().position(|record| record.kind == "macos.resource-fork").unwrap();
     archive_native.auxiliary_records[resource_index] =
         NativeAuxiliaryMetadata::new("macos.resource-fork", "macos-backup-v1", RestoreClass::SameOs, b"resource fork".to_vec());
 
@@ -1345,12 +1166,7 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
                 source_os: "macos".into(),
                 source_filesystem: "unknown".into(),
                 mode_origin: PortableModeOrigin::Native,
-                posix_owner: Some(PortablePosixOwner {
-                    uid: identity.uid,
-                    gid: identity.gid,
-                    uname: None,
-                    gname: None,
-                }),
+                posix_owner: Some(PortablePosixOwner { uid: identity.uid, gid: identity.gid, uname: None, gname: None }),
                 attributes: None,
                 created: None,
                 accessed: None,
@@ -1358,12 +1174,7 @@ fn filesystem_scan_captures_macos_native_metadata_and_writes_valid_archive() {
             },
         }],
         &MasterKey::from_raw_key(&[7u8; 32]).unwrap(),
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
     )
     .unwrap();
     let opened = tzap_core::open_archive(&archive.bytes, &MasterKey::from_raw_key(&[7u8; 32]).unwrap()).unwrap();
@@ -1438,28 +1249,16 @@ fn windows_capture_rejects_metadata_classes_that_are_not_exactly_supported() {
 
 #[test]
 fn archive_timestamp_canonicalizes_fractional_pre_epoch_times() {
-    assert_eq!(
-        archive_timestamp(UNIX_EPOCH - Duration::new(0, 100)).unwrap(),
-        ArchiveTimestamp::new(-1, 999_999_900)
-    );
-    assert_eq!(
-        archive_timestamp(UNIX_EPOCH - Duration::new(1, 500_000_000)).unwrap(),
-        ArchiveTimestamp::new(-2, 500_000_000)
-    );
+    assert_eq!(archive_timestamp(UNIX_EPOCH - Duration::new(0, 100)).unwrap(), ArchiveTimestamp::new(-1, 999_999_900));
+    assert_eq!(archive_timestamp(UNIX_EPOCH - Duration::new(1, 500_000_000)).unwrap(), ArchiveTimestamp::new(-2, 500_000_000));
 }
 
 #[cfg(windows)]
 #[test]
 fn windows_filetime_conversion_preserves_100ns_precision() {
     const UNIX_EPOCH_FILETIME: u64 = 116_444_736_000_000_000;
-    assert_eq!(
-        windows_filetime_timestamp(UNIX_EPOCH_FILETIME + 12_345_678).unwrap(),
-        ArchiveTimestamp::new(1, 234_567_800)
-    );
-    assert_eq!(
-        windows_filetime_timestamp(UNIX_EPOCH_FILETIME - 1).unwrap(),
-        ArchiveTimestamp::new(-1, 999_999_900)
-    );
+    assert_eq!(windows_filetime_timestamp(UNIX_EPOCH_FILETIME + 12_345_678).unwrap(), ArchiveTimestamp::new(1, 234_567_800));
+    assert_eq!(windows_filetime_timestamp(UNIX_EPOCH_FILETIME - 1).unwrap(), ArchiveTimestamp::new(-1, 999_999_900));
     assert_eq!(windows_filetime_timestamp(0).unwrap(), ArchiveTimestamp::new(-11_644_473_600, 0));
 }
 
@@ -1479,29 +1278,18 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
     let path = temp.path().join("native.txt");
     fs::write(&path, b"payload").unwrap();
     let sacl_available = windows_sacl_capture_enabled();
-    let sddl = if sacl_available {
-        "D:P(A;;FA;;;SY)(A;;FA;;;BA)S:P(AU;SAFA;FW;;;WD)"
-    } else {
-        "D:P(A;;FA;;;SY)(A;;FA;;;BA)"
-    }
-    .encode_utf16()
-    .chain(std::iter::once(0))
-    .collect::<Vec<_>>();
+    let sddl = if sacl_available { "D:P(A;;FA;;;SY)(A;;FA;;;BA)S:P(AU;SAFA;FW;;;WD)" } else { "D:P(A;;FA;;;SY)(A;;FA;;;BA)" }
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
     let mut descriptor = ptr::null_mut();
     // SAFETY: the SDDL is NUL-terminated and the descriptor output is released with LocalFree.
-    assert_ne!(
-        unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut descriptor, ptr::null_mut(),) },
-        0
-    );
+    assert_ne!(unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut descriptor, ptr::null_mut(),) }, 0);
     let path_wide = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<_>>();
     // SAFETY: the path and descriptor remain live and valid for the call.
     let security_information = DACL_SECURITY_INFORMATION
         | PROTECTED_DACL_SECURITY_INFORMATION
-        | if sacl_available {
-            SACL_SECURITY_INFORMATION | PROTECTED_SACL_SECURITY_INFORMATION
-        } else {
-            0
-        };
+        | if sacl_available { SACL_SECURITY_INFORMATION | PROTECTED_SACL_SECURITY_INFORMATION } else { 0 };
     let set_security_ok = if sacl_available {
         // SAFETY: the path and descriptor remain live and valid for the call.
         unsafe { SetFileSecurityW(path_wide.as_ptr(), security_information, descriptor) }
@@ -1530,28 +1318,15 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
     let native = capture_native_file_metadata(&path, identity).unwrap();
 
     assert_eq!(native.required_profiles, vec!["windows-backup-v1"]);
-    for key in [
-        "atime",
-        "LIBARCHIVE.creationtime",
-        "TZAP.windows.change-time",
-        "TZAP.windows.file-attributes",
-        "TZAP.windows.data-stream-attributes",
-    ] {
+    for key in ["atime", "LIBARCHIVE.creationtime", "TZAP.windows.change-time", "TZAP.windows.file-attributes", "TZAP.windows.data-stream-attributes"] {
         assert!(native.primary_pax_records.contains_key(key), "{key}");
     }
-    let security = native
-        .auxiliary_records
-        .iter()
-        .find(|record| record.kind == "windows.security-descriptor")
-        .unwrap();
+    let security = native.auxiliary_records.iter().find(|record| record.kind == "windows.security-descriptor").unwrap();
     let security_mask = u32::from_str_radix(std::str::from_utf8(&security.meta["TZAP.aux.meta.security-information"]).unwrap(), 16).unwrap();
     assert_eq!(security_mask & 0xf, if sacl_available { 0xf } else { 0x7 });
     assert_eq!(security_mask & !0xf000_000f, 0);
     let security_control = u16::from_le_bytes([security.payload[2], security.payload[3]]);
-    assert_eq!(
-        security_mask & 0xa000_0000,
-        if security_control & 0x1000 != 0 { 0x8000_0000 } else { 0x2000_0000 }
-    );
+    assert_eq!(security_mask & 0xa000_0000, if security_control & 0x1000 != 0 { 0x8000_0000 } else { 0x2000_0000 });
     assert_eq!(
         security_mask & 0x5000_0000,
         if security_control & 0x0010 == 0 {
@@ -1585,12 +1360,7 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
     write_archive_sources_to_sink_ordered_parallel(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         &KdfParams::Raw,
         None,
         None,
@@ -1601,25 +1371,15 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
     opened.verify().unwrap();
     let output = temp.path().join("native-output");
     fs::create_dir(&output).unwrap();
-    let restore_report = opened
-        .extract_all_to(
-            &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::SameOs,
-                ..SafeExtractionOptions::default()
-            },
-        )
-        .unwrap();
+    let restore_report =
+        opened.extract_all_to(&output, SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, ..SafeExtractionOptions::default() }).unwrap();
     assert_eq!(fs::read(output.join("native.txt")).unwrap(), b"payload");
     assert_eq!(
         fs::read(PathBuf::from(format!("{}:tzap-test", output.join("native.txt").display())))
             .unwrap_or_else(|error| panic!("{error}; report={restore_report:#?}")),
         b"alternate metadata"
     );
-    assert_eq!(
-        fs::read(PathBuf::from(format!("{}:元数据", output.join("native.txt").display()))).unwrap(),
-        b"unicode alternate metadata"
-    );
+    assert_eq!(fs::read(PathBuf::from(format!("{}:元数据", output.join("native.txt").display()))).unwrap(), b"unicode alternate metadata");
 
     if !enable_windows_privilege(SE_RESTORE_NAME) {
         return;
@@ -1630,22 +1390,12 @@ fn filesystem_scan_captures_windows_scalars_security_and_alternate_data() {
     opened
         .extract_all_to(
             &system_output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                system_authorized: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, system_authorized: true, ..SafeExtractionOptions::default() },
         )
         .unwrap();
     let restored_file = File::open(system_output.join("native.txt")).unwrap();
     let restored_security = capture_windows_security_descriptor(&restored_file).unwrap();
-    let expected_security = specs[0]
-        .portable_metadata
-        .native
-        .auxiliary_records
-        .iter()
-        .find(|record| record.kind == "windows.security-descriptor")
-        .unwrap();
+    let expected_security = specs[0].portable_metadata.native.auxiliary_records.iter().find(|record| record.kind == "windows.security-descriptor").unwrap();
     assert_eq!(restored_security.payload, expected_security.payload);
     assert_eq!(restored_security.meta, expected_security.meta);
 }
@@ -1671,18 +1421,7 @@ fn windows_ea_backup_stream_round_trips_exactly() {
                 let mut written = 0u32;
                 // SAFETY: the file, context, and remaining input bytes live for this
                 // synchronous BackupWrite call.
-                if unsafe {
-                    BackupWrite(
-                        file.as_raw_handle().cast(),
-                        cursor.as_ptr(),
-                        cursor.len() as u32,
-                        &mut written,
-                        0,
-                        0,
-                        &mut context,
-                    )
-                } == 0
-                {
+                if unsafe { BackupWrite(file.as_raw_handle().cast(), cursor.as_ptr(), cursor.len() as u32, &mut written, 0, 0, &mut context) } == 0 {
                     return Err(io::Error::last_os_error());
                 }
                 if written == 0 || written as usize > cursor.len() {
@@ -1718,13 +1457,8 @@ fn windows_ea_backup_stream_round_trips_exactly() {
     drop(source_file);
 
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap();
-    let captured = specs[0]
-        .portable_metadata
-        .native
-        .auxiliary_records
-        .iter()
-        .find(|record| record.kind == "windows.ea-data")
-        .expect("EA backup stream was not captured");
+    let captured =
+        specs[0].portable_metadata.native.auxiliary_records.iter().find(|record| record.kind == "windows.ea-data").expect("EA backup stream was not captured");
     assert_eq!(captured.payload, ea);
 
     let master_key = MasterKey::from_raw_key(&[25u8; 32]).unwrap();
@@ -1732,12 +1466,7 @@ fn windows_ea_backup_stream_round_trips_exactly() {
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -1749,15 +1478,7 @@ fn windows_ea_backup_stream_round_trips_exactly() {
     opened.verify().unwrap();
     let output = temp.path().join("ea-output");
     fs::create_dir(&output).unwrap();
-    opened
-        .extract_all_to(
-            &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::SameOs,
-                ..SafeExtractionOptions::default()
-            },
-        )
-        .unwrap();
+    opened.extract_all_to(&output, SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, ..SafeExtractionOptions::default() }).unwrap();
     let restored = output.join("ea-source.bin");
     let restored_specs = collect_input_specs(&[restored.to_string_lossy().into_owned()]).unwrap();
     let restored_ea = restored_specs[0]
@@ -1820,12 +1541,7 @@ fn windows_object_id_backup_stream_round_trips_exactly() {
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -1846,12 +1562,7 @@ fn windows_object_id_backup_stream_round_trips_exactly() {
     let diagnostics = opened
         .extract_all_to(
             &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                system_authorized: true,
-                allow_degraded: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, system_authorized: true, allow_degraded: true, ..SafeExtractionOptions::default() },
         )
         .unwrap();
     assert!(
@@ -1920,12 +1631,7 @@ fn windows_raw_efs_round_trips_without_plaintext_substitution() {
     write_archive_sources_to_sink_ordered_parallel(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         &KdfParams::Raw,
         None,
         None,
@@ -1939,21 +1645,13 @@ fn windows_raw_efs_round_trips_without_plaintext_substitution() {
     opened
         .extract_all_to(
             &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                system_authorized: true,
-                allow_degraded: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, system_authorized: true, allow_degraded: true, ..SafeExtractionOptions::default() },
         )
         .unwrap();
 
     let restored = output.join("encrypted.txt");
     assert_eq!(fs::read(&restored).unwrap(), plaintext);
-    assert_eq!(
-        fs::read(PathBuf::from(format!("{}:efs-alternate", restored.display()))).unwrap(),
-        alternate_plaintext
-    );
+    assert_eq!(fs::read(PathBuf::from(format!("{}:efs-alternate", restored.display()))).unwrap(), alternate_plaintext);
     assert_ne!(fs::metadata(&restored).unwrap().file_attributes() & FILE_ATTRIBUTE_ENCRYPTED, 0);
     assert_eq!(hash_windows_raw_efs(&restored).unwrap(), (expected_raw_size, expected_raw_hash));
 
@@ -1977,24 +1675,14 @@ fn standalone_windows_directory_alternate_data_round_trips() {
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     assert_eq!(specs.len(), 1);
     assert_eq!(specs[0].entry_kind, SourceEntryKind::Directory);
-    assert!(specs[0]
-        .portable_metadata
-        .native
-        .auxiliary_records
-        .iter()
-        .any(|record| record.kind == "windows.alternate-data"));
+    assert!(specs[0].portable_metadata.native.auxiliary_records.iter().any(|record| record.kind == "windows.alternate-data"));
 
     let master_key = MasterKey::from_raw_key(&[11u8; 32]).unwrap();
     let mut sink = MemoryArchiveSink::default();
     write_archive_sources_to_sink_ordered_parallel(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         &KdfParams::Raw,
         None,
         None,
@@ -2005,21 +1693,10 @@ fn standalone_windows_directory_alternate_data_round_trips() {
     opened.verify().unwrap();
     let output = temp.path().join("directory-output");
     fs::create_dir(&output).unwrap();
-    opened
-        .extract_all_to(
-            &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::SameOs,
-                ..SafeExtractionOptions::default()
-            },
-        )
-        .unwrap();
+    opened.extract_all_to(&output, SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, ..SafeExtractionOptions::default() }).unwrap();
     let restored = output.join("native-directory");
     assert!(restored.is_dir());
-    assert_eq!(
-        fs::read(PathBuf::from(format!("{}:tzap-directory", restored.display()))).unwrap(),
-        b"directory alternate metadata"
-    );
+    assert_eq!(fs::read(PathBuf::from(format!("{}:tzap-directory", restored.display()))).unwrap(), b"directory alternate metadata");
 }
 
 #[cfg(windows)]
@@ -2036,14 +1713,9 @@ fn windows_directory_case_sensitive_state_round_trips() {
     let temp = windows_test_tempdir();
     let source = temp.path().join("case-sensitive-directory");
     fs::create_dir(&source).unwrap();
-    let source_file = fs::OpenOptions::new()
-        .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-        .open(&source)
-        .unwrap();
-    let enabled = FILE_CASE_SENSITIVE_INFO {
-        Flags: FILE_CS_FLAG_CASE_SENSITIVE_DIR,
-    };
+    let source_file =
+        fs::OpenOptions::new().access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES).custom_flags(FILE_FLAG_BACKUP_SEMANTICS).open(&source).unwrap();
+    let enabled = FILE_CASE_SENSITIVE_INFO { Flags: FILE_CS_FLAG_CASE_SENSITIVE_DIR };
     // SAFETY: the directory handle is live and `enabled` is correctly sized and initialized.
     assert_ne!(
         unsafe {
@@ -2062,26 +1734,13 @@ fn windows_directory_case_sensitive_state_round_trips() {
     drop(source_file);
 
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap();
-    assert_eq!(
-        specs[0]
-            .portable_metadata
-            .native
-            .primary_pax_records
-            .get("TZAP.windows.directory-case-sensitive")
-            .map(Vec::as_slice),
-        Some(b"1".as_slice())
-    );
+    assert_eq!(specs[0].portable_metadata.native.primary_pax_records.get("TZAP.windows.directory-case-sensitive").map(Vec::as_slice), Some(b"1".as_slice()));
     let master_key = MasterKey::from_raw_key(&[24u8; 32]).unwrap();
     let mut sink = MemoryArchiveSink::default();
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -2096,11 +1755,7 @@ fn windows_directory_case_sensitive_state_round_trips() {
     let same_os_diagnostics = opened
         .extract_all_to(
             &same_os_output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::SameOs,
-                allow_degraded: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, allow_degraded: true, ..SafeExtractionOptions::default() },
         )
         .unwrap();
     assert!(same_os_diagnostics
@@ -2114,12 +1769,7 @@ fn windows_directory_case_sensitive_state_round_trips() {
     opened
         .extract_all_to(
             &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                system_authorized: true,
-                allow_degraded: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, system_authorized: true, allow_degraded: true, ..SafeExtractionOptions::default() },
         )
         .unwrap();
     let restored = open_windows_metadata_handle(&output.join("case-sensitive-directory")).unwrap();
@@ -2142,18 +1792,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
     let mut bytes_returned = 0u32;
     // SAFETY: the stream handle is live and FSCTL_SET_SPARSE accepts empty buffers.
     assert_ne!(
-        unsafe {
-            DeviceIoControl(
-                stream.as_raw_handle().cast(),
-                FSCTL_SET_SPARSE,
-                ptr::null(),
-                0,
-                ptr::null_mut(),
-                0,
-                &mut bytes_returned,
-                ptr::null_mut(),
-            )
-        },
+        unsafe { DeviceIoControl(stream.as_raw_handle().cast(), FSCTL_SET_SPARSE, ptr::null(), 0, ptr::null_mut(), 0, &mut bytes_returned, ptr::null_mut(),) },
         0
     );
     let logical_size = 1024 * 1024u64;
@@ -2167,13 +1806,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
     drop(stream);
 
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
-    let sparse_record = specs[0]
-        .portable_metadata
-        .native
-        .auxiliary_records
-        .iter()
-        .find(|record| record.kind == "windows.alternate-data")
-        .unwrap();
+    let sparse_record = specs[0].portable_metadata.native.auxiliary_records.iter().find(|record| record.kind == "windows.alternate-data").unwrap();
     assert!(sparse_record.is_streamed());
     assert_eq!(sparse_record.flags, 1);
     assert_eq!(sparse_record.logical_size, logical_size);
@@ -2188,12 +1821,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
     write_archive_sources_to_sink_ordered_parallel(
         &specs,
         &key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         &KdfParams::Raw,
         None,
         None,
@@ -2205,14 +1833,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
     let output = temp.path().join("sparse-ads-output");
     fs::create_dir(&output).unwrap();
     opened
-        .extract_all_to(
-            &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::SameOs,
-                allow_degraded: true,
-                ..SafeExtractionOptions::default()
-            },
-        )
+        .extract_all_to(&output, SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, allow_degraded: true, ..SafeExtractionOptions::default() })
         .unwrap();
     let restored_stream_path = PathBuf::from(format!("{}:sparse-test", output.join("sparse-ads.bin").display()));
     let restored_stream = File::open(&restored_stream_path).unwrap();
@@ -2223,10 +1844,7 @@ fn sparse_windows_alternate_data_round_trips_ranges_and_content() {
     }
     let logical = fs::read(restored_stream_path).unwrap();
     assert_eq!(&logical[64 * 1024..64 * 1024 + 25], b"sparse ADS leading extent");
-    assert_eq!(
-        &logical[logical_size as usize - 4096..logical_size as usize - 4096 + 26],
-        b"sparse ADS trailing extent"
-    );
+    assert_eq!(&logical[logical_size as usize - 4096..logical_size as usize - 4096 + 26], b"sparse ADS trailing extent");
 }
 
 #[cfg(windows)]
@@ -2243,18 +1861,7 @@ fn windows_sparse_file_round_trips_logical_bytes_and_allocated_ranges() {
     let mut bytes_returned = 0u32;
     // SAFETY: the file handle is live and FSCTL_SET_SPARSE accepts empty synchronous buffers.
     assert_ne!(
-        unsafe {
-            DeviceIoControl(
-                file.as_raw_handle().cast(),
-                FSCTL_SET_SPARSE,
-                ptr::null(),
-                0,
-                ptr::null_mut(),
-                0,
-                &mut bytes_returned,
-                ptr::null_mut(),
-            )
-        },
+        unsafe { DeviceIoControl(file.as_raw_handle().cast(), FSCTL_SET_SPARSE, ptr::null(), 0, ptr::null_mut(), 0, &mut bytes_returned, ptr::null_mut(),) },
         0
     );
     let logical_size = 1024 * 1024u64;
@@ -2277,12 +1884,7 @@ fn windows_sparse_file_round_trips_logical_bytes_and_allocated_ranges() {
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -2297,15 +1899,7 @@ fn windows_sparse_file_round_trips_logical_bytes_and_allocated_ranges() {
 
     let output = temp.path().join("output");
     fs::create_dir(&output).unwrap();
-    opened
-        .extract_all_to(
-            &output,
-            SafeExtractionOptions {
-                allow_degraded: refs_sparse_fallback,
-                ..SafeExtractionOptions::default()
-            },
-        )
-        .unwrap();
+    opened.extract_all_to(&output, SafeExtractionOptions { allow_degraded: refs_sparse_fallback, ..SafeExtractionOptions::default() }).unwrap();
     let restored_path = output.join("sparse.bin");
     let restored = File::open(&restored_path).unwrap();
     assert_eq!(restored.metadata().unwrap().len(), logical_size);
@@ -2360,12 +1954,7 @@ fn windows_basic_attributes_and_all_four_times_round_trip() {
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -2378,14 +1967,7 @@ fn windows_basic_attributes_and_all_four_times_round_trip() {
     let output = temp.path().join("basic-output");
     fs::create_dir(&output).unwrap();
     opened
-        .extract_all_to(
-            &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::SameOs,
-                allow_degraded: true,
-                ..SafeExtractionOptions::default()
-            },
-        )
+        .extract_all_to(&output, SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, allow_degraded: true, ..SafeExtractionOptions::default() })
         .unwrap();
 
     let restored = File::open(output.join("basic.bin")).unwrap();
@@ -2462,12 +2044,7 @@ fn windows_native_compression_round_trips_on_supported_filesystems() {
     drop(source_file);
 
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap();
-    let captured_attributes = specs[0]
-        .portable_metadata
-        .native
-        .primary_pax_records
-        .get("TZAP.windows.file-attributes")
-        .unwrap();
+    let captured_attributes = specs[0].portable_metadata.native.primary_pax_records.get("TZAP.windows.file-attributes").unwrap();
     let captured_attributes = u32::from_str_radix(std::str::from_utf8(captured_attributes).unwrap(), 16).unwrap();
     assert_ne!(captured_attributes & FILE_ATTRIBUTE_COMPRESSED, 0);
 
@@ -2476,12 +2053,7 @@ fn windows_native_compression_round_trips_on_supported_filesystems() {
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -2498,11 +2070,7 @@ fn windows_native_compression_round_trips_on_supported_filesystems() {
     opened
         .extract_all_to(
             &output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::SameOs,
-                allow_degraded: destination_refs,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, allow_degraded: destination_refs, ..SafeExtractionOptions::default() },
         )
         .unwrap();
     let restored = File::open(output.join("compressed.bin")).unwrap();
@@ -2534,10 +2102,7 @@ fn windows_relative_symlink_round_trips_portable_and_exact_reparse_data() {
     }
     let source_handle = open_windows_metadata_handle(&source).unwrap();
     let expected_reparse = query_windows_reparse_data(&source_handle).unwrap();
-    assert!(matches!(
-        validate_windows_known_reparse_data(&expected_reparse).unwrap(),
-        WindowsKnownReparse::RelativeSymlink { .. }
-    ));
+    assert!(matches!(validate_windows_known_reparse_data(&expected_reparse).unwrap(), WindowsKnownReparse::RelativeSymlink { .. }));
 
     let specs = collect_input_specs(&[source.to_string_lossy().into_owned()]).unwrap_or_else(|error| panic!("{error:#}"));
     assert_eq!(specs.len(), 1);
@@ -2554,12 +2119,7 @@ fn windows_relative_symlink_round_trips_portable_and_exact_reparse_data() {
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -2580,12 +2140,7 @@ fn windows_relative_symlink_round_trips_portable_and_exact_reparse_data() {
     opened
         .extract_all_to(
             &exact_output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                allow_degraded: true,
-                system_authorized: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, allow_degraded: true, system_authorized: true, ..SafeExtractionOptions::default() },
         )
         .unwrap();
     let exact_handle = open_windows_metadata_handle(&exact_output.join("link.txt")).unwrap();
@@ -2665,12 +2220,7 @@ fn windows_junction_round_trips_as_skipped_placeholder_and_exact_reparse_data() 
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -2691,12 +2241,7 @@ fn windows_junction_round_trips_as_skipped_placeholder_and_exact_reparse_data() 
     let exact_report = opened
         .extract_all_to(
             &exact_output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                allow_degraded: true,
-                system_authorized: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, allow_degraded: true, system_authorized: true, ..SafeExtractionOptions::default() },
         )
         .unwrap();
     let exact_handle = open_windows_metadata_handle(&exact_output.join("junction")).unwrap_or_else(|error| panic!("{error}; report={exact_report:#?}"));
@@ -2724,11 +2269,7 @@ fn windows_opaque_reparse_tag_round_trips_as_skipped_placeholder_and_exact_data(
     reparse.extend_from_slice(&0u16.to_le_bytes());
     reparse.extend_from_slice(&[0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]);
     reparse.extend_from_slice(b"tzap");
-    let handle = fs::OpenOptions::new()
-        .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(&source)
-        .unwrap();
+    let handle = fs::OpenOptions::new().access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT).open(&source).unwrap();
     let mut returned = 0u32;
     // SAFETY: the handle and complete opaque GUID reparse buffer remain live for the call.
     assert_ne!(
@@ -2762,12 +2303,7 @@ fn windows_opaque_reparse_tag_round_trips_as_skipped_placeholder_and_exact_data(
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -2788,12 +2324,7 @@ fn windows_opaque_reparse_tag_round_trips_as_skipped_placeholder_and_exact_data(
     opened
         .extract_all_to(
             &exact_output,
-            SafeExtractionOptions {
-                restore_policy: RestorePolicy::System,
-                allow_degraded: true,
-                system_authorized: true,
-                ..SafeExtractionOptions::default()
-            },
+            SafeExtractionOptions { restore_policy: RestorePolicy::System, allow_degraded: true, system_authorized: true, ..SafeExtractionOptions::default() },
         )
         .unwrap();
     let exact_handle = open_windows_metadata_handle(&exact_output.join("opaque-reparse.bin")).unwrap();
@@ -2821,12 +2352,7 @@ fn windows_selected_hardlinks_store_data_once_and_restore_shared_file_identity()
     write_archive_sources_to_sink(
         &specs,
         &master_key,
-        WriterOptions {
-            stripe_width: 1,
-            volume_loss_tolerance: 0,
-            bit_rot_buffer_pct: 0,
-            ..WriterOptions::default()
-        },
+        WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, bit_rot_buffer_pct: 0, ..WriterOptions::default() },
         None,
         &KdfParams::Raw,
         None,
@@ -2836,10 +2362,7 @@ fn windows_selected_hardlinks_store_data_once_and_restore_shared_file_identity()
     .unwrap();
     let opened = tzap_core::open_archive(&sink.volumes[0], &master_key).unwrap();
     opened.verify().unwrap();
-    assert_eq!(
-        opened.lookup_index_entry("alpha.bin").unwrap().unwrap().file_data_size,
-        b"one physical file".len() as u64
-    );
+    assert_eq!(opened.lookup_index_entry("alpha.bin").unwrap().unwrap().file_data_size, b"one physical file".len() as u64);
     assert_eq!(opened.lookup_index_entry("beta.bin").unwrap().unwrap().file_data_size, 0);
 
     let output = temp.path().join("hardlink-output");

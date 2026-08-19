@@ -153,30 +153,16 @@ impl StreamedPayloadSummary {
     }
 
     pub(crate) fn frame_flags(&self, frame: &StreamedFrameSummary) -> Result<u32, FormatError> {
-        let frame_end = frame
-            .tar_stream_offset
-            .checked_add(frame.decompressed_size as u64)
-            .ok_or(FormatError::InvalidArchive("streamed frame range overflow"))?;
+        let frame_end =
+            frame.tar_stream_offset.checked_add(frame.decompressed_size as u64).ok_or(FormatError::InvalidArchive("streamed frame range overflow"))?;
         let mut flags = 0u32;
-        if self
-            .tar
-            .members
-            .binary_search_by_key(&frame.tar_stream_offset, |member| member.group_start)
-            .is_ok()
-        {
+        if self.tar.members.binary_search_by_key(&frame.tar_stream_offset, |member| member.group_start).is_ok() {
             flags |= 0x0000_0001;
         }
-        let end_candidate = self
-            .tar
-            .members
-            .partition_point(|member| member.group_start < frame_end)
-            .checked_sub(1)
-            .and_then(|index| self.tar.members.get(index));
+        let end_candidate =
+            self.tar.members.partition_point(|member| member.group_start < frame_end).checked_sub(1).and_then(|index| self.tar.members.get(index));
         if let Some(member) = end_candidate {
-            let member_end = member
-                .group_start
-                .checked_add(member.group_size)
-                .ok_or(FormatError::InvalidArchive("streamed tar member range overflow"))?;
+            let member_end = member.group_start.checked_add(member.group_size).ok_or(FormatError::InvalidArchive("streamed tar member range overflow"))?;
             if member_end == frame_end {
                 flags |= 0x0000_0002;
             }
@@ -222,14 +208,8 @@ pub fn verify_non_seekable_stream_with_bootstrap_sidecar<R: Read>(
     master_key: &MasterKey,
     options: NonSeekableReaderOptions,
 ) -> Result<SequentialVerifyReport, FormatError> {
-    Ok(run_non_seekable_stream(
-        reader,
-        NonSeekableKeySource::MasterKey(Some(master_key)),
-        options,
-        NoopTarStreamObserver,
-        Some(bootstrap_sidecar),
-    )?
-    .verification)
+    Ok(run_non_seekable_stream(reader, NonSeekableKeySource::MasterKey(Some(master_key)), options, NoopTarStreamObserver, Some(bootstrap_sidecar))?
+        .verification)
 }
 
 pub fn verify_non_seekable_stream_with_recipient_wrap_resolver_and_bootstrap_sidecar<R, F>(
@@ -242,14 +222,8 @@ where
     R: Read,
     F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
-    Ok(run_non_seekable_stream(
-        reader,
-        NonSeekableKeySource::RecipientWrap(&mut resolver),
-        options,
-        NoopTarStreamObserver,
-        Some(bootstrap_sidecar),
-    )?
-    .verification)
+    Ok(run_non_seekable_stream(reader, NonSeekableKeySource::RecipientWrap(&mut resolver), options, NoopTarStreamObserver, Some(bootstrap_sidecar))?
+        .verification)
 }
 
 pub fn verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar<R: Read>(
@@ -257,14 +231,7 @@ pub fn verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar<R: Read>(
     bootstrap_sidecar: &[u8],
     options: NonSeekableReaderOptions,
 ) -> Result<SequentialVerifyReport, FormatError> {
-    Ok(run_non_seekable_stream(
-        reader,
-        NonSeekableKeySource::MasterKey(None),
-        options,
-        NoopTarStreamObserver,
-        Some(bootstrap_sidecar),
-    )?
-    .verification)
+    Ok(run_non_seekable_stream(reader, NonSeekableKeySource::MasterKey(None), options, NoopTarStreamObserver, Some(bootstrap_sidecar))?.verification)
 }
 
 pub fn extract_non_seekable_stream_to_dir<R: Read>(
@@ -275,13 +242,7 @@ pub fn extract_non_seekable_stream_to_dir<R: Read>(
     extraction: SafeExtractionOptions,
 ) -> Result<SequentialExtractReport, ExtractError> {
     let staging = StagedExtraction::new(output_dir)?;
-    let observer = TarStreamFilesystemRestoreObserver::new(
-        staging.root(),
-        SafeExtractionOptions {
-            overwrite_existing: true,
-            ..extraction
-        },
-    );
+    let observer = TarStreamFilesystemRestoreObserver::new(staging.root(), SafeExtractionOptions { overwrite_existing: true, ..extraction });
     let mut outcome = run_non_seekable_stream(reader, NonSeekableKeySource::MasterKey(Some(master_key)), options, observer, None)?;
     let merged_directories = existing_output_directory_paths(output_dir, &outcome.streamed_payload.tar.members);
     staging.commit(extraction)?;
@@ -323,13 +284,7 @@ where
     F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
     let staging = StagedExtraction::new(output_dir)?;
-    let observer = TarStreamFilesystemRestoreObserver::new(
-        staging.root(),
-        SafeExtractionOptions {
-            overwrite_existing: true,
-            ..extraction
-        },
-    );
+    let observer = TarStreamFilesystemRestoreObserver::new(staging.root(), SafeExtractionOptions { overwrite_existing: true, ..extraction });
     let mut outcome = run_non_seekable_stream(reader, NonSeekableKeySource::RecipientWrap(&mut resolver), options, observer, None)?;
     let merged_directories = existing_output_directory_paths(output_dir, &outcome.streamed_payload.tar.members);
     staging.commit(extraction)?;
@@ -354,13 +309,7 @@ pub fn extract_unencrypted_non_seekable_stream_to_dir<R: Read>(
     extraction: SafeExtractionOptions,
 ) -> Result<SequentialExtractReport, ExtractError> {
     let staging = StagedExtraction::new(output_dir)?;
-    let observer = TarStreamFilesystemRestoreObserver::new(
-        staging.root(),
-        SafeExtractionOptions {
-            overwrite_existing: true,
-            ..extraction
-        },
-    );
+    let observer = TarStreamFilesystemRestoreObserver::new(staging.root(), SafeExtractionOptions { overwrite_existing: true, ..extraction });
     let mut outcome = run_non_seekable_stream(reader, NonSeekableKeySource::MasterKey(None), options, observer, None)?;
     let merged_directories = existing_output_directory_paths(output_dir, &outcome.streamed_payload.tar.members);
     staging.commit(extraction)?;
@@ -387,20 +336,8 @@ pub fn extract_non_seekable_stream_to_dir_with_bootstrap_sidecar<R: Read>(
     extraction: SafeExtractionOptions,
 ) -> Result<SequentialExtractReport, ExtractError> {
     let staging = StagedExtraction::new(output_dir)?;
-    let observer = TarStreamFilesystemRestoreObserver::new(
-        staging.root(),
-        SafeExtractionOptions {
-            overwrite_existing: true,
-            ..extraction
-        },
-    );
-    let mut outcome = run_non_seekable_stream(
-        reader,
-        NonSeekableKeySource::MasterKey(Some(master_key)),
-        options,
-        observer,
-        Some(bootstrap_sidecar),
-    )?;
+    let observer = TarStreamFilesystemRestoreObserver::new(staging.root(), SafeExtractionOptions { overwrite_existing: true, ..extraction });
+    let mut outcome = run_non_seekable_stream(reader, NonSeekableKeySource::MasterKey(Some(master_key)), options, observer, Some(bootstrap_sidecar))?;
     let merged_directories = existing_output_directory_paths(output_dir, &outcome.streamed_payload.tar.members);
     staging.commit(extraction)?;
     finalize_committed_directory_metadata(output_dir, &mut outcome.streamed_payload.tar.members, &merged_directories, extraction)?;
@@ -430,20 +367,8 @@ where
     F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
     let staging = StagedExtraction::new(output_dir)?;
-    let observer = TarStreamFilesystemRestoreObserver::new(
-        staging.root(),
-        SafeExtractionOptions {
-            overwrite_existing: true,
-            ..extraction
-        },
-    );
-    let mut outcome = run_non_seekable_stream(
-        reader,
-        NonSeekableKeySource::RecipientWrap(&mut resolver),
-        options,
-        observer,
-        Some(bootstrap_sidecar),
-    )?;
+    let observer = TarStreamFilesystemRestoreObserver::new(staging.root(), SafeExtractionOptions { overwrite_existing: true, ..extraction });
+    let mut outcome = run_non_seekable_stream(reader, NonSeekableKeySource::RecipientWrap(&mut resolver), options, observer, Some(bootstrap_sidecar))?;
     let merged_directories = existing_output_directory_paths(output_dir, &outcome.streamed_payload.tar.members);
     staging.commit(extraction)?;
     finalize_committed_directory_metadata(output_dir, &mut outcome.streamed_payload.tar.members, &merged_directories, extraction)?;
@@ -468,13 +393,7 @@ pub fn extract_unencrypted_non_seekable_stream_to_dir_with_bootstrap_sidecar<R: 
     extraction: SafeExtractionOptions,
 ) -> Result<SequentialExtractReport, ExtractError> {
     let staging = StagedExtraction::new(output_dir)?;
-    let observer = TarStreamFilesystemRestoreObserver::new(
-        staging.root(),
-        SafeExtractionOptions {
-            overwrite_existing: true,
-            ..extraction
-        },
-    );
+    let observer = TarStreamFilesystemRestoreObserver::new(staging.root(), SafeExtractionOptions { overwrite_existing: true, ..extraction });
     let mut outcome = run_non_seekable_stream(reader, NonSeekableKeySource::MasterKey(None), options, observer, Some(bootstrap_sidecar))?;
     let merged_directories = existing_output_directory_paths(output_dir, &outcome.streamed_payload.tar.members);
     staging.commit(extraction)?;
@@ -521,13 +440,7 @@ pub fn list_non_seekable_stream_with_bootstrap_sidecar<R: Read>(
     master_key: &MasterKey,
     options: NonSeekableReaderOptions,
 ) -> Result<SequentialListReport, FormatError> {
-    let outcome = run_non_seekable_stream(
-        reader,
-        NonSeekableKeySource::MasterKey(Some(master_key)),
-        options,
-        NoopTarStreamObserver,
-        Some(bootstrap_sidecar),
-    )?;
+    let outcome = run_non_seekable_stream(reader, NonSeekableKeySource::MasterKey(Some(master_key)), options, NoopTarStreamObserver, Some(bootstrap_sidecar))?;
     sequential_list_report(outcome)
 }
 
@@ -541,13 +454,7 @@ where
     R: Read,
     F: FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError>,
 {
-    let outcome = run_non_seekable_stream(
-        reader,
-        NonSeekableKeySource::RecipientWrap(&mut resolver),
-        options,
-        NoopTarStreamObserver,
-        Some(bootstrap_sidecar),
-    )?;
+    let outcome = run_non_seekable_stream(reader, NonSeekableKeySource::RecipientWrap(&mut resolver), options, NoopTarStreamObserver, Some(bootstrap_sidecar))?;
     sequential_list_report(outcome)
 }
 
@@ -556,13 +463,7 @@ pub fn list_unencrypted_non_seekable_stream_with_bootstrap_sidecar<R: Read>(
     bootstrap_sidecar: &[u8],
     options: NonSeekableReaderOptions,
 ) -> Result<SequentialListReport, FormatError> {
-    let outcome = run_non_seekable_stream(
-        reader,
-        NonSeekableKeySource::MasterKey(None),
-        options,
-        NoopTarStreamObserver,
-        Some(bootstrap_sidecar),
-    )?;
+    let outcome = run_non_seekable_stream(reader, NonSeekableKeySource::MasterKey(None), options, NoopTarStreamObserver, Some(bootstrap_sidecar))?;
     sequential_list_report(outcome)
 }
 
@@ -575,11 +476,7 @@ struct SequentialStreamOutcome {
 fn sequential_list_report(outcome: SequentialStreamOutcome) -> Result<SequentialListReport, FormatError> {
     let index_entries = outcome.opened.list_index_entries()?;
     let entries = streamed_list_entries(&index_entries, &outcome.streamed_payload)?;
-    Ok(SequentialListReport {
-        verification: outcome.verification,
-        entries,
-        index_entries,
-    })
+    Ok(SequentialListReport { verification: outcome.verification, entries, index_entries })
 }
 
 type RecipientWrapResolver<'a> = dyn FnMut(RecipientWrapRecordContext<'_>) -> Result<Vec<RecipientWrapCandidateMasterKey>, FormatError> + 'a;
@@ -633,11 +530,9 @@ where
         (true, crate::crypto::KdfParams::RecipientWrap { .. }, NonSeekableKeySource::MasterKey(_)) => {
             return Err(FormatError::KeyMaterialMismatch);
         }
-        (true, _, NonSeekableKeySource::MasterKey(master_key)) => Subkeys::derive(
-            master_key.ok_or(FormatError::KeyMaterialMismatch)?,
-            &volume_header.archive_uuid,
-            &volume_header.session_id,
-        )?,
+        (true, _, NonSeekableKeySource::MasterKey(master_key)) => {
+            Subkeys::derive(master_key.ok_or(FormatError::KeyMaterialMismatch)?, &volume_header.archive_uuid, &volume_header.session_id)?
+        }
         (true, _, NonSeekableKeySource::RecipientWrap(_)) => {
             return Err(FormatError::KeyMaterialMismatch);
         }
@@ -656,15 +551,11 @@ where
     reject_unsupported_raw_stream_profile(&parsed_crypto.extensions)?;
     validate_crypto_class_parity_exactness(&crypto_header)?;
     let block_records_start = startup_key_wrap_table.as_ref().map(|table| table.block_records_start).unwrap_or(stream_cursor);
-    let bootstrap = bootstrap_sidecar
-        .map(|sidecar| parse_non_seekable_bootstrap_material(sidecar, &volume_header, &crypto_header, &subkeys))
-        .transpose()?;
+    let bootstrap = bootstrap_sidecar.map(|sidecar| parse_non_seekable_bootstrap_material(sidecar, &volume_header, &crypto_header, &subkeys)).transpose()?;
     validate_sequential_verify_supported_volume(&volume_header, &crypto_header, &parsed_crypto.extensions, bootstrap.as_ref())?;
 
     let block_size = crypto_header.block_size as usize;
-    let record_len = block_size
-        .checked_add(BLOCK_RECORD_FRAMING_LEN)
-        .ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let record_len = block_size.checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
     let mut stream_offset = block_records_start;
     let mut observed_block_count = 0u64;
     let mut metadata_seen = false;
@@ -804,28 +695,19 @@ where
         metadata: metadata_verification_report(&streamed_payload.tar.members)?,
     };
 
-    Ok(SequentialStreamOutcome {
-        opened,
-        streamed_payload,
-        verification,
-    })
+    Ok(SequentialStreamOutcome { opened, streamed_payload, verification })
 }
 
 fn degraded_metadata_count(payload: &StreamedPayloadSummary) -> Result<u64, FormatError> {
     payload.tar.members.iter().try_fold(0u64, |count, member| {
-        count
-            .checked_add(member.diagnostics.len() as u64)
-            .ok_or(FormatError::InvalidArchive("degraded metadata count overflow"))
+        count.checked_add(member.diagnostics.len() as u64).ok_or(FormatError::InvalidArchive("degraded metadata count overflow"))
     })
 }
 
 fn streamed_list_entries(index_entries: &[ArchiveIndexEntry], payload: &StreamedPayloadSummary) -> Result<Vec<ArchiveEntry>, FormatError> {
     let mut latest_by_path = BTreeMap::<Vec<u8>, &TarStreamMemberSummary>::new();
     for member in &payload.tar.members {
-        let replace = latest_by_path
-            .get(&member.path)
-            .map(|existing| member.group_start > existing.group_start)
-            .unwrap_or(true);
+        let replace = latest_by_path.get(&member.path).map(|existing| member.group_start > existing.group_start).unwrap_or(true);
         if replace {
             latest_by_path.insert(member.path.clone(), member);
         }
@@ -834,9 +716,7 @@ fn streamed_list_entries(index_entries: &[ArchiveIndexEntry], payload: &Streamed
     index_entries
         .iter()
         .map(|entry| {
-            let member = latest_by_path
-                .get(entry.path.as_bytes())
-                .ok_or(FormatError::InvalidArchive("streamed tar member missing from final index"))?;
+            let member = latest_by_path.get(entry.path.as_bytes()).ok_or(FormatError::InvalidArchive("streamed tar member missing from final index"))?;
             let v45 = &member.v45_metadata;
             let mtime = v45.portable_mirror.mtime;
             Ok(ArchiveEntry {
@@ -873,21 +753,11 @@ struct StagedExtraction {
 
 impl StagedExtraction {
     fn new(output_dir: &Path) -> Result<Self, ExtractError> {
-        let parent = output_dir
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let tempdir = tempfile::Builder::new()
-            .prefix(".tzap-nonseekable-")
-            .tempdir_in(parent)
-            .map_err(ExtractError::Output)?;
+        let parent = output_dir.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+        let tempdir = tempfile::Builder::new().prefix(".tzap-nonseekable-").tempdir_in(parent).map_err(ExtractError::Output)?;
         let root = tempdir.path().join("root");
         fs::create_dir(&root).map_err(ExtractError::Output)?;
-        Ok(Self {
-            tempdir,
-            root,
-            output_dir: output_dir.to_path_buf(),
-        })
+        Ok(Self { tempdir, root, output_dir: output_dir.to_path_buf() })
     }
 
     fn root(&self) -> &Path {
@@ -1032,9 +902,7 @@ fn validate_sequential_verify_supported_volume(
         return Err(FormatError::InvalidArchive("VolumeHeader and CryptoHeader stripe_width differ"));
     }
     if crypto_header.has_dictionary != 0 && bootstrap.and_then(|material| material.payload_dictionary.as_ref()).is_none() {
-        return Err(FormatError::ReaderUnsupported(
-            "dictionary bootstrap required for non-seekable sequential verification",
-        ));
+        return Err(FormatError::ReaderUnsupported("dictionary bootstrap required for non-seekable sequential verification"));
     }
     Ok(())
 }
@@ -1062,9 +930,7 @@ fn handle_live_record<O: TarStreamObserver>(
                 return Err(FormatError::InvalidArchive("payload BlockRecord appears after metadata"));
             }
             if pending.awaiting_tentative_parity {
-                return Err(FormatError::InvalidArchive(
-                    "sequential payload envelope boundary is ambiguous after CRC erasure",
-                ));
+                return Err(FormatError::InvalidArchive("sequential payload envelope boundary is ambiguous after CRC erasure"));
             }
             if pending.saw_last_data {
                 finalize_live_envelope(
@@ -1114,12 +980,7 @@ fn handle_live_record<O: TarStreamObserver>(
                 )?;
             }
             *context.metadata_seen = true;
-            retain_metadata_record(
-                &mut *context.metadata_blocks,
-                record,
-                &mut *context.retained_metadata_bytes,
-                context.max_retained_metadata_bytes,
-            )?;
+            retain_metadata_record(&mut *context.metadata_blocks, record, &mut *context.retained_metadata_bytes, context.max_retained_metadata_bytes)?;
         }
     }
     Ok(())
@@ -1131,14 +992,8 @@ fn retain_metadata_record(
     retained_metadata_bytes: &mut usize,
     max_retained_metadata_bytes: usize,
 ) -> Result<(), FormatError> {
-    let retained = record
-        .payload
-        .len()
-        .checked_add(BLOCK_RECORD_FRAMING_LEN)
-        .ok_or(FormatError::InvalidArchive("metadata retention overflow"))?;
-    *retained_metadata_bytes = retained_metadata_bytes
-        .checked_add(retained)
-        .ok_or(FormatError::InvalidArchive("metadata retention overflow"))?;
+    let retained = record.payload.len().checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("metadata retention overflow"))?;
+    *retained_metadata_bytes = retained_metadata_bytes.checked_add(retained).ok_or(FormatError::InvalidArchive("metadata retention overflow"))?;
     if *retained_metadata_bytes > max_retained_metadata_bytes {
         return Err(FormatError::ReaderUnsupported("retained metadata exceeds configured streaming cap"));
     }
@@ -1206,13 +1061,9 @@ fn finalize_live_envelope<O: TarStreamObserver>(
     }
     let required_parity = required_object_parity(pending.data_shards.len() as u64, crypto_header)?;
     if pending.parity_shards.len() < required_parity as usize {
-        return Err(FormatError::InvalidArchive(
-            "sequential payload envelope has insufficient parity for recovery settings",
-        ));
+        return Err(FormatError::InvalidArchive("sequential payload envelope has insufficient parity for recovery settings"));
     }
-    let first_block_index = pending
-        .first_block_index
-        .ok_or(FormatError::InvalidArchive("sequential payload envelope is missing first block"))?;
+    let first_block_index = pending.first_block_index.ok_or(FormatError::InvalidArchive("sequential payload envelope is missing first block"))?;
 
     let block_size = crypto_header.block_size as usize;
     let encrypted = recover_data_bytes_gf16(&pending.data_shards, &pending.parity_shards, block_size)?;
@@ -1322,9 +1173,7 @@ impl<O: TarStreamObserver> StreamedPayloadCollector<O> {
         if frame_count == 0 {
             return Err(FormatError::InvalidArchive("payload envelope plaintext has no frames"));
         }
-        let encrypted_size = data_block_count
-            .checked_mul(block_size)
-            .ok_or(FormatError::InvalidArchive("EnvelopeEntry encrypted size overflow"))?;
+        let encrypted_size = data_block_count.checked_mul(block_size).ok_or(FormatError::InvalidArchive("EnvelopeEntry encrypted size overflow"))?;
         self.envelopes.push(StreamedEnvelopeSummary {
             envelope_index,
             first_block_index,
@@ -1392,12 +1241,7 @@ impl<O: TarStreamObserver> StreamedPayloadCollector<O> {
         let content_sha256 = self.hasher.finalize();
         let mut digest = [0u8; 32];
         digest.copy_from_slice(&content_sha256);
-        Ok(StreamedPayloadSummary {
-            tar: self.tar.finish()?,
-            content_sha256: digest,
-            envelopes: self.envelopes,
-            frames: self.frames,
-        })
+        Ok(StreamedPayloadSummary { tar: self.tar.finish()?, content_sha256: digest, envelopes: self.envelopes, frames: self.frames })
     }
 }
 
@@ -1409,19 +1253,11 @@ struct TerminalTailBuffer {
 
 impl TerminalTailBuffer {
     fn new(start_offset: u64, cap: usize) -> Self {
-        Self {
-            start_offset,
-            cap,
-            bytes: Vec::new(),
-        }
+        Self { start_offset, cap, bytes: Vec::new() }
     }
 
     fn append(&mut self, bytes: &[u8]) -> Result<(), FormatError> {
-        let next_len = self
-            .bytes
-            .len()
-            .checked_add(bytes.len())
-            .ok_or(FormatError::InvalidArchive("terminal tail size overflow"))?;
+        let next_len = self.bytes.len().checked_add(bytes.len()).ok_or(FormatError::InvalidArchive("terminal tail size overflow"))?;
         if next_len > self.cap {
             return Err(FormatError::ReaderUnsupported("terminal tail exceeds configured cap"));
         }
@@ -1430,11 +1266,7 @@ impl TerminalTailBuffer {
     }
 
     fn finish(self, stream_len: u64) -> TerminalTailReadAt {
-        TerminalTailReadAt {
-            start_offset: self.start_offset,
-            stream_len,
-            bytes: self.bytes,
-        }
+        TerminalTailReadAt { start_offset: self.start_offset, stream_len, bytes: self.bytes }
     }
 }
 
@@ -1450,13 +1282,8 @@ impl ArchiveReadAt for TerminalTailReadAt {
     }
 
     fn read_exact_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), FormatError> {
-        let end = offset
-            .checked_add(buf.len() as u64)
-            .ok_or(FormatError::InvalidArchive("terminal tail range overflow"))?;
-        let tail_end = self
-            .start_offset
-            .checked_add(self.bytes.len() as u64)
-            .ok_or(FormatError::InvalidArchive("terminal tail range overflow"))?;
+        let end = offset.checked_add(buf.len() as u64).ok_or(FormatError::InvalidArchive("terminal tail range overflow"))?;
+        let tail_end = self.start_offset.checked_add(self.bytes.len() as u64).ok_or(FormatError::InvalidArchive("terminal tail range overflow"))?;
         if offset < self.start_offset || end > tail_end {
             return Err(FormatError::InvalidLength {
                 structure: "terminal tail",
@@ -1465,9 +1292,7 @@ impl ArchiveReadAt for TerminalTailReadAt {
             });
         }
         let start = usize::try_from(offset - self.start_offset).map_err(|_| FormatError::InvalidArchive("terminal tail range overflow"))?;
-        let end = start
-            .checked_add(buf.len())
-            .ok_or(FormatError::InvalidArchive("terminal tail range overflow"))?;
+        let end = start.checked_add(buf.len()).ok_or(FormatError::InvalidArchive("terminal tail range overflow"))?;
         buf.copy_from_slice(&self.bytes[start..end]);
         Ok(())
     }

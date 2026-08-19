@@ -86,9 +86,7 @@ pub struct RecipientWrapRecordContext<'a> {
 
 impl ArchiveReadAt for File {
     fn len(&self) -> Result<u64, FormatError> {
-        self.metadata()
-            .map(|metadata| metadata.len())
-            .map_err(|_| FormatError::InvalidArchive("archive read metadata failed"))
+        self.metadata().map(|metadata| metadata.len()).map_err(|_| FormatError::InvalidArchive("archive read metadata failed"))
     }
 
     fn read_exact_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), FormatError> {
@@ -142,11 +140,7 @@ impl ArchiveReadAt for Vec<u8> {
     fn read_exact_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), FormatError> {
         let offset = to_usize(offset, "archive")?;
         let end = checked_add(offset, buf.len(), "archive")?;
-        let source = self.get(offset..end).ok_or(FormatError::InvalidLength {
-            structure: "archive",
-            expected: end,
-            actual: self.len(),
-        })?;
+        let source = self.get(offset..end).ok_or(FormatError::InvalidLength { structure: "archive", expected: end, actual: self.len() })?;
         buf.copy_from_slice(source);
         Ok(())
     }
@@ -472,13 +466,7 @@ pub(crate) struct ExtractProgressWriter<'a, W> {
 
 impl<'a, W> ExtractProgressWriter<'a, W> {
     fn new(inner: &'a mut W, archive_path: &'a str, file_data_size: u64, progress: &'a mut dyn ArchiveExtractProgressSink) -> Self {
-        Self {
-            inner,
-            archive_path,
-            file_data_size,
-            reported_bytes: 0,
-            progress,
-        }
+        Self { inner, archive_path, file_data_size, reported_bytes: 0, progress }
     }
 
     fn report(&mut self, bytes: u64) {
@@ -600,12 +588,7 @@ impl SeekableBlockSource {
     fn total_block_count(&self) -> Result<u64, FormatError> {
         self.volumes
             .iter()
-            .map(|volume| {
-                volume
-                    .as_ref()
-                    .map(|volume| volume.block_count)
-                    .ok_or(FormatError::InvalidArchive("missing volume in complete set"))
-            })
+            .map(|volume| volume.as_ref().map(|volume| volume.block_count).ok_or(FormatError::InvalidArchive("missing volume in complete set")))
             .try_fold(0u64, |sum, count| checked_u64_add(sum, count?, "BlockRecord count overflow"))
     }
 }
@@ -717,11 +700,7 @@ pub fn open_archive_with_bootstrap_sidecar(bytes: &[u8], bootstrap_sidecar: &[u8
 
 pub(crate) fn require_unencrypted_volume_profile(bytes: &[u8]) -> Result<(), FormatError> {
     if bytes.len() < VOLUME_HEADER_LEN {
-        return Err(FormatError::InvalidLength {
-            structure: "archive",
-            expected: VOLUME_HEADER_LEN,
-            actual: bytes.len(),
-        });
+        return Err(FormatError::InvalidLength { structure: "archive", expected: VOLUME_HEADER_LEN, actual: bytes.len() });
     }
     let volume_header = VolumeHeader::parse(slice(bytes, 0, VOLUME_HEADER_LEN, "archive")?)?;
     parse_volume_format_dispatch(&volume_header)?;
@@ -819,10 +798,7 @@ pub fn sequential_extract_tar_stream(bytes: &[u8], master_key: &MasterKey) -> Re
 
 impl OpenedArchive {
     fn block_provider(&self) -> OpenedBlockProvider<'_> {
-        OpenedBlockProvider {
-            memory_blocks: &self.blocks,
-            lazy_blocks: self.lazy_blocks.as_deref(),
-        }
+        OpenedBlockProvider { memory_blocks: &self.blocks, lazy_blocks: self.lazy_blocks.as_deref() }
     }
 
     pub fn observed_archive_bytes(&self) -> u64 {
@@ -878,10 +854,7 @@ impl OpenedArchive {
             }
         };
         let observed_volume_count = 1;
-        let missing_volume_count = crypto_header
-            .stripe_width
-            .checked_sub(observed_volume_count)
-            .ok_or(FormatError::InvalidArchive("volume count overflow"))?;
+        let missing_volume_count = crypto_header.stripe_width.checked_sub(observed_volume_count).ok_or(FormatError::InvalidArchive("volume count overflow"))?;
         if missing_volume_count > crypto_header.volume_loss_tolerance as u32 {
             return Err(FormatError::InvalidArchive("missing volume count exceeds volume_loss_tolerance"));
         }
@@ -939,18 +912,12 @@ impl OpenedArchive {
         let manifest_footer = match parsed.manifest_footer.take() {
             Some(footer) => footer,
             None => {
-                return Err(parsed
-                    .manifest_footer_error
-                    .take()
-                    .unwrap_or(FormatError::InvalidArchive("no verified ManifestFooter found")));
+                return Err(parsed.manifest_footer_error.take().unwrap_or(FormatError::InvalidArchive("no verified ManifestFooter found")));
             }
         };
         let observed_volume_count = 1;
-        let missing_volume_count = parsed
-            .crypto_header
-            .stripe_width
-            .checked_sub(observed_volume_count)
-            .ok_or(FormatError::InvalidArchive("volume count overflow"))?;
+        let missing_volume_count =
+            parsed.crypto_header.stripe_width.checked_sub(observed_volume_count).ok_or(FormatError::InvalidArchive("volume count overflow"))?;
         if missing_volume_count > parsed.crypto_header.volume_loss_tolerance as u32 {
             return Err(FormatError::InvalidArchive("missing volume count exceeds volume_loss_tolerance"));
         }
@@ -970,31 +937,17 @@ impl OpenedArchive {
             record_len,
             block_size: parsed.crypto_header.block_size as usize,
         });
-        let lazy_source = Arc::new(SeekableBlockSource {
-            stripe_width: parsed.crypto_header.stripe_width,
-            volumes: lazy_volume_slots,
-        });
+        let lazy_source = Arc::new(SeekableBlockSource { stripe_width: parsed.crypto_header.stripe_width, volumes: lazy_volume_slots });
         let blocks = BTreeMap::new();
-        let block_provider = OpenedBlockProvider {
-            memory_blocks: &blocks,
-            lazy_blocks: Some(lazy_source.as_ref()),
-        };
+        let block_provider = OpenedBlockProvider { memory_blocks: &blocks, lazy_blocks: Some(lazy_source.as_ref()) };
         let limits = metadata_limits(&parsed.crypto_header);
         let index_root_plaintext = load_metadata_object_from_parts(
             &block_provider,
-            ObjectLoadContext::index_root(
-                &parsed.volume_header,
-                &parsed.crypto_header,
-                &parsed.subkeys,
-                index_root_extent_from_manifest(&manifest_footer),
-            ),
+            ObjectLoadContext::index_root(&parsed.volume_header, &parsed.crypto_header, &parsed.subkeys, index_root_extent_from_manifest(&manifest_footer)),
             manifest_footer.index_root_decompressed_size,
         )?;
         let index_root = IndexRoot::parse(&index_root_plaintext, parsed.crypto_header.has_dictionary != 0, limits)?;
-        let block_provider = OpenedBlockProvider {
-            memory_blocks: &blocks,
-            lazy_blocks: Some(lazy_source.as_ref()),
-        };
+        let block_provider = OpenedBlockProvider { memory_blocks: &blocks, lazy_blocks: Some(lazy_source.as_ref()) };
         let payload_dictionary = load_archive_dictionary(&block_provider, &parsed.subkeys, &parsed.volume_header, &parsed.crypto_header, &index_root)?;
 
         Ok(Self {
@@ -1127,40 +1080,23 @@ impl OpenedArchive {
         let authority_volume_header = manifest_authority_volume_header.ok_or(FormatError::InvalidArchive("no verified ManifestFooter found"))?;
         let authority_volume_trailer = manifest_authority_volume_trailer.ok_or(FormatError::InvalidArchive("no verified ManifestFooter found"))?;
         let observed_volume_count = u32::try_from(seen_volume_indexes.len()).map_err(|_| FormatError::InvalidArchive("volume count overflow"))?;
-        let missing_volume_count = first
-            .crypto_header
-            .stripe_width
-            .checked_sub(observed_volume_count)
-            .ok_or(FormatError::InvalidArchive("volume count overflow"))?;
+        let missing_volume_count =
+            first.crypto_header.stripe_width.checked_sub(observed_volume_count).ok_or(FormatError::InvalidArchive("volume count overflow"))?;
         if missing_volume_count > first.crypto_header.volume_loss_tolerance as u32 {
             return Err(FormatError::InvalidArchive("missing volume count exceeds volume_loss_tolerance"));
         }
 
         let blocks = BTreeMap::new();
-        let lazy_source = Arc::new(SeekableBlockSource {
-            stripe_width: first.crypto_header.stripe_width,
-            volumes: lazy_volume_slots,
-        });
-        let block_provider = OpenedBlockProvider {
-            memory_blocks: &blocks,
-            lazy_blocks: Some(lazy_source.as_ref()),
-        };
+        let lazy_source = Arc::new(SeekableBlockSource { stripe_width: first.crypto_header.stripe_width, volumes: lazy_volume_slots });
+        let block_provider = OpenedBlockProvider { memory_blocks: &blocks, lazy_blocks: Some(lazy_source.as_ref()) };
         let limits = metadata_limits(&first.crypto_header);
         let index_root_plaintext = load_metadata_object_from_parts(
             &block_provider,
-            ObjectLoadContext::index_root(
-                &first.volume_header,
-                &first.crypto_header,
-                &first.subkeys,
-                index_root_extent_from_manifest(&manifest_footer),
-            ),
+            ObjectLoadContext::index_root(&first.volume_header, &first.crypto_header, &first.subkeys, index_root_extent_from_manifest(&manifest_footer)),
             manifest_footer.index_root_decompressed_size,
         )?;
         let index_root = IndexRoot::parse(&index_root_plaintext, first.crypto_header.has_dictionary != 0, limits)?;
-        let block_provider = OpenedBlockProvider {
-            memory_blocks: &blocks,
-            lazy_blocks: Some(lazy_source.as_ref()),
-        };
+        let block_provider = OpenedBlockProvider { memory_blocks: &blocks, lazy_blocks: Some(lazy_source.as_ref()) };
         let payload_dictionary = load_archive_dictionary(&block_provider, &first.subkeys, &first.volume_header, &first.crypto_header, &index_root)?;
 
         Ok(Self {
@@ -1271,11 +1207,8 @@ impl OpenedArchive {
         let authority_volume_header = manifest_authority_volume_header.ok_or(FormatError::InvalidArchive("no verified ManifestFooter found"))?;
         let authority_volume_trailer = manifest_authority_volume_trailer.ok_or(FormatError::InvalidArchive("no verified ManifestFooter found"))?;
         let observed_volume_count = u32::try_from(seen_volume_indexes.len()).map_err(|_| FormatError::InvalidArchive("volume count overflow"))?;
-        let missing_volume_count = first
-            .crypto_header
-            .stripe_width
-            .checked_sub(observed_volume_count)
-            .ok_or(FormatError::InvalidArchive("volume count overflow"))?;
+        let missing_volume_count =
+            first.crypto_header.stripe_width.checked_sub(observed_volume_count).ok_or(FormatError::InvalidArchive("volume count overflow"))?;
         if missing_volume_count > first.crypto_header.volume_loss_tolerance as u32 {
             return Err(FormatError::InvalidArchive("missing volume count exceeds volume_loss_tolerance"));
         }
@@ -1340,12 +1273,7 @@ impl OpenedArchive {
         }
 
         let observed_archive_bytes = observed_archive_size(
-            readers
-                .iter()
-                .map(|reader| reader.len())
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .chain(bootstrap_sidecar.map(|sidecar| sidecar.len() as u64)),
+            readers.iter().map(|reader| reader.len()).collect::<Result<Vec<_>, _>>()?.into_iter().chain(bootstrap_sidecar.map(|sidecar| sidecar.len() as u64)),
         )?;
         let mut first: Option<ParsedSeekableReadAtVolume> = None;
         let mut manifest_authority: Option<ManifestFooter> = None;
@@ -1447,11 +1375,8 @@ impl OpenedArchive {
         let authority_volume_header = manifest_authority_volume_header.ok_or(FormatError::InvalidArchive("no verified ManifestFooter found"))?;
         let authority_volume_trailer = manifest_authority_volume_trailer.ok_or(FormatError::InvalidArchive("no verified ManifestFooter found"))?;
         let observed_volume_count = u32::try_from(seen_volume_indexes.len()).map_err(|_| FormatError::InvalidArchive("volume count overflow"))?;
-        let missing_volume_count = first
-            .crypto_header
-            .stripe_width
-            .checked_sub(observed_volume_count)
-            .ok_or(FormatError::InvalidArchive("volume count overflow"))?;
+        let missing_volume_count =
+            first.crypto_header.stripe_width.checked_sub(observed_volume_count).ok_or(FormatError::InvalidArchive("volume count overflow"))?;
         if missing_volume_count > first.crypto_header.volume_loss_tolerance as u32 {
             return Err(FormatError::InvalidArchive("missing volume count exceeds volume_loss_tolerance"));
         }
@@ -1488,23 +1413,12 @@ impl OpenedArchive {
             }
         }
 
-        let lazy_source = Arc::new(SeekableBlockSource {
-            stripe_width: first.crypto_header.stripe_width,
-            volumes: lazy_volume_slots,
-        });
-        let block_provider = OpenedBlockProvider {
-            memory_blocks: &blocks,
-            lazy_blocks: Some(lazy_source.as_ref()),
-        };
+        let lazy_source = Arc::new(SeekableBlockSource { stripe_width: first.crypto_header.stripe_width, volumes: lazy_volume_slots });
+        let block_provider = OpenedBlockProvider { memory_blocks: &blocks, lazy_blocks: Some(lazy_source.as_ref()) };
         let limits = metadata_limits(&first.crypto_header);
         let index_root_plaintext = load_metadata_object_from_parts(
             &block_provider,
-            ObjectLoadContext::index_root(
-                &first.volume_header,
-                &first.crypto_header,
-                &first.subkeys,
-                index_root_extent_from_manifest(&manifest_footer),
-            ),
+            ObjectLoadContext::index_root(&first.volume_header, &first.crypto_header, &first.subkeys, index_root_extent_from_manifest(&manifest_footer)),
             manifest_footer.index_root_decompressed_size,
         )?;
         let index_root = IndexRoot::parse(&index_root_plaintext, first.crypto_header.has_dictionary != 0, limits)?;
@@ -1527,10 +1441,7 @@ impl OpenedArchive {
                 }
             }
         }
-        let block_provider = OpenedBlockProvider {
-            memory_blocks: &blocks,
-            lazy_blocks: Some(lazy_source.as_ref()),
-        };
+        let block_provider = OpenedBlockProvider { memory_blocks: &blocks, lazy_blocks: Some(lazy_source.as_ref()) };
         let payload_dictionary = load_archive_dictionary(&block_provider, &first.subkeys, &first.volume_header, &first.crypto_header, &index_root)?;
 
         Ok(Self {
@@ -1569,11 +1480,7 @@ impl OpenedArchive {
     ) -> Result<Self, FormatError> {
         let observed_archive_bytes = observed_archive_size([bytes.len() as u64, bootstrap_sidecar.len() as u64])?;
         if bytes.len() < VOLUME_HEADER_LEN {
-            return Err(FormatError::InvalidLength {
-                structure: "archive",
-                expected: VOLUME_HEADER_LEN,
-                actual: bytes.len(),
-            });
+            return Err(FormatError::InvalidLength { structure: "archive", expected: VOLUME_HEADER_LEN, actual: bytes.len() });
         }
 
         let volume_header = VolumeHeader::parse(slice(bytes, 0, VOLUME_HEADER_LEN, "archive")?)?;
@@ -1582,12 +1489,7 @@ impl OpenedArchive {
         let crypto_len = volume_header.crypto_header_length as usize;
         let crypto_bytes = slice(bytes, crypto_start, crypto_len, "CryptoHeader")?;
         let parsed_crypto = CryptoHeader::parse(crypto_bytes, volume_header.crypto_header_length)?;
-        let subkeys = subkeys_for_open(
-            Some(master_key),
-            parsed_crypto.fixed.aead_algo,
-            &volume_header.archive_uuid,
-            &volume_header.session_id,
-        )?;
+        let subkeys = subkeys_for_open(Some(master_key), parsed_crypto.fixed.aead_algo, &volume_header.archive_uuid, &volume_header.session_id)?;
         verify_integrity_tag(
             HmacDomain::CryptoHeader,
             parsed_crypto.fixed.aead_algo,
@@ -1610,12 +1512,8 @@ impl OpenedArchive {
             Ok(slice(bytes, start, length, "KeyWrapTableV1")?.to_vec())
         })?;
 
-        let (mut blocks, terminal_offset, observed_block_count) = parse_stream_block_prefix(
-            bytes,
-            to_usize(block_records_start, "BlockRecord")?,
-            parsed_crypto.fixed.block_size as usize,
-            &volume_header,
-        )?;
+        let (mut blocks, terminal_offset, observed_block_count) =
+            parse_stream_block_prefix(bytes, to_usize(block_records_start, "BlockRecord")?, parsed_crypto.fixed.block_size as usize, &volume_header)?;
         let terminal_material = match sidecar_use {
             BootstrapSidecarUse::SeekableAssist => Some(parse_terminal_material(
                 bytes,
@@ -1655,9 +1553,10 @@ impl OpenedArchive {
                 terminal_manifest.clone()
             }
             BootstrapSidecarUse::NonSeekableRandomAccess => {
-                let sidecar_manifest = sidecar.manifest_footer.as_ref().ok_or(FormatError::ReaderUnsupported(
-                    "non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections",
-                ))?;
+                let sidecar_manifest = sidecar
+                    .manifest_footer
+                    .as_ref()
+                    .ok_or(FormatError::ReaderUnsupported("non-seekable bootstrap sidecar requires ManifestFooter and IndexRoot sections"))?;
                 if let Some(terminal_manifest) = terminal_manifest {
                     if !manifest_bootstrap_fields_match(terminal_manifest, sidecar_manifest) {
                         return Err(FormatError::InvalidArchive("bootstrap sidecar conflicts with terminal ManifestFooter"));
@@ -1687,12 +1586,7 @@ impl OpenedArchive {
         let limits = metadata_limits(&parsed_crypto.fixed);
         let index_root_plaintext = load_metadata_object_from_parts(
             &blocks,
-            ObjectLoadContext::index_root(
-                &volume_header,
-                &parsed_crypto.fixed,
-                &subkeys,
-                index_root_extent_from_manifest(&manifest_authority),
-            ),
+            ObjectLoadContext::index_root(&volume_header, &parsed_crypto.fixed, &subkeys, index_root_extent_from_manifest(&manifest_authority)),
             manifest_authority.index_root_decompressed_size,
         )?;
         let index_root = IndexRoot::parse(&index_root_plaintext, parsed_crypto.fixed.has_dictionary != 0, limits)?;
@@ -1868,9 +1762,7 @@ impl OpenedArchive {
     /// Look up one archive path using encrypted index metadata only.
     pub fn lookup_index_entry(&self, path: &str) -> Result<Option<ArchiveIndexEntry>, FormatError> {
         let normalized = normalize_lookup_file_path(path, self.crypto_header.max_path_length)?;
-        self.locate_index_file(&normalized)?
-            .map(|located| archive_index_entry_from_loaded_file(&located.shard, located.file_index))
-            .transpose()
+        self.locate_index_file(&normalized)?.map(|located| archive_index_entry_from_loaded_file(&located.shard, located.file_index)).transpose()
     }
 
     pub fn list_files(&self) -> Result<Vec<ArchiveEntry>, FormatError> {
@@ -1880,10 +1772,7 @@ impl OpenedArchive {
             .map(|(path, winner)| {
                 let shard = &shards[winner.shard_index];
                 let member = self.decode_loaded_owned_tar_member(shard, winner.file_index, false)?;
-                let v45 = member
-                    .v45_metadata
-                    .as_ref()
-                    .ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
+                let v45 = member.v45_metadata.as_ref().ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
                 let mtime = v45.portable_mirror.mtime;
                 Ok(ArchiveEntry {
                     path,
@@ -1916,10 +1805,7 @@ impl OpenedArchive {
         }
         let members: Vec<_> = planned.iter().map(|(_, member)| member).collect();
         validate_owned_restore_plan(&members, options)?;
-        planned
-            .into_iter()
-            .map(|(path, member)| Ok((path, plan_owned_member_restore(&member, options)?)))
-            .collect()
+        planned.into_iter().map(|(path, member)| Ok((path, plan_owned_member_restore(&member, options)?))).collect()
     }
 
     /// Return only the regular-file payload bytes for `path`.
@@ -1945,9 +1831,7 @@ impl OpenedArchive {
         self.extract_member(path)?
             .map(|member| {
                 if member.kind != TarEntryKind::Regular || member.reparse_placeholder {
-                    return Err(FormatError::ReaderUnsupported(
-                        "extract_file_with_diagnostics returns only regular file payloads",
-                    ));
+                    return Err(FormatError::ReaderUnsupported("extract_file_with_diagnostics returns only regular file payloads"));
                 }
                 Ok((member.data, member.diagnostics))
             })
@@ -1961,9 +1845,7 @@ impl OpenedArchive {
     /// same metadata diagnostics as [`Self::extract_file_with_diagnostics`].
     pub fn extract_file_to_writer<W: Write>(&self, path: &str, writer: &mut W) -> Result<Option<Vec<MetadataDiagnostic>>, ExtractError> {
         let normalized = normalize_lookup_file_path(path, self.crypto_header.max_path_length)?;
-        self.locate_index_file(&normalized)?
-            .map(|located| self.stream_loaded_file_to_writer(&located.shard, located.file_index, writer))
-            .transpose()
+        self.locate_index_file(&normalized)?.map(|located| self.stream_loaded_file_to_writer(&located.shard, located.file_index, writer)).transpose()
     }
 
     /// Stream regular-file payload bytes for `path` into `writer` while
@@ -2001,9 +1883,7 @@ impl OpenedArchive {
 
     pub fn extract_member(&self, path: &str) -> Result<Option<ExtractedArchiveMember>, FormatError> {
         let normalized = normalize_lookup_file_path(path, self.crypto_header.max_path_length)?;
-        self.locate_index_file(&normalized)?
-            .map(|located| self.extract_loaded_member(&located.shard, located.file_index))
-            .transpose()
+        self.locate_index_file(&normalized)?.map(|located| self.extract_loaded_member(&located.shard, located.file_index)).transpose()
     }
 
     pub fn extract_file_to(&self, path: &str, root: &std::path::Path, options: SafeExtractionOptions) -> Result<Option<Vec<MetadataDiagnostic>>, FormatError> {
@@ -2017,15 +1897,9 @@ impl OpenedArchive {
         let requested_member = self.decode_loaded_owned_tar_member(&shards[requested.shard_index], requested.file_index, false)?;
         let mut entries = Vec::with_capacity(2);
         if requested_member.kind == TarEntryKind::Hardlink {
-            let target = requested_member
-                .link_target
-                .as_deref()
-                .ok_or(FormatError::InvalidArchive("hardlink target is missing"))?;
+            let target = requested_member.link_target.as_deref().ok_or(FormatError::InvalidArchive("hardlink target is missing"))?;
             let target = std::str::from_utf8(target).map_err(|_| FormatError::UnsafeArchivePath)?.to_owned();
-            let target_entry = winners
-                .get(&target)
-                .copied()
-                .ok_or(FormatError::InvalidArchive("hardlink target is absent from the final index"))?;
+            let target_entry = winners.get(&target).copied().ok_or(FormatError::InvalidArchive("hardlink target is absent from the final index"))?;
             entries.push((target, target_entry));
         }
         entries.push((normalized_path.clone(), requested));
@@ -2075,10 +1949,7 @@ impl OpenedArchive {
         for path in paths {
             let normalized = normalize_lookup_file_path(path, self.crypto_header.max_path_length)?;
             let normalized = std::str::from_utf8(&normalized).map_err(|_| FormatError::UnsafeArchivePath)?.to_owned();
-            let entry = winners
-                .get(&normalized)
-                .copied()
-                .ok_or(FormatError::ReaderUnsupported("selected archive path is absent from the final index"))?;
+            let entry = winners.get(&normalized).copied().ok_or(FormatError::ReaderUnsupported("selected archive path is absent from the final index"))?;
             selected.insert(normalized, entry);
         }
 
@@ -2090,10 +1961,7 @@ impl OpenedArchive {
             }
             let target = member.link_target.as_deref().ok_or(FormatError::InvalidArchive("hardlink target is missing"))?;
             let target = std::str::from_utf8(target).map_err(|_| FormatError::UnsafeArchivePath)?.to_owned();
-            let target_entry = winners
-                .get(&target)
-                .copied()
-                .ok_or(FormatError::InvalidArchive("hardlink target is absent from the final index"))?;
+            let target_entry = winners.get(&target).copied().ok_or(FormatError::InvalidArchive("hardlink target is absent from the final index"))?;
             selected.entry(target).or_insert(target_entry);
         }
 
@@ -2113,11 +1981,7 @@ impl OpenedArchive {
     pub fn verify_content_fast(&self) -> Result<ArchiveContentVerification<'_>, FormatError> {
         if self.fast_verify_defers_payload_semantics() {
             self.verify_payload_record_integrity_only()?;
-            return Ok(ArchiveContentVerification {
-                archive: self,
-                mode: ContentVerificationMode::Fast,
-                metadata_report: None,
-            });
+            return Ok(ArchiveContentVerification { archive: self, mode: ContentVerificationMode::Fast, metadata_report: None });
         }
         self.verify_content_with_parity_policy(ParityReadPolicy::RepairOnly, ContentVerificationMode::Fast)
     }
@@ -2146,9 +2010,7 @@ impl OpenedArchive {
             }
             for offset in 0..envelope.data_block_count {
                 let block_index = checked_u64_add(envelope.first_block_index, offset as u64, "payload")?;
-                let record = block_provider
-                    .block(block_index)?
-                    .ok_or(FormatError::InvalidArchive("payload data block is missing"))?;
+                let record = block_provider.block(block_index)?.ok_or(FormatError::InvalidArchive("payload data block is missing"))?;
                 if record.kind != BlockKind::PayloadData {
                     return Err(FormatError::InvalidArchive("payload data block has unexpected kind"));
                 }
@@ -2170,18 +2032,11 @@ impl OpenedArchive {
         let streamed = self.scan_seekable_payload(&tables, u64::MAX, NoopTarStreamObserver, true, parity_policy)?;
         self.validate_streamed_payload_summary(&tables, &streamed, false, true)?;
         let metadata_report = metadata_verification_report(&streamed.tar.members)?;
-        Ok(ArchiveContentVerification {
-            archive: self,
-            mode,
-            metadata_report: Some(metadata_report),
-        })
+        Ok(ArchiveContentVerification { archive: self, mode, metadata_report: Some(metadata_report) })
     }
 
     pub fn repair_patches(&self) -> Result<Vec<ArchiveRepairPatch>, FormatError> {
-        let lazy_source = self
-            .lazy_blocks
-            .as_ref()
-            .ok_or(FormatError::ReaderUnsupported("repair output requires seekable archive input"))?;
+        let lazy_source = self.lazy_blocks.as_ref().ok_or(FormatError::ReaderUnsupported("repair output requires seekable archive input"))?;
         if !lazy_source.is_complete_volume_set() {
             return Err(FormatError::ReaderUnsupported("repair output requires all archive volumes"));
         }
@@ -2211,12 +2066,7 @@ impl OpenedArchive {
             ParityReadPolicy::RepairOnly,
         )?;
         self.validate_streamed_payload_summary(&tables, &streamed, true, false)?;
-        streamed
-            .tar
-            .members
-            .into_iter()
-            .map(|member| Ok((utf8_path(&member.path)?, member.diagnostics)))
-            .collect()
+        streamed.tar.members.into_iter().map(|member| Ok((utf8_path(&member.path)?, member.diagnostics))).collect()
     }
 
     fn collect_repair_patches_for_object(
@@ -2306,19 +2156,8 @@ impl OpenedArchive {
         payload: Vec<u8>,
     ) -> Result<(), FormatError> {
         let (volume_index, record_offset) = source.record_location(block_index)?;
-        let record = BlockRecord {
-            block_index,
-            kind,
-            flags,
-            payload,
-            record_crc32c: 0,
-        };
-        let patch = ArchiveRepairPatch {
-            volume_index,
-            block_index,
-            record_offset,
-            record_bytes: record.to_bytes(),
-        };
+        let record = BlockRecord { block_index, kind, flags, payload, record_crc32c: 0 };
+        let patch = ArchiveRepairPatch { volume_index, block_index, record_offset, record_bytes: record.to_bytes() };
         if let Some(existing) = patches.insert(block_index, patch.clone()) {
             if existing != patch {
                 return Err(FormatError::InvalidArchive("conflicting repair patch for BlockRecord"));
@@ -2338,9 +2177,7 @@ impl OpenedArchive {
         let mut envelopes = BTreeMap::<u64, EnvelopeEntry>::new();
 
         for shard in &shards {
-            file_count = file_count
-                .checked_add(shard.files.len() as u64)
-                .ok_or(FormatError::InvalidArchive("file count overflow"))?;
+            file_count = file_count.checked_add(shard.files.len() as u64).ok_or(FormatError::InvalidArchive("file count overflow"))?;
             for frame in &shard.frames {
                 if let Some(existing) = frames.insert(frame.frame_index, frame.clone()) {
                     if existing != *frame {
@@ -2367,19 +2204,13 @@ impl OpenedArchive {
         self.validate_encrypted_object_block_ranges(&envelopes)?;
 
         let payload_block_count = envelopes.values().try_fold(0u64, |sum, envelope| {
-            sum.checked_add(envelope.data_block_count as u64)
-                .ok_or(FormatError::InvalidArchive("payload block count overflow"))
+            sum.checked_add(envelope.data_block_count as u64).ok_or(FormatError::InvalidArchive("payload block count overflow"))
         })?;
         if payload_block_count != self.index_root.header.payload_block_count {
             return Err(FormatError::InvalidArchive("IndexRoot payload_block_count does not match envelopes"));
         }
 
-        Ok(PayloadIndexTables {
-            shards,
-            file_count,
-            frames,
-            envelopes,
-        })
+        Ok(PayloadIndexTables { shards, file_count, frames, envelopes })
     }
 
     fn scan_seekable_payload<O: TarStreamObserver>(
@@ -2418,20 +2249,12 @@ impl OpenedArchive {
         let mut decompressor = self.new_payload_decompressor()?;
 
         for frame in tables.frames.values() {
-            let envelope = tables
-                .envelopes
-                .get(&frame.envelope_index)
-                .ok_or(FormatError::InvalidArchive("FrameEntry references missing EnvelopeEntry"))?;
+            let envelope = tables.envelopes.get(&frame.envelope_index).ok_or(FormatError::InvalidArchive("FrameEntry references missing EnvelopeEntry"))?;
             if cached_envelope_index != Some(envelope.envelope_index) {
                 cached_envelope_plaintext = self.load_payload_envelope(envelope, parity_policy)?;
                 cached_envelope_index = Some(envelope.envelope_index);
             }
-            let compressed = slice(
-                &cached_envelope_plaintext,
-                frame.offset_in_envelope as usize,
-                frame.compressed_size as usize,
-                "FrameEntry",
-            )?;
+            let compressed = slice(&cached_envelope_plaintext, frame.offset_in_envelope as usize, frame.compressed_size as usize, "FrameEntry")?;
             let tar_stream_offset = tar.tar_total_size();
             let decoded = self.decompress_payload_frame_with(&mut decompressor, compressed, frame.decompressed_size)?;
             if decoded.is_empty() {
@@ -2456,12 +2279,7 @@ impl OpenedArchive {
             let digest = hasher.finalize();
             content_sha256.copy_from_slice(&digest);
         }
-        Ok(StreamedPayloadSummary {
-            tar: tar.finish()?,
-            content_sha256,
-            envelopes: streamed_envelopes,
-            frames: streamed_frames,
-        })
+        Ok(StreamedPayloadSummary { tar: tar.finish()?, content_sha256, envelopes: streamed_envelopes, frames: streamed_frames })
     }
 
     fn validate_streamed_payload_summary(
@@ -2476,8 +2294,7 @@ impl OpenedArchive {
         }
 
         let streamed_payload_block_count = streamed.envelopes.iter().try_fold(0u64, |sum, envelope| {
-            sum.checked_add(envelope.data_block_count as u64)
-                .ok_or(FormatError::InvalidArchive("payload block count overflow"))
+            sum.checked_add(envelope.data_block_count as u64).ok_or(FormatError::InvalidArchive("payload block count overflow"))
         })?;
         if streamed_payload_block_count != self.index_root.header.payload_block_count {
             return Err(FormatError::InvalidArchive("streamed payload block count does not match IndexRoot"));
@@ -2492,9 +2309,8 @@ impl OpenedArchive {
 
         let streamed_envelopes = streamed.envelope_map()?;
         for envelope in tables.envelopes.values() {
-            let actual = streamed_envelopes
-                .get(&envelope.envelope_index)
-                .ok_or(FormatError::InvalidArchive("metadata references missing streamed payload envelope"))?;
+            let actual =
+                streamed_envelopes.get(&envelope.envelope_index).ok_or(FormatError::InvalidArchive("metadata references missing streamed payload envelope"))?;
             if actual.first_block_index != envelope.first_block_index
                 || actual.data_block_count != envelope.data_block_count
                 || actual.parity_block_count != envelope.parity_block_count
@@ -2509,9 +2325,7 @@ impl OpenedArchive {
 
         let streamed_frames = streamed.frame_map()?;
         for frame in tables.frames.values() {
-            let actual = streamed_frames
-                .get(&frame.frame_index)
-                .ok_or(FormatError::InvalidArchive("metadata references missing streamed payload frame"))?;
+            let actual = streamed_frames.get(&frame.frame_index).ok_or(FormatError::InvalidArchive("metadata references missing streamed payload frame"))?;
             if actual.envelope_index != frame.envelope_index
                 || actual.offset_in_envelope != frame.offset_in_envelope
                 || actual.compressed_size != frame.compressed_size
@@ -2533,14 +2347,10 @@ impl OpenedArchive {
             let shard_row_index = u32::try_from(shard_row_index).map_err(|_| FormatError::InvalidArchive("shard row index overflow"))?;
             for idx in 0..shard.files.len() {
                 let file = &shard.files[idx];
-                let start = shard
-                    .tar_member_group_start(idx)
-                    .ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing"))?;
+                let start = shard.tar_member_group_start(idx).ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing"))?;
                 file_extents.push((start, file.tar_member_group_size));
                 let path = shard.file_path(idx).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
-                let member = streamed_members
-                    .get(&start)
-                    .ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing from streamed tar"))?;
+                let member = streamed_members.get(&start).ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing from streamed tar"))?;
                 if member.path != path {
                     return Err(FormatError::InvalidArchive("tar member path does not match FileEntry path"));
                 }
@@ -2628,14 +2438,9 @@ impl OpenedArchive {
             return Err(FormatError::InvalidArchive("content verification does not match archive"));
         }
         if content_verification.mode != ContentVerificationMode::Full {
-            return Err(FormatError::ReaderUnsupported(
-                "RootAuth verification requires full archive content verification",
-            ));
+            return Err(FormatError::ReaderUnsupported("RootAuth verification requires full archive content verification"));
         }
-        let footer = self
-            .root_auth_footer
-            .as_ref()
-            .ok_or(FormatError::ReaderUnsupported("root-auth footer is absent"))?;
+        let footer = self.root_auth_footer.as_ref().ok_or(FormatError::ReaderUnsupported("root-auth footer is absent"))?;
         let material = self.recompute_root_auth_material(footer)?;
         if material.critical_metadata_digest != footer.critical_metadata_digest
             || material.index_digest != footer.index_digest
@@ -2677,9 +2482,7 @@ impl OpenedArchive {
     }
 
     fn load_all_directory_hint_tables(&self) -> Result<Vec<DirectoryHintTable>, FormatError> {
-        parallel_map_ref(&self.index_root.directory_hint_shards, self.options.jobs, |entry| {
-            self.load_directory_hint_table(entry)
-        })
+        parallel_map_ref(&self.index_root.directory_hint_shards, self.options.jobs, |entry| self.load_directory_hint_table(entry))
     }
 
     fn load_directory_hint_table(&self, entry: &DirectoryHintShardEntry) -> Result<DirectoryHintTable, FormatError> {
@@ -2710,16 +2513,10 @@ impl OpenedArchive {
         let mut winner: Option<LocatedIndexFile> = None;
 
         for row_index in candidate_indexes {
-            let locating = self
-                .index_root
-                .shards
-                .get(row_index)
-                .ok_or(FormatError::InvalidArchive("candidate shard row is out of bounds"))?;
+            let locating = self.index_root.shards.get(row_index).ok_or(FormatError::InvalidArchive("candidate shard row is out of bounds"))?;
             let shard = self.load_index_shard(locating)?;
             if let Some(file_index) = shard.lookup_file_index(normalized) {
-                let start = shard
-                    .tar_member_group_start(file_index)
-                    .ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing"))?;
+                let start = shard.tar_member_group_start(file_index).ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing"))?;
                 if winner.as_ref().map(|existing| start > existing.start).unwrap_or(true) {
                     winner = Some(LocatedIndexFile { shard, file_index, start });
                 }
@@ -2746,10 +2543,7 @@ impl OpenedArchive {
     }
 
     fn stream_loaded_file_to_writer<W: Write>(&self, shard: &IndexShard, file_index: usize, writer: &mut W) -> Result<Vec<MetadataDiagnostic>, ExtractError> {
-        let file = shard
-            .files
-            .get(file_index)
-            .ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
+        let file = shard.files.get(file_index).ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
         self.validate_total_extraction_size(file.file_data_size)?;
         let expected_path = shard.file_path(file_index).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
         let mut reader = DecodedTarMemberGroupReader::new(self, shard, file)?;
@@ -2771,10 +2565,7 @@ impl OpenedArchive {
         writer: &mut W,
         progress: &mut dyn ArchiveExtractProgressSink,
     ) -> Result<Vec<MetadataDiagnostic>, ExtractError> {
-        let file = shard
-            .files
-            .get(file_index)
-            .ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
+        let file = shard.files.get(file_index).ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
         self.validate_total_extraction_size(file.file_data_size)?;
         let expected_path = shard.file_path(file_index).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
         let archive_path = utf8_path(expected_path)?;
@@ -2798,10 +2589,7 @@ impl OpenedArchive {
         root: &std::path::Path,
         options: SafeExtractionOptions,
     ) -> Result<Vec<MetadataDiagnostic>, FormatError> {
-        let file = shard
-            .files
-            .get(file_index)
-            .ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
+        let file = shard.files.get(file_index).ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
         self.validate_total_extraction_size(file.file_data_size)?;
         let expected_path = shard.file_path(file_index).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
         let mut reader = DecodedTarMemberGroupReader::new(self, shard, file)?;
@@ -2832,22 +2620,12 @@ impl OpenedArchive {
             return Ok(Vec::new());
         }
         let metadata = parallel_map_ref(&entries, jobs, |(_, entry)| {
-            let shard = shards
-                .get(entry.shard_index)
-                .ok_or(FormatError::InvalidArchive("winning FileEntry shard is out of bounds"))?;
+            let shard = shards.get(entry.shard_index).ok_or(FormatError::InvalidArchive("winning FileEntry shard is out of bounds"))?;
             self.decode_loaded_owned_tar_member(shard, entry.file_index, false)
         })?;
         validate_owned_restore_plan(&metadata.iter().collect::<Vec<_>>(), options)?;
-        let mut planned = entries
-            .into_iter()
-            .zip(metadata)
-            .map(|((path, entry), member)| (path, entry, member))
-            .collect::<Vec<_>>();
-        planned.sort_by(|left, right| {
-            restore_phase(&left.2)
-                .cmp(&restore_phase(&right.2))
-                .then_with(|| left.2.path.cmp(&right.2.path))
-        });
+        let mut planned = entries.into_iter().zip(metadata).map(|((path, entry), member)| (path, entry, member)).collect::<Vec<_>>();
+        planned.sort_by(|left, right| restore_phase(&left.2).cmp(&restore_phase(&right.2)).then_with(|| left.2.path.cmp(&right.2.path)));
         let mut restored = Vec::with_capacity(planned.len());
         let mut phase_start = 0;
         while phase_start < planned.len() {
@@ -2888,10 +2666,7 @@ impl OpenedArchive {
                 if !matches!(member.kind, TarEntryKind::Regular | TarEntryKind::Symlink) {
                     continue;
                 }
-                let metadata = member
-                    .v45_metadata
-                    .as_ref()
-                    .ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
+                let metadata = member.v45_metadata.as_ref().ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
                 replay_windows_descendant_metadata(root, &member.path, member.kind, metadata, options, diagnostics)?;
             }
         }
@@ -2899,10 +2674,7 @@ impl OpenedArchive {
     }
 
     fn decode_loaded_owned_tar_member(&self, shard: &IndexShard, file_index: usize, enforce_extraction_cap: bool) -> Result<OwnedTarMember, FormatError> {
-        let file = shard
-            .files
-            .get(file_index)
-            .ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
+        let file = shard.files.get(file_index).ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
         // Always enforce the extraction cap: this path materializes the file's full
         // decompressed content into memory regardless of enforce_extraction_cap, so the
         // cap protects list/verify metadata passes just as much as extraction.
@@ -2922,12 +2694,7 @@ impl OpenedArchive {
                 entry.insert(self.load_payload_envelope(envelope, ParityReadPolicy::RepairOnly)?);
             }
             let envelope_plaintext = envelope_cache.get(&envelope.envelope_index).expect("inserted above");
-            let compressed = slice(
-                envelope_plaintext,
-                frame.offset_in_envelope as usize,
-                frame.compressed_size as usize,
-                "FrameEntry",
-            )?;
+            let compressed = slice(envelope_plaintext, frame.offset_in_envelope as usize, frame.compressed_size as usize, "FrameEntry")?;
             decoded.extend_from_slice(&self.decompress_payload_frame(compressed, frame.decompressed_size)?);
             if decoded.len() >= required_bytes {
                 break;
@@ -2958,14 +2725,10 @@ impl OpenedArchive {
 
     fn recompute_root_auth_material(&self, footer: &RootAuthFooterV1) -> Result<RootAuthMaterial, FormatError> {
         if footer.format_version != self.volume_header.format_version {
-            return Err(FormatError::InvalidArchive(
-                "RootAuthFooter format_version differs from authenticated VolumeHeader",
-            ));
+            return Err(FormatError::InvalidArchive("RootAuthFooter format_version differs from authenticated VolumeHeader"));
         }
         if footer.volume_format_rev != self.volume_header.volume_format_rev {
-            return Err(FormatError::InvalidArchive(
-                "RootAuthFooter volume_format_rev differs from authenticated VolumeHeader",
-            ));
+            return Err(FormatError::InvalidArchive("RootAuthFooter volume_format_rev differs from authenticated VolumeHeader"));
         }
         let format_version = self.volume_header.format_version;
         let volume_format_rev = self.volume_header.volume_format_rev;
@@ -2981,11 +2744,8 @@ impl OpenedArchive {
         )?;
         let signer_identity_digest = signer_identity_digest(footer.signer_identity_type, &footer.signer_identity_bytes)?;
         let manifest_pre_hmac = manifest_footer_global_pre_hmac_bytes(&self.manifest_footer);
-        let crypto_pre_hmac_len = self
-            .crypto_header_bytes
-            .len()
-            .checked_sub(CRYPTO_HEADER_HMAC_LEN)
-            .ok_or(FormatError::InvalidArchive("CryptoHeader is too short"))?;
+        let crypto_pre_hmac_len =
+            self.crypto_header_bytes.len().checked_sub(CRYPTO_HEADER_HMAC_LEN).ok_or(FormatError::InvalidArchive("CryptoHeader is too short"))?;
         let critical_metadata_digest = critical_metadata_digest(CriticalMetadataDigestInputs {
             archive_uuid: self.volume_header.archive_uuid,
             session_id: self.volume_header.session_id,
@@ -3158,12 +2918,7 @@ impl OpenedArchive {
                 self.crypto_header.index_fec_data_shards,
                 self.crypto_header.index_fec_parity_shards,
             )),
-            4 => Ok((
-                BlockKind::PayloadData,
-                BlockKind::PayloadParity,
-                self.crypto_header.fec_data_shards,
-                self.crypto_header.fec_parity_shards,
-            )),
+            4 => Ok((BlockKind::PayloadData, BlockKind::PayloadParity, self.crypto_header.fec_data_shards, self.crypto_header.fec_parity_shards)),
             5 => Ok((
                 BlockKind::DirectoryHintData,
                 BlockKind::DirectoryHintParity,
@@ -3246,14 +3001,9 @@ impl OpenedArchive {
             });
         }
         let expected = decompressed_size as usize;
-        let decoded = decompressor
-            .decompress(compressed, expected)
-            .map_err(|_| FormatError::ZstdDecompressionFailure)?;
+        let decoded = decompressor.decompress(compressed, expected).map_err(|_| FormatError::ZstdDecompressionFailure)?;
         if decoded.len() != expected {
-            return Err(FormatError::ZstdDecompressedSizeMismatch {
-                expected,
-                actual: decoded.len(),
-            });
+            return Err(FormatError::ZstdDecompressedSizeMismatch { expected, actual: decoded.len() });
         }
         Ok(decoded)
     }
@@ -3267,20 +3017,10 @@ impl OpenedArchive {
             "IndexRoot",
         )?);
         for shard in &self.index_root.shards {
-            ranges.push(object_block_range(
-                shard.first_block_index,
-                shard.data_block_count,
-                shard.parity_block_count,
-                "IndexShard",
-            )?);
+            ranges.push(object_block_range(shard.first_block_index, shard.data_block_count, shard.parity_block_count, "IndexShard")?);
         }
         for hint in &self.index_root.directory_hint_shards {
-            ranges.push(object_block_range(
-                hint.first_block_index,
-                hint.data_block_count,
-                hint.parity_block_count,
-                "DirectoryHintShardEntry",
-            )?);
+            ranges.push(object_block_range(hint.first_block_index, hint.data_block_count, hint.parity_block_count, "DirectoryHintShardEntry")?);
         }
         if self.crypto_header.has_dictionary != 0 {
             ranges.push(object_block_range(
@@ -3291,12 +3031,7 @@ impl OpenedArchive {
             )?);
         }
         for envelope in envelopes.values() {
-            ranges.push(object_block_range(
-                envelope.first_block_index,
-                envelope.data_block_count,
-                envelope.parity_block_count,
-                "EnvelopeEntry",
-            )?);
+            ranges.push(object_block_range(envelope.first_block_index, envelope.data_block_count, envelope.parity_block_count, "EnvelopeEntry")?);
         }
         validate_non_overlapping_object_ranges(&mut ranges)?;
         if let Some(source) = &self.lazy_blocks {
@@ -3333,31 +3068,17 @@ impl<'a> DecodedTarMemberGroupReader<'a> {
             if self.next_frame_offset >= self.file.frame_count as u64 {
                 return Err(FormatError::InvalidArchive("tar member group exceeds frame range").into());
             }
-            let frame_index = self
-                .file
-                .first_frame_index
-                .checked_add(self.next_frame_offset)
-                .ok_or(FormatError::InvalidArchive("FileEntry frame range overflow"))?;
+            let frame_index =
+                self.file.first_frame_index.checked_add(self.next_frame_offset).ok_or(FormatError::InvalidArchive("FileEntry frame range overflow"))?;
             let frame = frame_by_index(self.shard, frame_index)?;
             let envelope = envelope_by_index(self.shard, frame.envelope_index)?;
             if self.cached_envelope_index != Some(envelope.envelope_index) {
                 self.cached_envelope_plaintext = self.archive.load_payload_envelope(envelope, ParityReadPolicy::RepairOnly)?;
                 self.cached_envelope_index = Some(envelope.envelope_index);
             }
-            let compressed = slice(
-                &self.cached_envelope_plaintext,
-                frame.offset_in_envelope as usize,
-                frame.compressed_size as usize,
-                "FrameEntry",
-            )?;
-            let decoded = self
-                .archive
-                .decompress_payload_frame_with(&mut self.decompressor, compressed, frame.decompressed_size)?;
-            let offset = if self.next_frame_offset == 0 {
-                self.file.offset_in_first_frame_plaintext as usize
-            } else {
-                0
-            };
+            let compressed = slice(&self.cached_envelope_plaintext, frame.offset_in_envelope as usize, frame.compressed_size as usize, "FrameEntry")?;
+            let decoded = self.archive.decompress_payload_frame_with(&mut self.decompressor, compressed, frame.decompressed_size)?;
+            let offset = if self.next_frame_offset == 0 { self.file.offset_in_first_frame_plaintext as usize } else { 0 };
             if offset > decoded.len() {
                 return Err(FormatError::InvalidArchive("offset in first frame is outside the first referenced frame").into());
             }
@@ -3418,9 +3139,7 @@ pub(crate) fn final_index_entry_winners(shards: &[IndexShard]) -> Result<BTreeMa
     for (shard_index, shard) in shards.iter().enumerate() {
         for (idx, file) in shard.files.iter().enumerate() {
             let path = utf8_path(shard.file_path(idx).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?)?;
-            let start = shard
-                .tar_member_group_start(idx)
-                .ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing"))?;
+            let start = shard.tar_member_group_start(idx).ok_or(FormatError::InvalidArchive("FileEntry tar member start is missing"))?;
             if let Some(winner) = final_entries.get_mut(&path) {
                 if start >= winner.start {
                     winner.start = start;
@@ -3429,15 +3148,7 @@ pub(crate) fn final_index_entry_winners(shards: &[IndexShard]) -> Result<BTreeMa
                     winner.file_index = idx;
                 }
             } else {
-                final_entries.insert(
-                    path,
-                    WinningIndexEntry {
-                        start,
-                        file_data_size: file.file_data_size,
-                        shard_index,
-                        file_index: idx,
-                    },
-                );
+                final_entries.insert(path, WinningIndexEntry { start, file_data_size: file.file_data_size, shard_index, file_index: idx });
             }
         }
     }
@@ -3450,10 +3161,7 @@ pub(crate) fn archive_index_entry_from_loaded_file(shard: &IndexShard, file_inde
 }
 
 pub(crate) fn archive_index_entry_from_loaded_file_with_path(path: String, shard: &IndexShard, file_index: usize) -> Result<ArchiveIndexEntry, FormatError> {
-    let file = shard
-        .files
-        .get(file_index)
-        .ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
+    let file = shard.files.get(file_index).ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
     let layout = archive_index_entry_layout(shard, file)?;
 
     let resolve_string = |offset: u32, len: u32| -> Result<Option<String>, FormatError> {
@@ -3461,13 +3169,8 @@ pub(crate) fn archive_index_entry_from_loaded_file_with_path(path: String, shard
             return Ok(None);
         }
         let end = offset.checked_add(len).ok_or(FormatError::InvalidArchive("String pool offset overflow"))?;
-        let bytes = shard
-            .string_pool
-            .get(offset as usize..end as usize)
-            .ok_or(FormatError::InvalidArchive("String pool out of bounds"))?;
-        Ok(Some(
-            String::from_utf8(bytes.to_vec()).map_err(|_| FormatError::InvalidArchive("Invalid UTF-8 in string pool"))?,
-        ))
+        let bytes = shard.string_pool.get(offset as usize..end as usize).ok_or(FormatError::InvalidArchive("String pool out of bounds"))?;
+        Ok(Some(String::from_utf8(bytes.to_vec()).map_err(|_| FormatError::InvalidArchive("Invalid UTF-8 in string pool"))?))
     };
 
     Ok(ArchiveIndexEntry {
@@ -3483,16 +3186,8 @@ pub(crate) fn archive_index_entry_from_loaded_file_with_path(path: String, shard
         layout,
         kind: TarEntryKind::from_u8(file.kind),
         mtime: ArchiveTimestamp::new(file.mtime_sec, file.mtime_nsec),
-        created: if (file.metadata_flags & 1) != 0 {
-            Some(ArchiveTimestamp::new(file.created_sec, file.created_nsec))
-        } else {
-            None
-        },
-        accessed: if (file.metadata_flags & 2) != 0 {
-            Some(ArchiveTimestamp::new(file.accessed_sec, file.accessed_nsec))
-        } else {
-            None
-        },
+        created: if (file.metadata_flags & 1) != 0 { Some(ArchiveTimestamp::new(file.created_sec, file.created_nsec)) } else { None },
+        accessed: if (file.metadata_flags & 2) != 0 { Some(ArchiveTimestamp::new(file.accessed_sec, file.accessed_nsec)) } else { None },
         mode: file.mode,
         attributes: if (file.metadata_flags & 4) != 0 { Some(file.attributes) } else { None },
         uid: if file.uid == u64::MAX { None } else { Some(file.uid) },
@@ -3526,11 +3221,7 @@ pub(crate) fn archive_index_entry_layout(shard: &IndexShard, file: &FileEntry) -
 
     for frame in frames {
         compressed_size = checked_u64_add(compressed_size, frame.compressed_size as u64, "ArchiveIndexEntry.compressed_size")?;
-        decompressed_frame_size = checked_u64_add(
-            decompressed_frame_size,
-            frame.decompressed_size as u64,
-            "ArchiveIndexEntry.decompressed_frame_size",
-        )?;
+        decompressed_frame_size = checked_u64_add(decompressed_frame_size, frame.decompressed_size as u64, "ArchiveIndexEntry.decompressed_frame_size")?;
         envelope_indexes.insert(frame.envelope_index);
     }
 
@@ -3541,26 +3232,12 @@ pub(crate) fn archive_index_entry_layout(shard: &IndexShard, file: &FileEntry) -
 
     for envelope_index in &envelope_indexes {
         let envelope = envelope_by_index(shard, *envelope_index)?;
-        first_payload_block_index = Some(
-            first_payload_block_index
-                .map(|existing| existing.min(envelope.first_block_index))
-                .unwrap_or(envelope.first_block_index),
-        );
-        payload_data_block_count = checked_u64_add(
-            payload_data_block_count,
-            envelope.data_block_count as u64,
-            "ArchiveIndexEntry.payload_data_block_count",
-        )?;
-        payload_parity_block_count = checked_u64_add(
-            payload_parity_block_count,
-            envelope.parity_block_count as u64,
-            "ArchiveIndexEntry.payload_parity_block_count",
-        )?;
-        payload_encrypted_size = checked_u64_add(
-            payload_encrypted_size,
-            envelope.encrypted_size as u64,
-            "ArchiveIndexEntry.payload_encrypted_size",
-        )?;
+        first_payload_block_index =
+            Some(first_payload_block_index.map(|existing| existing.min(envelope.first_block_index)).unwrap_or(envelope.first_block_index));
+        payload_data_block_count = checked_u64_add(payload_data_block_count, envelope.data_block_count as u64, "ArchiveIndexEntry.payload_data_block_count")?;
+        payload_parity_block_count =
+            checked_u64_add(payload_parity_block_count, envelope.parity_block_count as u64, "ArchiveIndexEntry.payload_parity_block_count")?;
+        payload_encrypted_size = checked_u64_add(payload_encrypted_size, envelope.encrypted_size as u64, "ArchiveIndexEntry.payload_encrypted_size")?;
     }
 
     Ok(ArchiveIndexEntryLayout {

@@ -84,11 +84,7 @@ pub(crate) fn add_windows_refs_sparse_layout_omission(native: &mut NativeFileMet
     const ROW: &str = "windows-backup-v1\tsparse-layout\tunsupported-filesystem\tReFS%20does%20not%20expose%20exact%20sparse%20ranges";
     if let Some(report) = native.auxiliary_records.iter_mut().find(|record| record.kind == "tzap.capture-report") {
         let text = std::str::from_utf8(&report.payload).expect("internally generated capture reports are UTF-8");
-        let mut rows = text
-            .strip_prefix(HEADER)
-            .expect("internally generated capture report has canonical header")
-            .split_terminator('\n')
-            .collect::<Vec<_>>();
+        let mut rows = text.strip_prefix(HEADER).expect("internally generated capture report has canonical header").split_terminator('\n').collect::<Vec<_>>();
         rows.push(ROW);
         rows.sort_unstable();
         rows.dedup();
@@ -121,11 +117,7 @@ pub(crate) fn query_linux_sparse_extents(file: &File, logical_size: u64) -> io::
             if error.raw_os_error() == Some(libc::ENXIO) {
                 break;
             }
-            if cursor == 0
-                && error
-                    .raw_os_error()
-                    .is_some_and(|code| code == libc::EINVAL || code == libc::EOPNOTSUPP || code == libc::ENOTSUP)
-            {
+            if cursor == 0 && error.raw_os_error().is_some_and(|code| code == libc::EINVAL || code == libc::EOPNOTSUPP || code == libc::ENOTSUP) {
                 return Ok(None);
             }
             return Err(error);
@@ -141,16 +133,12 @@ pub(crate) fn query_linux_sparse_extents(file: &File, logical_size: u64) -> io::
         if hole <= data {
             return Err(io::Error::other("Linux sparse-range query did not advance"));
         }
-        extents.push(SparseExtent {
-            offset: data,
-            length: hole - data,
-        });
+        extents.push(SparseExtent { offset: data, length: hole - data });
         cursor = libc::off_t::try_from(hole).map_err(|_| io::Error::other("sparse offset exceeds Linux off_t"))?;
     }
 
-    let allocated = extents.iter().try_fold(0u64, |sum, extent| {
-        sum.checked_add(extent.length).ok_or_else(|| io::Error::other("sparse extent length overflow"))
-    })?;
+    let allocated =
+        extents.iter().try_fold(0u64, |sum, extent| sum.checked_add(extent.length).ok_or_else(|| io::Error::other("sparse extent length overflow")))?;
     Ok((allocated < logical_size).then_some(extents))
 }
 
@@ -179,10 +167,7 @@ pub(crate) fn collect_windows_known_reparse_input(input: &Path, archive_path: &P
             });
         }
         WindowsKnownReparse::Junction => {
-            portable_metadata
-                .native
-                .primary_pax_records
-                .insert("TZAP.windows.reparse-placeholder".into(), b"1".to_vec());
+            portable_metadata.native.primary_pax_records.insert("TZAP.windows.reparse-placeholder".into(), b"1".to_vec());
             out.push(InputSpec {
                 source: input.to_owned(),
                 archive_path,
@@ -197,18 +182,11 @@ pub(crate) fn collect_windows_known_reparse_input(input: &Path, archive_path: &P
             });
         }
         WindowsKnownReparse::Opaque => {
-            portable_metadata
-                .native
-                .primary_pax_records
-                .insert("TZAP.windows.reparse-placeholder".into(), b"1".to_vec());
+            portable_metadata.native.primary_pax_records.insert("TZAP.windows.reparse-placeholder".into(), b"1".to_vec());
             out.push(InputSpec {
                 source: input.to_owned(),
                 archive_path,
-                entry_kind: if metadata.is_dir() {
-                    SourceEntryKind::ReparseDirectory
-                } else {
-                    SourceEntryKind::ReparseRegular
-                },
+                entry_kind: if metadata.is_dir() { SourceEntryKind::ReparseDirectory } else { SourceEntryKind::ReparseRegular },
                 link_target: None,
                 mode: readonly_mode(&metadata),
                 mtime: identity.mtime,
@@ -464,15 +442,7 @@ pub(crate) fn augment_windows_input_identity(identity: &mut InputIdentity, file:
     let handle = file.as_raw_handle().cast();
     let mut basic = FILE_BASIC_INFO::default();
     // SAFETY: `handle` is live and both output pointers reference correctly sized structures.
-    if unsafe {
-        GetFileInformationByHandleEx(
-            handle,
-            FileBasicInfo,
-            (&mut basic as *mut FILE_BASIC_INFO).cast(),
-            size_of::<FILE_BASIC_INFO>() as u32,
-        )
-    } == 0
-    {
+    if unsafe { GetFileInformationByHandleEx(handle, FileBasicInfo, (&mut basic as *mut FILE_BASIC_INFO).cast(), size_of::<FILE_BASIC_INFO>() as u32) } == 0 {
         return Err(io::Error::last_os_error());
     }
     let mut by_handle = BY_HANDLE_FILE_INFORMATION::default();
@@ -509,10 +479,7 @@ pub(crate) fn query_windows_allocated_ranges(file: &File, logical_size: u64) -> 
     // allocated. Materialize the logical bytes and pair this fallback with an authenticated
     // sparse-layout omission so the archive cannot claim exact storage-layout fidelity.
     if windows_file_system_is_refs(file)? {
-        return Ok(vec![SparseExtent {
-            offset: 0,
-            length: logical_size,
-        }]);
+        return Ok(vec![SparseExtent { offset: 0, length: logical_size }]);
     }
     let logical_size_i64 = i64::try_from(logical_size).map_err(|_| io::Error::other("sparse logical size exceeds Windows range API"))?;
     let mut query_start = 0u64;
@@ -555,10 +522,7 @@ pub(crate) fn query_windows_allocated_ranges(file: &File, logical_size: u64) -> 
                 return Err(io::Error::other("Windows returned an invalid allocated range"));
             }
             let offset = range.FileOffset as u64;
-            let end = offset
-                .checked_add(range.Length as u64)
-                .ok_or_else(|| io::Error::other("Windows allocated range overflow"))?
-                .min(logical_size);
+            let end = offset.checked_add(range.Length as u64).ok_or_else(|| io::Error::other("Windows allocated range overflow"))?.min(logical_size);
             if offset >= logical_size || end <= offset {
                 return Err(io::Error::other("Windows returned an out-of-bounds allocated range"));
             }
@@ -620,10 +584,7 @@ pub(crate) fn open_windows_metadata_handle(path: &Path) -> io::Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
     use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT};
 
-    fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(path)
+    fs::OpenOptions::new().read(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT).open(path)
 }
 
 pub(crate) struct IdentityCheckedInputReader {
@@ -675,10 +636,8 @@ pub(crate) fn open_macos_resource_fork_for_read(owner: File) -> io::Result<Macos
     if unsafe { libc::fcntl(owner.as_raw_fd(), libc::F_GETPATH, path.as_mut_ptr()) } != 0 {
         return Err(io::Error::last_os_error());
     }
-    let length = path
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "macOS returned an unterminated descriptor path"))?;
+    let length =
+        path.iter().position(|byte| *byte == 0).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "macOS returned an unterminated descriptor path"))?;
     path.truncate(length);
     path.extend_from_slice(b"/..namedfork/rsrc");
     let fork = File::open(PathBuf::from(OsString::from_vec(path)))?;
@@ -713,13 +672,7 @@ impl MacosResourceForkReader {
         if matches!(&source, MacosResourceForkSource::Symlink(_)) && logical_size > u64::from(u32::MAX) {
             return Err(io::Error::other("macOS resource fork exceeds Darwin positional xattr limits"));
         }
-        Ok(Self {
-            source,
-            expected,
-            logical_size,
-            offset: 0,
-            validated: false,
-        })
+        Ok(Self { source, expected, logical_size, offset: 0, validated: false })
     }
 
     fn identity(source: &MacosResourceForkSource) -> io::Result<InputIdentity> {
@@ -759,10 +712,7 @@ impl Read for MacosResourceForkReader {
         let count = usize::try_from((self.logical_size - self.offset).min(out.len() as u64)).unwrap();
         let read = macos_read_resource_fork(&self.source, self.offset, &mut out[..count])?;
         if read == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "macOS resource fork ended before its scanned size",
-            ));
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "macOS resource fork ended before its scanned size"));
         }
         self.offset += read as u64;
         if self.offset == self.logical_size {
@@ -879,10 +829,7 @@ impl Read for WindowsSparseAlternateStreamReader {
             let count = (out.len() - written).min(usize::try_from(self.extent_remaining).unwrap_or(usize::MAX));
             let read = self.file.read(&mut out[written..written + count])?;
             if read == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "sparse Windows alternate extent ended before its scanned size",
-                ));
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "sparse Windows alternate extent ended before its scanned size"));
             }
             written += read;
             self.extent_remaining -= read as u64;
@@ -1017,18 +964,9 @@ pub(crate) fn portable_input_metadata(identity: InputIdentity, input: &Path) -> 
     Ok(PortableFileMetadata {
         source_os: source_os_label().into(),
         source_filesystem: "unknown".into(),
-        mode_origin: if cfg!(unix) {
-            PortableModeOrigin::Native
-        } else {
-            PortableModeOrigin::Projected
-        },
+        mode_origin: if cfg!(unix) { PortableModeOrigin::Native } else { PortableModeOrigin::Projected },
         #[cfg(unix)]
-        posix_owner: Some(PortablePosixOwner {
-            uid: identity.uid,
-            gid: identity.gid,
-            uname: None,
-            gname: None,
-        }),
+        posix_owner: Some(PortablePosixOwner { uid: identity.uid, gid: identity.gid, uname: None, gname: None }),
         #[cfg(not(unix))]
         posix_owner: None,
         attributes: identity.attributes,
@@ -1042,18 +980,9 @@ pub(crate) fn portable_symlink_metadata(identity: InputIdentity, _input: &Path) 
     Ok(PortableFileMetadata {
         source_os: source_os_label().into(),
         source_filesystem: "unknown".into(),
-        mode_origin: if cfg!(unix) {
-            PortableModeOrigin::Native
-        } else {
-            PortableModeOrigin::Projected
-        },
+        mode_origin: if cfg!(unix) { PortableModeOrigin::Native } else { PortableModeOrigin::Projected },
         #[cfg(unix)]
-        posix_owner: Some(PortablePosixOwner {
-            uid: identity.uid,
-            gid: identity.gid,
-            uname: None,
-            gname: None,
-        }),
+        posix_owner: Some(PortablePosixOwner { uid: identity.uid, gid: identity.gid, uname: None, gname: None }),
         #[cfg(not(unix))]
         posix_owner: None,
         attributes: identity.attributes,
@@ -1097,10 +1026,7 @@ pub(crate) fn open_macos_metadata_file(input: &Path) -> io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt as _;
 
     const O_EVTONLY: libc::c_int = 0x0000_8000;
-    fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK | O_EVTONLY)
-        .open(input)
+    fs::OpenOptions::new().read(true).custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK | O_EVTONLY).open(input)
 }
 
 #[cfg(target_os = "macos")]
@@ -1116,11 +1042,7 @@ pub(crate) fn capture_native_file_metadata(input: &Path, identity: InputIdentity
     const INLINE_XATTR_BUDGET: usize = 32 * 1024 * 1024;
 
     let file = open_macos_metadata_file(input).with_context(|| format!("failed to open {} for metadata capture", input.display()))?;
-    let opened_identity = input_identity(
-        &file
-            .metadata()
-            .with_context(|| format!("failed to identify opened metadata object {}", input.display()))?,
-    )?;
+    let opened_identity = input_identity(&file.metadata().with_context(|| format!("failed to identify opened metadata object {}", input.display()))?)?;
     if opened_identity != identity {
         bail!("input changed before metadata capture: {}", input.display());
     }
@@ -1128,20 +1050,13 @@ pub(crate) fn capture_native_file_metadata(input: &Path, identity: InputIdentity
     let mut inline_xattr_bytes = 0usize;
     let file_type = file.metadata()?.file_type();
     let device_without_metadata_api = file_type.is_char_device() || file_type.is_block_device();
-    native
-        .primary_pax_records
-        .insert("TZAP.macos.st-flags".into(), format!("{:016x}", file.metadata()?.st_flags()).into_bytes());
+    native.primary_pax_records.insert("TZAP.macos.st-flags".into(), format!("{:016x}", file.metadata()?.st_flags()).into_bytes());
     native.primary_pax_records.insert(
         "TZAP.unix.ctime-observed".into(),
-        ArchiveTimestamp::new(identity.change_time_seconds, identity.change_time_nanoseconds as u32)
-            .canonical_pax_value()
-            .map_err(|error| anyhow!(error))?,
+        ArchiveTimestamp::new(identity.change_time_seconds, identity.change_time_nanoseconds as u32).canonical_pax_value().map_err(|error| anyhow!(error))?,
     );
     if let Some(creation_time) = identity.creation_time {
-        native.primary_pax_records.insert(
-            "LIBARCHIVE.creationtime".into(),
-            creation_time.canonical_pax_value().map_err(|error| anyhow!(error))?,
-        );
+        native.primary_pax_records.insert("LIBARCHIVE.creationtime".into(), creation_time.canonical_pax_value().map_err(|error| anyhow!(error))?);
     }
 
     let xattr_names = match file.list_xattr() {
@@ -1168,31 +1083,14 @@ pub(crate) fn capture_native_file_metadata(input: &Path, identity: InputIdentity
                 if value.len() != 32 {
                     bail!("FinderInfo on {} is not exactly 32 bytes", input.display());
                 }
-                native.auxiliary_records.push(NativeAuxiliaryMetadata::new(
-                    "macos.finder-info",
-                    "macos-backup-v1",
-                    RestoreClass::SameOs,
-                    value,
-                ));
+                native.auxiliary_records.push(NativeAuxiliaryMetadata::new("macos.finder-info", "macos-backup-v1", RestoreClass::SameOs, value));
             }
-            _ if inline_xattr_bytes
-                .saturating_add(name_bytes.len())
-                .saturating_add(value.len().saturating_mul(4).div_ceil(3))
-                > INLINE_XATTR_BUDGET =>
-            {
-                let profile = if name_bytes.starts_with(b"com.apple.") {
-                    "macos-backup-v1"
-                } else {
-                    "posix-backup-v1"
-                };
+            _ if inline_xattr_bytes.saturating_add(name_bytes.len()).saturating_add(value.len().saturating_mul(4).div_ceil(3)) > INLINE_XATTR_BUDGET => {
+                let profile = if name_bytes.starts_with(b"com.apple.") { "macos-backup-v1" } else { "posix-backup-v1" };
                 let mut record = NativeAuxiliaryMetadata::new(
                     "generic.xattr",
                     profile,
-                    if macos_system_xattr(name_bytes) {
-                        RestoreClass::System
-                    } else {
-                        RestoreClass::SameOs
-                    },
+                    if macos_system_xattr(name_bytes) { RestoreClass::System } else { RestoreClass::SameOs },
                     value,
                 );
                 record.name_encoding = NativeAuxiliaryNameEncoding::Bytes;
@@ -1201,12 +1099,8 @@ pub(crate) fn capture_native_file_metadata(input: &Path, identity: InputIdentity
             }
             _ => {
                 let encoded_name = encode_percent_name(name_bytes).map_err(|error| anyhow!(error))?;
-                native
-                    .primary_pax_records
-                    .insert(format!("LIBARCHIVE.xattr.{encoded_name}"), canonical_base64_encode(&value));
-                inline_xattr_bytes = inline_xattr_bytes
-                    .saturating_add(encoded_name.len())
-                    .saturating_add(value.len().saturating_mul(4).div_ceil(3));
+                native.primary_pax_records.insert(format!("LIBARCHIVE.xattr.{encoded_name}"), canonical_base64_encode(&value));
+                inline_xattr_bytes = inline_xattr_bytes.saturating_add(encoded_name.len()).saturating_add(value.len().saturating_mul(4).div_ceil(3));
             }
         }
     }
@@ -1225,17 +1119,11 @@ pub(crate) fn capture_native_file_metadata(input: &Path, identity: InputIdentity
         native.primary_pax_records.insert("TZAP.acl.projection".into(), b"none".to_vec());
     }
 
-    native
-        .auxiliary_records
-        .sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
+    native.auxiliary_records.sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
     native.required_profiles.push("macos-backup-v1".into());
     native.required_profiles.push("posix-backup-v1".into());
     native.required_profiles.sort();
-    let final_identity = input_identity(
-        &file
-            .metadata()
-            .with_context(|| format!("failed to reidentify metadata object {}", input.display()))?,
-    )?;
+    let final_identity = input_identity(&file.metadata().with_context(|| format!("failed to reidentify metadata object {}", input.display()))?)?;
     if final_identity != identity {
         bail!("input changed during metadata capture: {}", input.display());
     }
@@ -1257,26 +1145,16 @@ pub(crate) fn capture_macos_symlink_metadata(input: &Path, identity: InputIdenti
 
     let mut native = NativeFileMetadata::default();
     let mut inline_xattr_bytes = 0usize;
-    native
-        .primary_pax_records
-        .insert("TZAP.macos.st-flags".into(), format!("{:016x}", current.st_flags()).into_bytes());
+    native.primary_pax_records.insert("TZAP.macos.st-flags".into(), format!("{:016x}", current.st_flags()).into_bytes());
     native.primary_pax_records.insert(
         "TZAP.unix.ctime-observed".into(),
-        ArchiveTimestamp::new(identity.change_time_seconds, identity.change_time_nanoseconds as u32)
-            .canonical_pax_value()
-            .map_err(|error| anyhow!(error))?,
+        ArchiveTimestamp::new(identity.change_time_seconds, identity.change_time_nanoseconds as u32).canonical_pax_value().map_err(|error| anyhow!(error))?,
     );
     if let Some(creation_time) = identity.creation_time {
-        native.primary_pax_records.insert(
-            "LIBARCHIVE.creationtime".into(),
-            creation_time.canonical_pax_value().map_err(|error| anyhow!(error))?,
-        );
+        native.primary_pax_records.insert("LIBARCHIVE.creationtime".into(), creation_time.canonical_pax_value().map_err(|error| anyhow!(error))?);
     }
 
-    for name in file
-        .list_xattr()
-        .with_context(|| format!("failed to list symlink xattrs for {}", input.display()))?
-    {
+    for name in file.list_xattr().with_context(|| format!("failed to list symlink xattrs for {}", input.display()))? {
         let name_bytes = name.as_bytes();
         if name_bytes == b"com.apple.ResourceFork" {
             native.auxiliary_records.push(
@@ -1285,10 +1163,7 @@ pub(crate) fn capture_macos_symlink_metadata(input: &Path, identity: InputIdenti
             );
             continue;
         }
-        let Some(value) = file
-            .get_xattr(&name)
-            .with_context(|| format!("failed to read symlink xattr on {}", input.display()))?
-        else {
+        let Some(value) = file.get_xattr(&name).with_context(|| format!("failed to read symlink xattr on {}", input.display()))? else {
             bail!("symlink xattr changed while scanning {}", input.display());
         };
         match name_bytes {
@@ -1296,31 +1171,14 @@ pub(crate) fn capture_macos_symlink_metadata(input: &Path, identity: InputIdenti
                 if value.len() != 32 {
                     bail!("FinderInfo on {} is not exactly 32 bytes", input.display());
                 }
-                native.auxiliary_records.push(NativeAuxiliaryMetadata::new(
-                    "macos.finder-info",
-                    "macos-backup-v1",
-                    RestoreClass::SameOs,
-                    value,
-                ));
+                native.auxiliary_records.push(NativeAuxiliaryMetadata::new("macos.finder-info", "macos-backup-v1", RestoreClass::SameOs, value));
             }
-            _ if inline_xattr_bytes
-                .saturating_add(name_bytes.len())
-                .saturating_add(value.len().saturating_mul(4).div_ceil(3))
-                > INLINE_XATTR_BUDGET =>
-            {
-                let profile = if name_bytes.starts_with(b"com.apple.") {
-                    "macos-backup-v1"
-                } else {
-                    "posix-backup-v1"
-                };
+            _ if inline_xattr_bytes.saturating_add(name_bytes.len()).saturating_add(value.len().saturating_mul(4).div_ceil(3)) > INLINE_XATTR_BUDGET => {
+                let profile = if name_bytes.starts_with(b"com.apple.") { "macos-backup-v1" } else { "posix-backup-v1" };
                 let mut record = NativeAuxiliaryMetadata::new(
                     "generic.xattr",
                     profile,
-                    if macos_system_xattr(name_bytes) {
-                        RestoreClass::System
-                    } else {
-                        RestoreClass::SameOs
-                    },
+                    if macos_system_xattr(name_bytes) { RestoreClass::System } else { RestoreClass::SameOs },
                     value,
                 );
                 record.name_encoding = NativeAuxiliaryNameEncoding::Bytes;
@@ -1343,9 +1201,7 @@ pub(crate) fn capture_macos_symlink_metadata(input: &Path, identity: InputIdenti
         native.primary_pax_records.insert("TZAP.acl.projection".into(), b"none".to_vec());
     }
     native.required_profiles = vec!["macos-backup-v1".into(), "posix-backup-v1".into()];
-    native
-        .auxiliary_records
-        .sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
+    native.auxiliary_records.sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
     let final_metadata = file.metadata().with_context(|| format!("failed to reidentify symlink {}", input.display()))?;
     if !final_metadata.file_type().is_symlink() || input_identity(&final_metadata)? != identity {
         bail!("symlink changed during metadata capture: {}", input.display());
@@ -1373,13 +1229,7 @@ pub(crate) fn capture_macos_resource_fork(source: MacosResourceForkSource, ident
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(NativeAuxiliaryMetadata::new_streamed(
-        "macos.resource-fork",
-        "macos-backup-v1",
-        RestoreClass::SameOs,
-        logical_size,
-        hasher.finalize().into(),
-    ))
+    Ok(NativeAuxiliaryMetadata::new_streamed("macos.resource-fork", "macos-backup-v1", RestoreClass::SameOs, logical_size, hasher.finalize().into()))
 }
 
 #[cfg(target_os = "macos")]
@@ -1437,26 +1287,17 @@ pub(crate) fn capture_macos_acl(file: &File) -> io::Result<Option<Vec<u8>>> {
 pub(crate) fn capture_native_file_metadata(input: &Path, identity: InputIdentity) -> Result<NativeFileMetadata> {
     let file = open_windows_metadata_handle(input).with_context(|| format!("failed to open {} for Windows metadata capture", input.display()))?;
     let mut native = NativeFileMetadata::default();
+    native.primary_pax_records.insert("TZAP.windows.file-attributes".into(), format!("{:08x}", identity.file_attributes).into_bytes());
     native
         .primary_pax_records
-        .insert("TZAP.windows.file-attributes".into(), format!("{:08x}", identity.file_attributes).into_bytes());
-    native.primary_pax_records.insert(
-        "atime".into(),
-        windows_filetime_timestamp(identity.last_access_time_100ns)?
-            .canonical_pax_value()
-            .map_err(|error| anyhow!(error))?,
-    );
+        .insert("atime".into(), windows_filetime_timestamp(identity.last_access_time_100ns)?.canonical_pax_value().map_err(|error| anyhow!(error))?);
     native.primary_pax_records.insert(
         "LIBARCHIVE.creationtime".into(),
-        windows_filetime_timestamp(identity.creation_time_100ns)?
-            .canonical_pax_value()
-            .map_err(|error| anyhow!(error))?,
+        windows_filetime_timestamp(identity.creation_time_100ns)?.canonical_pax_value().map_err(|error| anyhow!(error))?,
     );
     native.primary_pax_records.insert(
         "TZAP.windows.change-time".into(),
-        windows_filetime_timestamp(identity.change_time_100ns)?
-            .canonical_pax_value()
-            .map_err(|error| anyhow!(error))?,
+        windows_filetime_timestamp(identity.change_time_100ns)?.canonical_pax_value().map_err(|error| anyhow!(error))?,
     );
     let reparse_data = if identity.file_attributes & 0x0000_0400 != 0 {
         let data = query_windows_reparse_data(&file).with_context(|| format!("failed to read Windows reparse data for {}", input.display()))?;
@@ -1475,10 +1316,7 @@ pub(crate) fn capture_native_file_metadata(input: &Path, identity: InputIdentity
     const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x0000_0010;
     if identity.file_attributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
         if let Some(case_sensitive) = query_windows_directory_case_sensitive(&file)? {
-            native.primary_pax_records.insert(
-                "TZAP.windows.directory-case-sensitive".into(),
-                if case_sensitive { b"1" } else { b"0" }.to_vec(),
-            );
+            native.primary_pax_records.insert("TZAP.windows.directory-case-sensitive".into(), if case_sensitive { b"1" } else { b"0" }.to_vec());
         }
     }
     const FILE_ATTRIBUTE_ENCRYPTED: u32 = 0x0000_4000;
@@ -1495,15 +1333,10 @@ pub(crate) fn capture_native_file_metadata(input: &Path, identity: InputIdentity
     }
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
     if identity.file_attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) == 0 {
-        native.primary_pax_records.insert(
-            "TZAP.windows.data-stream-attributes".into(),
-            format!("{data_stream_attributes:08x}").into_bytes(),
-        );
+        native.primary_pax_records.insert("TZAP.windows.data-stream-attributes".into(), format!("{data_stream_attributes:08x}").into_bytes());
     }
     native.auxiliary_records.append(&mut streams);
-    native
-        .auxiliary_records
-        .sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
+    native.auxiliary_records.sort_by(|left, right| left.kind.cmp(&right.kind).then_with(|| left.name.cmp(&right.name)));
     native.required_profiles.push("windows-backup-v1".into());
     Ok(native)
 }
@@ -1588,10 +1421,7 @@ pub(crate) fn enable_windows_privilege(name: *const u16) -> bool {
         return false;
     }
     let enabled = {
-        let mut privileges = TOKEN_PRIVILEGES {
-            PrivilegeCount: 1,
-            ..Default::default()
-        };
+        let mut privileges = TOKEN_PRIVILEGES { PrivilegeCount: 1, ..Default::default() };
         // SAFETY: the one-element privilege array provides a valid LUID output slot.
         if unsafe { LookupPrivilegeValueW(ptr::null(), name, &mut privileges.Privileges[0].Luid) } == 0 {
             false
@@ -1673,10 +1503,7 @@ pub(crate) fn hash_windows_raw_efs(path: &Path) -> io::Result<(u64, [u8; 32])> {
 
     let _ = windows_backup_capture_enabled();
     let context = open_windows_raw_efs(path, 0)?;
-    let mut state = WindowsRawEfsDigest {
-        hasher: sha2::Sha256::new(),
-        size: 0,
-    };
+    let mut state = WindowsRawEfsDigest { hasher: sha2::Sha256::new(), size: 0 };
     // SAFETY: callback state and raw EFS context remain live for the synchronous export.
     let status = unsafe { ReadEncryptedFileRaw(Some(hash_windows_raw_efs_callback), (&mut state as *mut WindowsRawEfsDigest).cast(), context.0) };
     if status != 0 {
@@ -1743,13 +1570,7 @@ pub(crate) fn export_windows_raw_efs_to_sender(
     let context = open_windows_raw_efs(path, 0)?;
     let state = WindowsRawEfsSendContext { sender };
     // SAFETY: callback state and raw EFS context remain live for the synchronous export.
-    let status = unsafe {
-        ReadEncryptedFileRaw(
-            Some(send_windows_raw_efs_callback),
-            (&state as *const WindowsRawEfsSendContext).cast(),
-            context.0,
-        )
-    };
+    let status = unsafe { ReadEncryptedFileRaw(Some(send_windows_raw_efs_callback), (&state as *const WindowsRawEfsSendContext).cast(), context.0) };
     if status != 0 {
         return Err(io::Error::from_raw_os_error(status as i32));
     }
@@ -1777,15 +1598,7 @@ impl WindowsRawEfsReader {
             let result = export_windows_raw_efs_to_sender(&path, expected, sender);
             let _ = completion.send(WindowsRawEfsMessage::Done(result));
         });
-        Self {
-            receiver: Some(receiver),
-            current: Vec::new(),
-            current_offset: 0,
-            remaining: size,
-            finished: false,
-            pending_error: None,
-            thread: Some(thread),
-        }
+        Self { receiver: Some(receiver), current: Vec::new(), current_offset: 0, remaining: size, finished: false, pending_error: None, thread: Some(thread) }
     }
 }
 
@@ -1885,23 +1698,12 @@ pub(crate) fn capture_windows_security_descriptor(file: &File) -> Result<NativeA
         // The handle returned by File::open has READ_CONTROL but not ACCESS_SYSTEM_SECURITY.
         // ReOpenFile preserves object identity while requesting the access needed for SACLs.
         // SAFETY: `original_handle` is live and all flags are valid for a regular file.
-        let handle = unsafe {
-            ReOpenFile(
-                original_handle,
-                READ_CONTROL | ACCESS_SYSTEM_SECURITY,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                0,
-            )
-        };
+        let handle = unsafe { ReOpenFile(original_handle, READ_CONTROL | ACCESS_SYSTEM_SECURITY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0) };
         (handle != INVALID_HANDLE_VALUE).then_some(handle)
     } else {
         None
     };
-    let security_information = if sacl_handle.is_some() {
-        BASE_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION
-    } else {
-        BASE_SECURITY_INFORMATION
-    };
+    let security_information = if sacl_handle.is_some() { BASE_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION } else { BASE_SECURITY_INFORMATION };
     let security_handle = sacl_handle.unwrap_or(original_handle);
     let mut descriptor = ptr::null_mut();
     // SAFETY: the file handle is live, optional component outputs are null, and the returned
@@ -1952,29 +1754,18 @@ pub(crate) fn capture_windows_security_descriptor(file: &File) -> Result<NativeA
     }
     if control & 0x0004 != 0 {
         captured_security_information |= DACL_SECURITY_INFORMATION;
-        captured_security_information |= if control & 0x1000 != 0 {
-            PROTECTED_DACL_SECURITY_INFORMATION
-        } else {
-            UNPROTECTED_DACL_SECURITY_INFORMATION
-        };
+        captured_security_information |= if control & 0x1000 != 0 { PROTECTED_DACL_SECURITY_INFORMATION } else { UNPROTECTED_DACL_SECURITY_INFORMATION };
     }
     if control & 0x0010 != 0 {
         captured_security_information |= SACL_SECURITY_INFORMATION;
-        captured_security_information |= if control & 0x2000 != 0 {
-            PROTECTED_SACL_SECURITY_INFORMATION
-        } else {
-            UNPROTECTED_SACL_SECURITY_INFORMATION
-        };
+        captured_security_information |= if control & 0x2000 != 0 { PROTECTED_SACL_SECURITY_INFORMATION } else { UNPROTECTED_SACL_SECURITY_INFORMATION };
     }
     let required_identity = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION;
     if captured_security_information & required_identity != required_identity {
         bail!("Windows security descriptor lacks requested owner or group metadata");
     }
     let mut auxiliary = NativeAuxiliaryMetadata::new("windows.security-descriptor", "windows-backup-v1", RestoreClass::System, payload);
-    auxiliary.meta.insert(
-        "TZAP.aux.meta.security-information".into(),
-        format!("{captured_security_information:08x}").into_bytes(),
-    );
+    auxiliary.meta.insert("TZAP.aux.meta.security-information".into(), format!("{captured_security_information:08x}").into_bytes());
     Ok(auxiliary)
 }
 
@@ -1988,10 +1779,7 @@ pub(crate) struct WindowsBackupReader {
 impl WindowsBackupReader {
     pub(crate) fn new(file: &File) -> Self {
         use std::os::windows::io::AsRawHandle;
-        Self {
-            handle: file.as_raw_handle().cast(),
-            context: std::ptr::null_mut(),
-        }
+        Self { handle: file.as_raw_handle().cast(), context: std::ptr::null_mut() }
     }
 
     fn read_optional_exact(&mut self, out: &mut [u8]) -> io::Result<bool> {
@@ -2144,23 +1932,13 @@ pub(crate) fn capture_windows_backup_streams(input: &Path, file: &File, expected
                 if !name.is_empty() {
                     bail!("Windows default data stream unexpectedly has a name");
                 }
-                reader
-                    .skip(size)
-                    .with_context(|| format!("failed to skip Windows default data stream ({size} bytes)"))?;
+                reader.skip(size).with_context(|| format!("failed to skip Windows default data stream ({size} bytes)"))?;
             }
-            BACKUP_SECURITY_DATA => reader
-                .skip(size)
-                .with_context(|| format!("failed to skip Windows security stream ({size} bytes)"))?,
+            BACKUP_SECURITY_DATA => reader.skip(size).with_context(|| format!("failed to skip Windows security stream ({size} bytes)"))?,
             BACKUP_ALTERNATE_DATA => {
-                let restore_class = if attributes & 0x0000_0002 != 0 {
-                    RestoreClass::System
-                } else {
-                    RestoreClass::SameOs
-                };
+                let restore_class = if attributes & 0x0000_0002 != 0 { RestoreClass::System } else { RestoreClass::SameOs };
                 if attributes & 0x0000_0008 != 0 {
-                    reader
-                        .skip(size)
-                        .with_context(|| format!("failed to skip sparse Windows alternate stream ({size} bytes)"))?;
+                    reader.skip(size).with_context(|| format!("failed to skip sparse Windows alternate stream ({size} bytes)"))?;
                     sparse_alternate.push((name, attributes, restore_class, Vec::new()));
                     active_sparse_alternate = Some(sparse_alternate.len() - 1);
                     continue;
@@ -2170,9 +1948,7 @@ pub(crate) fn capture_windows_backup_streams(input: &Path, file: &File, expected
                 record.name_encoding = NativeAuxiliaryNameEncoding::Utf16Le;
                 record.name = name;
                 record.meta.insert("TZAP.aux.meta.stream-type".into(), b"00000004".to_vec());
-                record
-                    .meta
-                    .insert("TZAP.aux.meta.stream-attributes".into(), format!("{attributes:08x}").into_bytes());
+                record.meta.insert("TZAP.aux.meta.stream-attributes".into(), format!("{attributes:08x}").into_bytes());
                 auxiliary.push(record);
             }
             BACKUP_EA_DATA | BACKUP_PROPERTY_DATA | BACKUP_OBJECT_ID => {
@@ -2187,31 +1963,15 @@ pub(crate) fn capture_windows_backup_streams(input: &Path, file: &File, expected
                 }
                 let payload = reader.read_vec(size)?;
                 let (kind, stream_type, restore_class) = match stream_id {
-                    BACKUP_EA_DATA => (
-                        "windows.ea-data",
-                        "00000002",
-                        if attributes & 0x0000_0002 != 0 {
-                            RestoreClass::System
-                        } else {
-                            RestoreClass::SameOs
-                        },
-                    ),
-                    BACKUP_PROPERTY_DATA => (
-                        "windows.property-data",
-                        "00000006",
-                        if attributes & 0x0000_0002 != 0 {
-                            RestoreClass::System
-                        } else {
-                            RestoreClass::SameOs
-                        },
-                    ),
+                    BACKUP_EA_DATA => ("windows.ea-data", "00000002", if attributes & 0x0000_0002 != 0 { RestoreClass::System } else { RestoreClass::SameOs }),
+                    BACKUP_PROPERTY_DATA => {
+                        ("windows.property-data", "00000006", if attributes & 0x0000_0002 != 0 { RestoreClass::System } else { RestoreClass::SameOs })
+                    }
                     _ => ("windows.object-id", "00000007", RestoreClass::System),
                 };
                 let mut record = NativeAuxiliaryMetadata::new(kind, "windows-backup-v1", restore_class, payload);
                 record.meta.insert("TZAP.aux.meta.stream-type".into(), stream_type.as_bytes().to_vec());
-                record
-                    .meta
-                    .insert("TZAP.aux.meta.stream-attributes".into(), format!("{attributes:08x}").into_bytes());
+                record.meta.insert("TZAP.aux.meta.stream-attributes".into(), format!("{attributes:08x}").into_bytes());
                 if attributes & 0x0000_0008 != 0 {
                     bail!("Windows metadata stream carried an invalid sparse-data attribute");
                 }
@@ -2239,9 +1999,7 @@ pub(crate) fn capture_windows_backup_streams(input: &Path, file: &File, expected
                 let offset = reader.read_vec(8)?;
                 let offset = u64::from_le_bytes(offset.try_into().unwrap());
                 let length = size - 8;
-                reader
-                    .discard(length)
-                    .with_context(|| format!("failed to discard Windows sparse-block data ({length} bytes)"))?;
+                reader.discard(length).with_context(|| format!("failed to discard Windows sparse-block data ({length} bytes)"))?;
                 if length != 0 {
                     if let Some(index) = active_sparse_alternate {
                         push_windows_backup_sparse_extent(&mut sparse_alternate[index].3, offset, length)?;
@@ -2252,9 +2010,7 @@ pub(crate) fn capture_windows_backup_streams(input: &Path, file: &File, expected
                 if !name.is_empty() {
                     bail!("Windows hardlink stream unexpectedly has a name");
                 }
-                reader
-                    .discard(size)
-                    .with_context(|| format!("failed to discard Windows hardlink topology stream ({size} bytes)"))?;
+                reader.discard(size).with_context(|| format!("failed to discard Windows hardlink topology stream ({size} bytes)"))?;
             }
             BACKUP_TXFS_DATA => {
                 bail!("Windows transactional backup streams are not representable in v45")
@@ -2290,10 +2046,7 @@ pub(crate) fn capture_windows_backup_streams(input: &Path, file: &File, expected
             // ReFS does not expose an authoritative allocated-range map. Materialize every
             // logical byte even if BackupRead returned a non-empty but potentially incomplete
             // sparse-block list; the authenticated omission records layout degradation only.
-            extents = vec![SparseExtent {
-                offset: 0,
-                length: logical_size,
-            }];
+            extents = vec![SparseExtent { offset: 0, length: logical_size }];
         } else if extents.is_empty() && logical_size != 0 {
             extents = query_windows_allocated_ranges(&stream, logical_size)?;
         }
@@ -2308,16 +2061,11 @@ pub(crate) fn capture_windows_backup_streams(input: &Path, file: &File, expected
         record.name_encoding = NativeAuxiliaryNameEncoding::Utf16Le;
         record.name = name;
         record.meta.insert("TZAP.aux.meta.stream-type".into(), b"00000004".to_vec());
-        record
-            .meta
-            .insert("TZAP.aux.meta.stream-attributes".into(), format!("{attributes:08x}").into_bytes());
+        record.meta.insert("TZAP.aux.meta.stream-attributes".into(), format!("{attributes:08x}").into_bytes());
         auxiliary.push(record);
     }
     if sparse_layout_partial {
-        let mut partial = NativeFileMetadata {
-            auxiliary_records: auxiliary,
-            ..NativeFileMetadata::default()
-        };
+        let mut partial = NativeFileMetadata { auxiliary_records: auxiliary, ..NativeFileMetadata::default() };
         add_windows_refs_sparse_layout_omission(&mut partial);
         auxiliary = partial.auxiliary_records;
     }

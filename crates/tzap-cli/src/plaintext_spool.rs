@@ -73,11 +73,7 @@ pub(crate) fn spool_unknown_size_raw_stdin_in<R: Read>(
     _explicit: ExplicitPlaintextSpool,
 ) -> Result<PlaintextSpool> {
     let (path, file) = create_restrictive_temp_file(temp_dir.as_ref())?;
-    let mut spool = PlaintextSpool {
-        path,
-        file: Some(file),
-        size: 0,
-    };
+    let mut spool = PlaintextSpool { path, file: Some(file), size: 0 };
     let mut buffer = [0u8; COPY_BUFFER_LEN];
 
     loop {
@@ -89,21 +85,11 @@ pub(crate) fn spool_unknown_size_raw_stdin_in<R: Read>(
         if read > max_plaintext_bytes.saturating_sub(spool.size) {
             bail!("plaintext spool cap exceeded: raw stdin is larger than {} bytes", max_plaintext_bytes);
         }
-        spool
-            .file
-            .as_mut()
-            .expect("spool file is present until drop")
-            .write_all(&buffer[..read as usize])
-            .context("failed to write plaintext spool")?;
+        spool.file.as_mut().expect("spool file is present until drop").write_all(&buffer[..read as usize]).context("failed to write plaintext spool")?;
         spool.size += read;
     }
 
-    spool
-        .file
-        .as_mut()
-        .expect("spool file is present until drop")
-        .flush()
-        .context("failed to flush plaintext spool")?;
+    spool.file.as_mut().expect("spool file is present until drop").flush().context("failed to flush plaintext spool")?;
     Ok(spool)
 }
 

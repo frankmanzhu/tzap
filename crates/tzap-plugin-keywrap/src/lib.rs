@@ -43,25 +43,11 @@ struct HpkeSuite {
 impl HpkeSuite {
     fn for_profile(hpke_kem_id: u16, hpke_kdf_id: u16, hpke_aead_id: u16) -> Option<Self> {
         let suites = [
-            Self {
-                kem_id: X25519_KEM_ID,
-                kdf_id: HKDF_SHA256_KDF_ID,
-                aead_id: CHACHA20POLY1305_AEAD_ID,
-                enc_length: 32,
-                ciphertext_length: 48,
-            },
-            Self {
-                kem_id: P256_KEM_ID,
-                kdf_id: HKDF_SHA256_KDF_ID,
-                aead_id: AES256GCM_AEAD_ID,
-                enc_length: 65,
-                ciphertext_length: 48,
-            },
+            Self { kem_id: X25519_KEM_ID, kdf_id: HKDF_SHA256_KDF_ID, aead_id: CHACHA20POLY1305_AEAD_ID, enc_length: 32, ciphertext_length: 48 },
+            Self { kem_id: P256_KEM_ID, kdf_id: HKDF_SHA256_KDF_ID, aead_id: AES256GCM_AEAD_ID, enc_length: 65, ciphertext_length: 48 },
         ];
 
-        suites
-            .into_iter()
-            .find(|suite| suite.kem_id == hpke_kem_id && suite.kdf_id == hpke_kdf_id && suite.aead_id == hpke_aead_id)
+        suites.into_iter().find(|suite| suite.kem_id == hpke_kem_id && suite.kdf_id == hpke_kdf_id && suite.aead_id == hpke_aead_id)
     }
 }
 
@@ -74,20 +60,12 @@ pub enum KeyWrapSuite {
 impl KeyWrapSuite {
     fn hpke_suite(self) -> HpkeSuite {
         match self {
-            Self::X25519HkdfSha256ChaCha20Poly1305 => HpkeSuite {
-                kem_id: X25519_KEM_ID,
-                kdf_id: HKDF_SHA256_KDF_ID,
-                aead_id: CHACHA20POLY1305_AEAD_ID,
-                enc_length: 32,
-                ciphertext_length: 48,
-            },
-            Self::P256HkdfSha256Aes256Gcm => HpkeSuite {
-                kem_id: P256_KEM_ID,
-                kdf_id: HKDF_SHA256_KDF_ID,
-                aead_id: AES256GCM_AEAD_ID,
-                enc_length: 65,
-                ciphertext_length: 48,
-            },
+            Self::X25519HkdfSha256ChaCha20Poly1305 => {
+                HpkeSuite { kem_id: X25519_KEM_ID, kdf_id: HKDF_SHA256_KDF_ID, aead_id: CHACHA20POLY1305_AEAD_ID, enc_length: 32, ciphertext_length: 48 }
+            }
+            Self::P256HkdfSha256Aes256Gcm => {
+                HpkeSuite { kem_id: P256_KEM_ID, kdf_id: HKDF_SHA256_KDF_ID, aead_id: AES256GCM_AEAD_ID, enc_length: 65, ciphertext_length: 48 }
+            }
         }
     }
 }
@@ -102,12 +80,7 @@ pub struct ArchiveIdentity {
 
 impl Default for ArchiveIdentity {
     fn default() -> Self {
-        Self {
-            archive_uuid: [0u8; 16],
-            session_id: [0u8; 16],
-            format_version: FORMAT_VERSION,
-            volume_format_rev: VOLUME_FORMAT_REV_45,
-        }
+        Self { archive_uuid: [0u8; 16], session_id: [0u8; 16], format_version: FORMAT_VERSION, volume_format_rev: VOLUME_FORMAT_REV_45 }
     }
 }
 
@@ -230,10 +203,7 @@ where
     }
 
     match hpke_open_candidate_master_key(&payload, &private_key) {
-        Ok(master_key) => KeyWrapOutcome::UnwrappedCandidateMasterKey {
-            master_key,
-            recipient_spki_digest: parsed_identity.recipient_spki_digest,
-        },
+        Ok(master_key) => KeyWrapOutcome::UnwrappedCandidateMasterKey { master_key, recipient_spki_digest: parsed_identity.recipient_spki_digest },
         Err(outcome) => outcome,
     }
 }
@@ -254,14 +224,7 @@ pub fn wrap_master_key_for_recipient(
         recipient_identity_type: KEYWRAP_RECIPIENT_IDENTITY_TYPE_BYTES,
         recipient_identity_digest: identity.recipient_identity_digest,
     };
-    let profile_payload_bytes = hpke_seal_master_key(
-        recipient_certificate_der,
-        &archive_identity,
-        &metadata,
-        &identity,
-        master_key,
-        suite.hpke_suite(),
-    )?;
+    let profile_payload_bytes = hpke_seal_master_key(recipient_certificate_der, &archive_identity, &metadata, &identity, master_key, suite.hpke_suite())?;
 
     Ok(RecipientRecordV1 {
         record_length: 0,
@@ -284,15 +247,7 @@ fn hpke_seal_master_key(
     master_key: &[u8; 32],
     suite: HpkeSuite,
 ) -> Result<Vec<u8>, KeyWrapOutcome> {
-    hpke_seal_master_key_with_aad_domain(
-        recipient_certificate_der,
-        archive_identity,
-        metadata,
-        identity,
-        master_key,
-        suite,
-        HPKE_AAD_DOMAIN,
-    )
+    hpke_seal_master_key_with_aad_domain(recipient_certificate_der, archive_identity, metadata, identity, master_key, suite, HPKE_AAD_DOMAIN)
 }
 
 fn hpke_seal_master_key_with_aad_domain(
@@ -407,10 +362,7 @@ fn parse_x509_recipient_identity(recipient_identity_bytes: &[u8]) -> Result<Pars
     let recipient_identity_digest = sha256_digest(recipient_identity_bytes);
     let recipient_spki_digest = sha256_digest(&spki_der);
 
-    Ok(ParsedRecipientIdentity {
-        recipient_identity_digest,
-        recipient_spki_digest,
-    })
+    Ok(ParsedRecipientIdentity { recipient_identity_digest, recipient_spki_digest })
 }
 
 fn parse_profile_payload(profile_payload_bytes: &[u8]) -> Result<ParsedProfilePayload, KeyWrapOutcome> {
@@ -459,22 +411,13 @@ fn parse_profile_payload(profile_payload_bytes: &[u8]) -> Result<ParsedProfilePa
     let enc = profile_payload_bytes[enc_start..ciphertext_start].to_vec();
     let ciphertext = profile_payload_bytes[ciphertext_start..ciphertext_start + ciphertext_length].to_vec();
 
-    Ok(ParsedProfilePayload {
-        suite,
-        enc,
-        ciphertext,
-        key_wrap_context_digest,
-    })
+    Ok(ParsedProfilePayload { suite, enc, ciphertext, key_wrap_context_digest })
 }
 
 fn validate_recipient_public_key_matches_suite(recipient_certificate_der: &[u8], suite: HpkeSuite) -> Result<(), KeyWrapOutcome> {
     match suite.kem_id {
-        X25519_KEM_ID => x25519_public_key_from_certificate(recipient_certificate_der)
-            .map(|_| ())
-            .map_err(|_| KeyWrapOutcome::UnsupportedSuite),
-        P256_KEM_ID => p256_public_key_from_certificate(recipient_certificate_der)
-            .map(|_| ())
-            .map_err(|_| KeyWrapOutcome::UnsupportedSuite),
+        X25519_KEM_ID => x25519_public_key_from_certificate(recipient_certificate_der).map(|_| ()).map_err(|_| KeyWrapOutcome::UnsupportedSuite),
+        P256_KEM_ID => p256_public_key_from_certificate(recipient_certificate_der).map(|_| ()).map_err(|_| KeyWrapOutcome::UnsupportedSuite),
         _ => Err(KeyWrapOutcome::UnsupportedSuite),
     }
 }
@@ -541,10 +484,7 @@ fn p256_public_key_from_certificate(recipient_certificate_der: &[u8]) -> Result<
         return Err(KeyWrapOutcome::InvalidRecord);
     }
     let mut context = BigNumContext::new().map_err(|_| KeyWrapOutcome::InvalidRecord)?;
-    let encoded = ec_key
-        .public_key()
-        .to_bytes(ec_key.group(), PointConversionForm::UNCOMPRESSED, &mut context)
-        .map_err(|_| KeyWrapOutcome::InvalidRecord)?;
+    let encoded = ec_key.public_key().to_bytes(ec_key.group(), PointConversionForm::UNCOMPRESSED, &mut context).map_err(|_| KeyWrapOutcome::InvalidRecord)?;
     if encoded.len() != 65 {
         return Err(KeyWrapOutcome::InvalidRecord);
     }
@@ -658,10 +598,7 @@ mod tests {
 
     impl PrivateKeyLookup for MatchingLookup {
         fn lookup_private_key(&self, _: &ArchiveIdentity, _: &RecipientRecordMetadata, recipient_identity_bytes: &[u8]) -> Option<Vec<u8>> {
-            self.matches
-                .iter()
-                .find(|(identity, _)| identity.as_slice() == recipient_identity_bytes)
-                .map(|(_, private_key)| private_key.clone())
+            self.matches.iter().find(|(identity, _)| identity.as_slice() == recipient_identity_bytes).map(|(_, private_key)| private_key.clone())
         }
     }
 
@@ -671,12 +608,7 @@ mod tests {
         rand_bytes(&mut archive_uuid).unwrap();
         rand_bytes(&mut session_id).unwrap();
 
-        ArchiveIdentity {
-            archive_uuid,
-            session_id,
-            format_version: FORMAT_VERSION,
-            volume_format_rev: VOLUME_FORMAT_REV_45,
-        }
+        ArchiveIdentity { archive_uuid, session_id, format_version: FORMAT_VERSION, volume_format_rev: VOLUME_FORMAT_REV_45 }
     }
 
     fn test_certificate_der() -> Vec<u8> {
@@ -690,32 +622,22 @@ mod tests {
 
     fn test_certificate_der_with_malformed_key_usage() -> Vec<u8> {
         let recipient_key = PKey::generate_x25519().unwrap();
-        let key_usage = X509Extension::new_from_der(
-            &Asn1Object::from_str("2.5.29.15").unwrap(),
-            true,
-            &Asn1OctetString::new_from_bytes(b"\x05\x00").unwrap(),
-        )
-        .unwrap();
+        let key_usage =
+            X509Extension::new_from_der(&Asn1Object::from_str("2.5.29.15").unwrap(), true, &Asn1OctetString::new_from_bytes(b"\x05\x00").unwrap()).unwrap();
         make_certificate_for_subject(&recipient_key, Some(key_usage))
     }
 
     fn x25519_recipient_material() -> (Vec<u8>, Vec<u8>) {
         let recipient_key = PKey::generate_x25519().unwrap();
         let key_usage = KeyUsage::new().critical().key_agreement().build().unwrap();
-        (
-            make_certificate_for_subject(&recipient_key, Some(key_usage)),
-            recipient_key.raw_private_key().unwrap(),
-        )
+        (make_certificate_for_subject(&recipient_key, Some(key_usage)), recipient_key.raw_private_key().unwrap())
     }
 
     fn p256_recipient_material() -> (Vec<u8>, Vec<u8>) {
         let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
         let recipient_key = PKey::from_ec_key(EcKey::generate(&group).unwrap()).unwrap();
         let key_usage = KeyUsage::new().critical().key_agreement().build().unwrap();
-        (
-            make_certificate_for_subject(&recipient_key, Some(key_usage)),
-            recipient_key.private_key_to_der().unwrap(),
-        )
+        (make_certificate_for_subject(&recipient_key, Some(key_usage)), recipient_key.private_key_to_der().unwrap())
     }
 
     fn p384_recipient_certificate() -> Vec<u8> {
@@ -834,12 +756,7 @@ mod tests {
             recipient_identity_digest: identity.recipient_identity_digest,
         };
         let payload = make_payload(&archive_identity, &metadata, &identity, suite);
-        RecipientRecordInput {
-            archive_identity,
-            metadata,
-            recipient_identity_bytes: cert_der.to_vec(),
-            profile_payload_bytes: payload,
-        }
+        RecipientRecordInput { archive_identity, metadata, recipient_identity_bytes: cert_der.to_vec(), profile_payload_bytes: payload }
     }
 
     fn recipient_record_input_from_record(archive_identity: ArchiveIdentity, record: RecipientRecordV1) -> RecipientRecordInput {
@@ -902,13 +819,7 @@ mod tests {
             recipient_identity_digest: identity.recipient_identity_digest,
         };
 
-        let unsupported_suite = HpkeSuite {
-            kem_id: 0x00ff,
-            kdf_id: 0x00ff,
-            aead_id: 0x00ff,
-            enc_length: 0,
-            ciphertext_length: 0,
-        };
+        let unsupported_suite = HpkeSuite { kem_id: 0x00ff, kdf_id: 0x00ff, aead_id: 0x00ff, enc_length: 0, ciphertext_length: 0 };
 
         let payload = make_payload_with_lengths(&archive_identity, &metadata, &identity, unsupported_suite, 0, 0);
 
@@ -955,26 +866,17 @@ mod tests {
         // payload_version != 1 (bytes 0..2)
         let mut payload = make_payload(&archive_identity, &metadata, &identity, suite);
         payload[0..2].copy_from_slice(&2u16.to_le_bytes());
-        assert!(matches!(
-            dispatch_key_wrap_record(recipient_record_input_with_payload(payload, &cert_der), &NoMatchLookup),
-            KeyWrapOutcome::InvalidRecord
-        ));
+        assert!(matches!(dispatch_key_wrap_record(recipient_record_input_with_payload(payload, &cert_der), &NoMatchLookup), KeyWrapOutcome::InvalidRecord));
 
         // flags != 0 (bytes 12..16)
         let mut payload = make_payload(&archive_identity, &metadata, &identity, suite);
         payload[12..16].copy_from_slice(&1u32.to_le_bytes());
-        assert!(matches!(
-            dispatch_key_wrap_record(recipient_record_input_with_payload(payload, &cert_der), &NoMatchLookup),
-            KeyWrapOutcome::InvalidRecord
-        ));
+        assert!(matches!(dispatch_key_wrap_record(recipient_record_input_with_payload(payload, &cert_der), &NoMatchLookup), KeyWrapOutcome::InvalidRecord));
 
         // reserved bytes 48..64 non-zero
         let mut payload = make_payload(&archive_identity, &metadata, &identity, suite);
         payload[48] = 0x01;
-        assert!(matches!(
-            dispatch_key_wrap_record(recipient_record_input_with_payload(payload, &cert_der), &NoMatchLookup),
-            KeyWrapOutcome::InvalidRecord
-        ));
+        assert!(matches!(dispatch_key_wrap_record(recipient_record_input_with_payload(payload, &cert_der), &NoMatchLookup), KeyWrapOutcome::InvalidRecord));
     }
 
     #[test]
@@ -994,12 +896,7 @@ mod tests {
         let identity = parse_x509_recipient_identity(&cert_der).unwrap();
         let suite = HpkeSuite::for_profile(X25519_KEM_ID, HKDF_SHA256_KDF_ID, CHACHA20POLY1305_AEAD_ID).unwrap();
         let payload = make_payload(&archive_identity, &metadata, &identity, suite);
-        let input = RecipientRecordInput {
-            archive_identity,
-            metadata,
-            recipient_identity_bytes: concatenated,
-            profile_payload_bytes: payload,
-        };
+        let input = RecipientRecordInput { archive_identity, metadata, recipient_identity_bytes: concatenated, profile_payload_bytes: payload };
 
         let result = dispatch_key_wrap_record(input, &NoMatchLookup);
 
@@ -1037,27 +934,12 @@ mod tests {
             recipient_identity_digest: identity.recipient_identity_digest,
         };
         let suite = HpkeSuite::for_profile(X25519_KEM_ID, HKDF_SHA256_KDF_ID, CHACHA20POLY1305_AEAD_ID).unwrap();
-        let payload = hpke_seal_master_key_with_aad_domain(
-            &cert_der,
-            &archive_identity,
-            &metadata,
-            &identity,
-            &[0x42; 32],
-            suite,
-            b"tzap-keywrap-master-key-v44\0",
-        )
-        .unwrap();
-        let input = RecipientRecordInput {
-            archive_identity,
-            metadata,
-            recipient_identity_bytes: cert_der,
-            profile_payload_bytes: payload,
-        };
+        let payload =
+            hpke_seal_master_key_with_aad_domain(&cert_der, &archive_identity, &metadata, &identity, &[0x42; 32], suite, b"tzap-keywrap-master-key-v44\0")
+                .unwrap();
+        let input = RecipientRecordInput { archive_identity, metadata, recipient_identity_bytes: cert_der, profile_payload_bytes: payload };
 
-        assert!(matches!(
-            dispatch_key_wrap_record(input, &StaticLookup { private_key }),
-            KeyWrapOutcome::InvalidRecord
-        ));
+        assert!(matches!(dispatch_key_wrap_record(input, &StaticLookup { private_key }), KeyWrapOutcome::InvalidRecord));
     }
 
     #[test]
@@ -1246,9 +1128,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         for (cert_der, private_key, _) in recipients {
-            let lookup = MatchingLookup {
-                matches: vec![(cert_der.clone(), private_key)],
-            };
+            let lookup = MatchingLookup { matches: vec![(cert_der.clone(), private_key)] };
             let unwrapped = records
                 .clone()
                 .into_iter()
@@ -1275,12 +1155,7 @@ mod tests {
         let record = wrap_master_key_for_recipient(archive_identity.clone(), &cert_der, &master_key, KeyWrapSuite::X25519HkdfSha256ChaCha20Poly1305).unwrap();
         let input = recipient_record_input_from_record(archive_identity, record);
 
-        let result = dispatch_key_wrap_record(
-            input,
-            &StaticLookup {
-                private_key: wrong_private_key,
-            },
-        );
+        let result = dispatch_key_wrap_record(input, &StaticLookup { private_key: wrong_private_key });
 
         assert!(matches!(result, KeyWrapOutcome::InvalidRecord));
     }

@@ -3,14 +3,7 @@ use super::*;
 
 #[test]
 fn cli_extract_help_includes_examples_and_flags() {
-    let output = Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["extract", "--help"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let output = Command::cargo_bin("tzap").unwrap().args(["extract", "--help"]).assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8_lossy(&output);
 
     assert!(stdout.contains("Extract one or many archive members"));
@@ -37,17 +30,9 @@ fn cli_extract_reads_unencrypted_archive_without_key_source() {
     let output = temp.path().join("out");
     fs::write(&input, b"plaintext v45\n").unwrap();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["create", "--no-encryption", "-o", archive.to_str().unwrap(), input.to_str().unwrap()]).assert().success();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(["extract", "-C", output.to_str().unwrap(), archive.to_str().unwrap()])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().args(["extract", "-C", output.to_str().unwrap(), archive.to_str().unwrap()]).assert().success();
 
     assert_eq!(fs::read(output.join("sample.txt")).unwrap(), b"plaintext v45\n");
 }
@@ -64,27 +49,13 @@ fn cli_extract_stdout_writes_exact_single_file_payload() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--stdout", archive.to_str().unwrap(), "hello.txt"])
         .assert()
         .success()
         .stdout(predicate::eq("stdout payload\n"));
@@ -103,27 +74,13 @@ fn cli_extract_stdout_outputs_binary_data_only_to_stdout() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     let output = Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "hello.bin",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--stdout", archive.to_str().unwrap(), "hello.bin"])
         .assert()
         .success()
         .get_output()
@@ -146,27 +103,13 @@ fn cli_extract_stdout_emits_no_payload_when_archive_authentication_fails() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            bad_key.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", bad_key.to_str().unwrap(), "--stdout", archive.to_str().unwrap(), "hello.txt"])
         .assert()
         .code(10)
         .stdout(predicate::str::is_empty())
@@ -186,28 +129,13 @@ fn cli_extract_with_global_quiet_suppresses_success_summary() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--quiet",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--quiet", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::is_empty())
@@ -228,27 +156,13 @@ fn cli_extract_with_global_quiet_still_emits_errors_to_stderr() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--quiet",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "missing.txt",
-        ])
+        .args(["extract", "--quiet", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap(), "missing.txt"])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("missing archive path: missing.txt"));
@@ -267,28 +181,13 @@ fn cli_extract_with_global_quiet_still_outputs_stdout_payload() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     let output = Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--quiet",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "hello.bin",
-        ])
+        .args(["extract", "--quiet", "--keyfile", keyfile.to_str().unwrap(), "--stdout", archive.to_str().unwrap(), "hello.bin"])
         .assert()
         .success()
         .get_output()
@@ -309,27 +208,13 @@ fn cli_extract_selected_path_uses_core_unicode_normalization() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "cafe\u{301}.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--stdout", archive.to_str().unwrap(), "cafe\u{301}.txt"])
         .assert()
         .success()
         .stdout(predicate::eq(b"normalized payload\n".to_vec()));
@@ -348,28 +233,10 @@ fn cli_extract_allow_absolute_symlinks_toggle() {
     fs::write(&keyfile, KEY_HEX).unwrap();
     std::os::unix::fs::symlink("/tmp/abs_target", &link).unwrap();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .arg("create")
-        .arg("--output")
-        .arg(&archive)
-        .arg(&link)
-        .arg("--keyfile")
-        .arg(&keyfile)
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().arg("create").arg("--output").arg(&archive).arg(&link).arg("--keyfile").arg(&keyfile).assert().success();
 
     // Default extraction rejects absolute symlink
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .arg("extract")
-        .arg(&archive)
-        .arg("-C")
-        .arg(&extract_disallowed)
-        .arg("--keyfile")
-        .arg(&keyfile)
-        .assert()
-        .failure();
+    Command::cargo_bin("tzap").unwrap().arg("extract").arg(&archive).arg("-C").arg(&extract_disallowed).arg("--keyfile").arg(&keyfile).assert().failure();
 
     // Extraction with --allow-absolute-symlinks succeeds
     Command::cargo_bin("tzap")
@@ -447,12 +314,7 @@ fn cli_extracts_archive_created_with_volume_size_split() {
     }
     args.push("sized-extract.bin".to_owned());
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .args(args)
-        .assert()
-        .success()
-        .stderr(predicate::str::contains("extracted 1 file(s)"));
+    Command::cargo_bin("tzap").unwrap().args(args).assert().success().stderr(predicate::str::contains("extracted 1 file(s)"));
 
     assert_eq!(fs::read(output.join("sized-extract.bin")).unwrap(), expected);
 }
@@ -474,23 +336,11 @@ fn cli_extract_all_files_to_default_directory() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
-    Command::cargo_bin("tzap")
-        .unwrap()
-        .current_dir(&output_dir)
-        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "../sample.tzap"])
-        .assert()
-        .success();
+    Command::cargo_bin("tzap").unwrap().current_dir(&output_dir).args(["extract", "--keyfile", keyfile.to_str().unwrap(), "../sample.tzap"]).assert().success();
 
     assert_eq!(fs::read(output_dir.join("hello.txt")).unwrap(), payload);
 }
@@ -511,27 +361,13 @@ fn cli_extract_all_files_to_specified_directory() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .success();
 
@@ -553,28 +389,13 @@ fn cli_extract_selected_file_paths() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "input/a.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), archive.to_str().unwrap(), "input/a.txt"])
         .assert()
         .success();
 
@@ -597,14 +418,7 @@ fn cli_extract_multiple_selected_file_paths() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
@@ -640,27 +454,13 @@ fn cli_extract_to_stdout_with_valid_single_file() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--stdout", archive.to_str().unwrap(), "hello.txt"])
         .assert()
         .success()
         .stdout(predicate::eq(payload.to_vec()));
@@ -681,27 +481,13 @@ fn cli_extract_with_overwrite_enabled() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            archive.to_str().unwrap(),
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), archive.to_str().unwrap()])
         .assert()
         .code(13)
         .stderr(predicate::str::contains("unsafe-path"));
@@ -917,19 +703,12 @@ fn cli_bit_rot_buffer_recovers_corrupted_payload_blocks_in_split_archive() {
         .success()
         .stderr(predicate::str::contains("bit-rot buffer 5%"));
 
-    let volume_paths = vec![
-        numbered_volume_path(&output_base, 0),
-        numbered_volume_path(&output_base, 1),
-        numbered_volume_path(&output_base, 2),
-    ];
+    let volume_paths = vec![numbered_volume_path(&output_base, 0), numbered_volume_path(&output_base, 1), numbered_volume_path(&output_base, 2)];
     for path in &volume_paths {
         assert!(path.exists(), "{} should exist", path.display());
     }
     let (corrupted_blocks, payload_blocks) = zero_deterministic_payload_blocks(&volume_paths, 4);
-    assert!(
-        corrupted_blocks * 100 <= payload_blocks * 5,
-        "test must stay within the configured bit-rot buffer"
-    );
+    assert!(corrupted_blocks * 100 <= payload_blocks * 5, "test must stay within the configured bit-rot buffer");
 
     Command::cargo_bin("tzap")
         .unwrap()
@@ -979,14 +758,7 @@ fn cli_extract_reports_missing_archive_path_and_lists_missing_paths() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1016,15 +788,7 @@ fn cli_extract_stdout_requires_exactly_one_path() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "hello.txt",
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--stdout", archive.to_str().unwrap(), "hello.txt", "hello.txt"])
         .assert()
         .code(16)
         .stdout(predicate::str::is_empty())
@@ -1044,28 +808,13 @@ fn cli_extract_dry_run_conflicts_with_stdout() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--dry-run",
-            "--stdout",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--dry-run", "--stdout", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap(), "hello.txt"])
         .assert()
         .code(2)
         .stdout(predicate::str::is_empty())
@@ -1086,14 +835,7 @@ fn cli_extract_wrong_key_fails_with_stable_category() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1117,14 +859,7 @@ fn cli_extract_corrupt_archive_reports_corruption() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1155,28 +890,13 @@ fn cli_extract_without_overwrite_when_destination_exists_is_rejected() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), archive.to_str().unwrap(), "hello.txt"])
         .assert()
         .code(13)
         .stderr(predicate::str::contains("unsafe-path"));
@@ -1194,27 +914,13 @@ fn cli_extract_unsafe_path_is_rejected_for_stdout() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--stdout",
-            archive.to_str().unwrap(),
-            "../outside.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--stdout", archive.to_str().unwrap(), "../outside.txt"])
         .assert()
         .code(13)
         .stderr(predicate::str::contains("unsafe-path"));
@@ -1249,15 +955,7 @@ fn cli_extract_missing_bootstrap_file_is_an_io_error() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--bootstrap",
-            missing.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--bootstrap", missing.to_str().unwrap(), archive.to_str().unwrap(), "hello.txt"])
         .assert()
         .code(3)
         .stderr(predicate::str::contains("failed to read bootstrap sidecar"));
@@ -1295,15 +993,7 @@ fn cli_extract_missing_volume_tolerates_recovery_when_loss_tolerance_allows() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            v0.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), v0.to_str().unwrap(), "hello.txt"])
         .assert()
         .success()
         .stderr(predicate::str::contains("extracted 1 file(s)"));
@@ -1343,15 +1033,7 @@ fn cli_extract_missing_volume_without_tolerance_is_reported_as_corruption() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            v1.to_str().unwrap(),
-            "hello.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), v1.to_str().unwrap(), "hello.txt"])
         .assert()
         .code(11)
         .stderr(predicate::str::contains("missing-volume"));
@@ -1368,14 +1050,7 @@ fn cli_extract_dry_run_prints_planned_members_and_rejects_missing_selection() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1398,14 +1073,7 @@ fn cli_extract_dry_run_prints_planned_members_and_rejects_missing_selection() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--dry-run",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "missing.txt",
-        ])
+        .args(["extract", "--dry-run", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap(), "missing.txt"])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("missing archive path: missing.txt"));
@@ -1426,14 +1094,7 @@ fn cli_extract_summary_reports_counts() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input_root.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1468,28 +1129,13 @@ fn cli_extract_preserves_crlf_payload_bytes() {
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "extract",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "--directory",
-            output.to_str().unwrap(),
-            archive.to_str().unwrap(),
-            "payload.txt",
-        ])
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--directory", output.to_str().unwrap(), archive.to_str().unwrap(), "payload.txt"])
         .assert()
         .success();
 
@@ -1533,14 +1179,7 @@ fn cli_extract_various_loss_tolerance_redundancy_and_bit_rot_levels() {
         // 1. Verify clean extraction without missing volumes
         Command::cargo_bin("tzap")
             .unwrap()
-            .args([
-                "extract",
-                "--keyfile",
-                keyfile.to_str().unwrap(),
-                "-C",
-                out_dir.to_str().unwrap(),
-                numbered_volume_path(&output_base, 0).to_str().unwrap(),
-            ])
+            .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "-C", out_dir.to_str().unwrap(), numbered_volume_path(&output_base, 0).to_str().unwrap()])
             .assert()
             .success();
         assert_eq!(fs::read(out_dir.join("payload.bin")).unwrap(), payload_bytes);
@@ -1581,14 +1220,7 @@ fn cli_extract_cross_os_restore_policy_matrix() {
     let archive = temp.path().join("cross_os.tzap");
     Command::cargo_bin("tzap")
         .unwrap()
-        .args([
-            "create",
-            "--keyfile",
-            keyfile.to_str().unwrap(),
-            "-o",
-            archive.to_str().unwrap(),
-            input.to_str().unwrap(),
-        ])
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
         .assert()
         .success();
 
@@ -1596,16 +1228,7 @@ fn cli_extract_cross_os_restore_policy_matrix() {
         let out_dir = temp.path().join(format!("out_policy_{policy}"));
         Command::cargo_bin("tzap")
             .unwrap()
-            .args([
-                "extract",
-                "--keyfile",
-                keyfile.to_str().unwrap(),
-                "--restore",
-                policy,
-                "-C",
-                out_dir.to_str().unwrap(),
-                archive.to_str().unwrap(),
-            ])
+            .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--restore", policy, "-C", out_dir.to_str().unwrap(), archive.to_str().unwrap()])
             .assert()
             .success();
 
