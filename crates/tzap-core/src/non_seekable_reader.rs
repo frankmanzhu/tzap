@@ -1345,3 +1345,223 @@ fn checked_usize_add(lhs: usize, rhs: usize) -> Result<usize, FormatError> {
 fn u32_len(value: usize, structure: &'static str) -> Result<u32, FormatError> {
     u32::try_from(value).map_err(|_| FormatError::InvalidArchive(structure))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::MasterKey;
+    use crate::entry_metadata::MemberMetadata;
+    use crate::format::MASTER_KEY_LEN;
+    use crate::writer::{write_archive, write_archive_unencrypted, RegularFile, WriterOptions};
+    use std::io::Cursor;
+    use tempfile::tempdir;
+
+    fn test_master_key() -> MasterKey {
+        MasterKey::from_raw_key(&[0x42; MASTER_KEY_LEN]).unwrap()
+    }
+
+    fn test_writer_options() -> WriterOptions {
+        WriterOptions {
+            stripe_width: 1,
+            volume_loss_tolerance: 0,
+            jobs: 1,
+            block_size: 64 * 1024,
+            chunk_size: 64 * 1024,
+            fec_data_shards: 16,
+            fec_parity_shards: 1,
+            ..Default::default()
+        }
+    }
+
+    fn mock_member_summary(start: u64, size: u64) -> TarStreamMemberSummary {
+        let records = crate::entry_metadata::portable_primary_pax(b"file.txt", 0o644, "other", false).unwrap();
+        let primary = crate::entry_metadata::parse_primary_metadata(&records).unwrap();
+        let portable_mirror = crate::entry_metadata::PortableMetadataMirror {
+            owner_kind_posix: false,
+            mode_origin_native: false,
+            mode: 0o644,
+            attributes: None,
+            uid: None,
+            gid: None,
+            uname: None,
+            gname: None,
+            mtime: (0, 0),
+        };
+        let v45_metadata = MemberMetadata {
+            declaration: primary.declaration.clone(),
+            primary_records: records,
+            auxiliary: Vec::new(),
+            file_entry_flags: 0,
+            sparse_layout: None,
+            capture_report: None,
+            primary_has_native_scalar: primary.has_native_scalar,
+            primary_requires_system_restore: primary.requires_system_restore,
+            portable_mirror,
+        };
+        TarStreamMemberSummary {
+            path: b"file.txt".to_vec(),
+            kind: TarEntryKind::Regular,
+            link_target: None,
+            mode: 0o644,
+            mtime: ArchiveTimestamp::UNIX_EPOCH,
+            logical_size: 10,
+            file_entry_flags: 0,
+            reparse_placeholder: false,
+            v45_metadata,
+            diagnostics: Vec::new(),
+            group_start: start,
+            group_size: size,
+        }
+    }
+
+    fn mock_envelope_summary(index: u64) -> StreamedEnvelopeSummary {
+        StreamedEnvelopeSummary {
+            envelope_index: index,
+            first_block_index: index * 10,
+            data_block_count: 8,
+            parity_block_count: 2,
+            encrypted_size: 100,
+            plaintext_size: 80,
+            first_frame_index: index,
+            frame_count: 1,
+        }
+    }
+
+    #[test]
+    fn streamed_payload_summary_maps_and_duplicates() {
+        let mut summary = StreamedPayloadSummary {
+            tar: TarStreamSummary {
+                members: vec![mock_member_summary(0, 512), mock_member_summary(512, 512)],
+                tar_total_size: 1024,
+                total_extraction_size: 10,
+            },
+            content_sha256: [0u8; 32],
+            envelopes: vec![mock_envelope_summary(0)],
+            frames: vec![StreamedFrameSummary {
+                frame_index: 0,
+                envelope_index: 0,
+                offset_in_envelope: 0,
+                compressed_size: 50,
+                decompressed_size: 512,
+                tar_stream_offset: 0,
+            }],
+        };
+
+        // Maps succeed with unique indices
+        assert!(summary.envelope_map().is_ok());
+        assert!(summary.frame_map().is_ok());
+        assert!(summary.member_start_map().is_ok());
+
+        // Frame flags
+        let flags = summary.frame_flags(&summary.frames[0]).unwrap();
+        // Starts at member 0 (bit 0), ends at member 0 end 512 (bit 1)
+        assert_eq!(flags, 0x0000_0003);
+
+        // Duplicate envelope error
+        summary.envelopes.push(summary.envelopes[0].clone());
+        assert_eq!(summary.envelope_map().unwrap_err(), FormatError::InvalidArchive("duplicate streamed payload envelope"));
+
+        // Duplicate frame error
+        summary.frames.push(summary.frames[0].clone());
+        assert_eq!(summary.frame_map().unwrap_err(), FormatError::InvalidArchive("duplicate streamed payload frame"));
+
+        // Duplicate member start error
+        summary.tar.members.push(summary.tar.members[0].clone());
+        assert_eq!(summary.member_start_map().unwrap_err(), FormatError::InvalidArchive("duplicate streamed tar member start"));
+    }
+
+    #[test]
+    fn helper_overflow_checks() {
+        assert!(checked_u64_add(u64::MAX, 1).is_err());
+        assert_eq!(checked_u64_add(10, 20).unwrap(), 30);
+
+        assert!(checked_usize_add(usize::MAX, 1).is_err());
+        assert_eq!(checked_usize_add(5, 10).unwrap(), 15);
+
+        assert!(u32_len(usize::MAX, "overflow").is_err());
+        assert_eq!(u32_len(100, "valid").unwrap(), 100);
+
+        assert_eq!(root_auth_status(None), SequentialRootAuthStatus::Absent);
+    }
+
+    #[test]
+    fn verify_list_extract_unencrypted_stream_with_bootstrap() {
+        let files = [RegularFile::new("file1.txt", b"stream file 1"), RegularFile::new("sub/file2.txt", b"stream file 2")];
+        let written = write_archive_unencrypted(&files, test_writer_options()).unwrap();
+        let sidecar = written.bootstrap_sidecar;
+
+        // Verify stream
+        let verify_report =
+            verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar(Cursor::new(&written.bytes), &sidecar, NonSeekableReaderOptions::default()).unwrap();
+        assert_eq!(verify_report.file_count, 2);
+
+        // List stream
+        let list_report =
+            list_unencrypted_non_seekable_stream_with_bootstrap_sidecar(Cursor::new(&written.bytes), &sidecar, NonSeekableReaderOptions::default()).unwrap();
+        assert_eq!(list_report.entries.len(), 2);
+        assert_eq!(list_report.entries[0].path, "file1.txt");
+        assert_eq!(list_report.entries[1].path, "sub/file2.txt");
+
+        // Extract stream
+        let dir = tempdir().unwrap();
+        let extract_report = extract_unencrypted_non_seekable_stream_to_dir_with_bootstrap_sidecar(
+            Cursor::new(&written.bytes),
+            &sidecar,
+            dir.path(),
+            NonSeekableReaderOptions::default(),
+            SafeExtractionOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(extract_report.extracted_member_count, 2);
+        assert_eq!(fs::read(dir.path().join("file1.txt")).unwrap(), b"stream file 1");
+        assert_eq!(fs::read(dir.path().join("sub/file2.txt")).unwrap(), b"stream file 2");
+    }
+
+    #[test]
+    fn verify_list_extract_encrypted_stream_with_bootstrap() {
+        let key = test_master_key();
+        let files = [RegularFile::new("secret.txt", b"confidential content")];
+        let written = write_archive(&files, &key, test_writer_options()).unwrap();
+        let sidecar = written.bootstrap_sidecar;
+
+        // Verify stream
+        let verify_report =
+            verify_non_seekable_stream_with_bootstrap_sidecar(Cursor::new(&written.bytes), &sidecar, &key, NonSeekableReaderOptions::default()).unwrap();
+        assert_eq!(verify_report.file_count, 1);
+
+        // List stream
+        let list_report =
+            list_non_seekable_stream_with_bootstrap_sidecar(Cursor::new(&written.bytes), &sidecar, &key, NonSeekableReaderOptions::default()).unwrap();
+        assert_eq!(list_report.entries.len(), 1);
+        assert_eq!(list_report.entries[0].path, "secret.txt");
+
+        // Extract stream
+        let dir = tempdir().unwrap();
+        let extract_report = extract_non_seekable_stream_to_dir_with_bootstrap_sidecar(
+            Cursor::new(&written.bytes),
+            &sidecar,
+            &key,
+            dir.path(),
+            NonSeekableReaderOptions::default(),
+            SafeExtractionOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(extract_report.extracted_member_count, 1);
+        assert_eq!(fs::read(dir.path().join("secret.txt")).unwrap(), b"confidential content");
+    }
+
+    #[test]
+    fn non_seekable_stream_error_conditions() {
+        let key = test_master_key();
+
+        // Truncated stream
+        let err = verify_non_seekable_stream(Cursor::new(&[0u8; 10]), &key).unwrap_err();
+        assert!(matches!(err, FormatError::InvalidLength { .. }));
+
+        // Corrupted volume magic
+        let mut bad_header = vec![0u8; VOLUME_HEADER_LEN];
+        bad_header[0..4].copy_from_slice(b"BAD!");
+        let err_magic = verify_non_seekable_stream(Cursor::new(&bad_header), &key).unwrap_err();
+        assert_eq!(err_magic, FormatError::BadMagic { structure: "VolumeHeader" });
+    }
+}

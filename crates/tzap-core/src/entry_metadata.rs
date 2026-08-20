@@ -2388,4 +2388,146 @@ mod tests {
         oversized_count[36..40].copy_from_slice(&129u32.to_be_bytes());
         assert!(validate_darwin_acl_external(&oversized_count).is_err());
     }
+
+    #[test]
+    fn pax_parsing_negative_and_fuzz_vectors() {
+        // Empty payload
+        assert!(parse_canonical_pax(b"").is_err());
+
+        // Non-minimal decimal: leading zero, negative, invalid digit
+        assert!(parse_canonical_pax(b"05 a=b\n").is_err());
+        assert!(parse_canonical_pax(b"-5 a=b\n").is_err());
+        assert!(parse_canonical_pax(b"+5 a=b\n").is_err());
+        assert!(parse_canonical_pax(b"x5 a=b\n").is_err());
+        assert!(parse_canonical_pax(b" a=b\n").is_err());
+
+        // Missing space delimiter
+        assert!(parse_canonical_pax(b"6a=b\n").is_err());
+
+        // Missing trailing newline
+        assert!(parse_canonical_pax(b"6 a=b ").is_err());
+        assert!(parse_canonical_pax(b"6 a=bX").is_err());
+
+        // Missing equals sign in body
+        assert!(parse_canonical_pax(b"6 abcd\n").is_err());
+
+        // Non-canonical ASCII keys (spaces, control chars, equals in key)
+        assert!(parse_canonical_pax(b"8 a b=c\n").is_err());
+        assert!(parse_canonical_pax(b"8 a\x00b=c\n").is_err());
+        assert!(parse_canonical_pax(b"8 =val\n").is_err());
+
+        // Declared length does not frame record / out of bounds
+        assert!(parse_canonical_pax(b"50 a=b\n").is_err());
+        assert!(parse_canonical_pax(b"3 a=b\n").is_err());
+
+        // Valid canonical record (11 bytes total: "11 foo=bar\n")
+        let records = parse_canonical_pax(b"11 foo=bar\n").unwrap();
+        assert_eq!(records.get("foo").unwrap(), b"bar");
+
+        // Non-canonical key order
+        assert!(parse_canonical_pax(b"10 zed=1\n10 aaa=2\n").is_err());
+    }
+
+    #[test]
+    fn streaming_auxiliary_validator_error_cases() {
+        let expected_sha256_hex = format!("{:x}", sha2::Sha256::digest(b"correct payload"));
+        let mut records = PaxRecords::new();
+        records.insert("TZAP.aux.version".into(), b"1".to_vec());
+        records.insert("TZAP.aux.kind".into(), b"generic.xattr".to_vec());
+        records.insert("TZAP.aux.profile".into(), b"posix-backup-v1".to_vec());
+        records.insert("TZAP.aux.restore-class".into(), b"same-os".to_vec());
+        records.insert("TZAP.aux.native".into(), b"1".to_vec());
+        records.insert("TZAP.aux.name-encoding".into(), b"bytes-base64".to_vec());
+        records.insert("TZAP.aux.name".into(), b"dXNlci5jb21tZW50".to_vec());
+        records.insert("TZAP.aux.flags".into(), b"0000000000000000".to_vec());
+        records.insert("TZAP.aux.logical-size".into(), b"15".to_vec());
+        records.insert("TZAP.aux.sha256".into(), expected_sha256_hex.into_bytes());
+
+        // Case 1: Payload exceeds declared size
+        let mut validator = AuxiliaryStreamValidator::new(&records, 0, 15).unwrap();
+        validator.observe(b"012345678901234").unwrap();
+        assert!(validator.observe(b"extra").is_err());
+
+        // Case 2: Incomplete payload on finish
+        let mut validator = AuxiliaryStreamValidator::new(&records, 0, 15).unwrap();
+        validator.observe(b"short").unwrap();
+        assert!(validator.finish().is_err());
+
+        // Case 3: Checksum mismatch on finish
+        let mut validator = AuxiliaryStreamValidator::new(&records, 0, 15).unwrap();
+        validator.observe(b"wrong payload!!").unwrap();
+        assert!(validator.finish().is_err());
+
+        // Case 4: Valid payload succeeds
+        let mut validator = AuxiliaryStreamValidator::new(&records, 0, 15).unwrap();
+        validator.observe(b"correct payload").unwrap();
+        let finished = validator.finish().unwrap();
+        assert_eq!(finished.decoded_name, b"user.comment");
+    }
+
+    #[test]
+    fn decoder_and_hex_utility_validations() {
+        // canonical_base64_decode
+        assert!(canonical_base64_decode(b"").unwrap().is_empty());
+        assert_eq!(canonical_base64_decode(b"aGVsbG8").unwrap(), b"hello");
+        assert!(canonical_base64_decode(b"aGVsbG8=").is_err()); // padding rejected
+        assert!(canonical_base64_decode(b"aGVsbG8\n").is_err()); // newline rejected
+        assert!(canonical_base64_decode(b"aGVsbG8?").is_err()); // invalid char
+
+        // parse_fixed_hex_u32
+        assert_eq!(parse_fixed_hex_u32(b"0000002a", 8, "test").unwrap(), 42);
+        assert!(parse_fixed_hex_u32(b"0000002A", 8, "test").is_err()); // uppercase
+        assert!(parse_fixed_hex_u32(b"2a", 8, "test").is_err()); // not 8 chars
+        assert!(parse_fixed_hex_u32(b"0000002g", 8, "test").is_err()); // invalid hex
+
+        // parse_fixed_hex_u64
+        assert_eq!(parse_fixed_hex_u64(b"000000000000002a", 16, "test").unwrap(), 42);
+        assert!(parse_fixed_hex_u64(b"000000000000002A", 16, "test").is_err());
+        assert!(parse_fixed_hex_u64(b"2a", 16, "test").is_err());
+
+        // parse_decimal_usize and parse_decimal_u64
+        assert_eq!(parse_decimal_usize(b"123", "test").unwrap(), 123);
+        assert!(parse_decimal_usize(b"0123", "test").is_err());
+        assert!(parse_decimal_usize(b"", "test").is_err());
+        assert!(parse_decimal_usize(b"123a", "test").is_err());
+
+        assert_eq!(parse_decimal_u64(b"456", "test").unwrap(), 456);
+        assert_eq!(parse_decimal_u64(b"789", "test").unwrap(), 789);
+        assert!(parse_decimal_u64(b"9999999999999999999999999999", "test").is_err());
+        // overflow
+    }
+
+    #[test]
+    fn sparse_layout_parsing_and_profile_methods() {
+        // Odd count of fields in sparse layout payload
+        assert!(parse_sparse_payload(b"20\n30\n", 100).is_err());
+
+        // Valid layout using encode_v45_sparse_map + payload
+        let mut map = crate::encode_v45_sparse_map(&[SparseExtent { offset: 20, length: 30 }], 100).unwrap();
+        map.extend_from_slice(&[0x11u8; 30]);
+        let layout = parse_sparse_payload(&map, 100).unwrap();
+        assert_eq!(layout.logical_size, 100);
+        assert_eq!(layout.extents.len(), 1);
+        assert_eq!(layout.extents[0].offset, 20);
+        assert_eq!(layout.extents[0].length, 30);
+
+        // Extent out of bounds (offset 80 + length 30 > 100)
+        let bad_map = crate::encode_v45_sparse_map(&[SparseExtent { offset: 80, length: 30 }], 100);
+        assert!(bad_map.is_err());
+
+        // Profiles and unknown required profiles
+        assert!(is_known_profile("portable-v1"));
+        assert!(is_known_profile("posix-backup-v1"));
+        assert!(is_known_profile("macos-backup-v1"));
+        assert!(is_known_profile("linux-backup-v1"));
+        assert!(is_known_profile("windows-backup-v1"));
+        assert!(!is_known_profile("x.org.tzap.custom"));
+
+        let mut records = portable_primary_pax(b"file.txt", 0o644, "linux", false).unwrap();
+        records.insert("TZAP.metadata.required-profiles".into(), b"linux-backup-v1,portable-v1,posix-backup-v1,x.org.tzap.custom".to_vec());
+        let primary = parse_primary_metadata(&records).unwrap();
+        assert!(primary.declaration.has_unknown_required_profile());
+        assert!(primary.declaration.profile_required("x.org.tzap.custom"));
+        assert!(primary.declaration.profile_required("portable-v1"));
+    }
 }

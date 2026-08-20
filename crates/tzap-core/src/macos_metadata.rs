@@ -33,6 +33,7 @@ pub struct MacosMetadataIdentity {
     symlink: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapturedMacosMetadata {
     pub native: NativeFileMetadata,
     pub identity: MacosMetadataIdentity,
@@ -382,4 +383,120 @@ fn is_system_xattr(name: &[u8]) -> bool {
 
 fn invalid_metadata(error: impl std::fmt::Display) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn is_system_xattr_recognition() {
+        assert!(is_system_xattr(b"security.selinux"));
+        assert!(is_system_xattr(b"trusted.test"));
+        assert!(is_system_xattr(b"system.posix_acl"));
+        assert!(!is_system_xattr(b"user.comment"));
+        assert!(!is_system_xattr(b"com.apple.FinderInfo"));
+        assert!(!is_system_xattr(b"com.apple.ResourceFork"));
+    }
+
+    #[test]
+    fn invalid_metadata_error_kind() {
+        let err = invalid_metadata("bad format");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(err.to_string(), "bad format");
+    }
+
+    #[test]
+    fn descriptor_path_resolves_open_file() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("desc_test.txt");
+        fs::write(&file_path, b"test").unwrap();
+        let file = File::open(&file_path).unwrap();
+        let resolved = descriptor_path(&file).unwrap();
+        assert_eq!(resolved.canonicalize().unwrap(), file_path.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn capture_macos_metadata_basic_and_xattr_and_errors() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("capture_test.txt");
+        fs::write(&file_path, b"hello macos").unwrap();
+
+        // Basic capture
+        let captured = capture_macos_metadata(&file_path, false).unwrap();
+        assert_eq!(captured.identity.len, 11);
+        assert!(!captured.identity.symlink);
+        assert_eq!(captured.native.required_profiles, vec!["macos-backup-v1", "posix-backup-v1"]);
+        assert!(captured.native.primary_pax_records.contains_key("TZAP.macos.st-flags"));
+        assert!(captured.native.primary_pax_records.contains_key("TZAP.unix.ctime-observed"));
+        assert!(captured.native.primary_pax_records.contains_key("LIBARCHIVE.creationtime"));
+
+        // Symlink mismatch
+        assert!(capture_macos_metadata(&file_path, true).is_err());
+
+        // Generic xattr capture
+        xattr::set(&file_path, "user.tzap-test", b"sample-val").unwrap();
+        let captured_xattr = capture_macos_metadata(&file_path, false).unwrap();
+        assert!(captured_xattr.native.primary_pax_records.contains_key("LIBARCHIVE.xattr.user.tzap-test"));
+
+        // FinderInfo valid 32 bytes
+        let finder_info = vec![0xABu8; 32];
+        xattr::set(&file_path, "com.apple.FinderInfo", &finder_info).unwrap();
+        let captured_fi = capture_macos_metadata(&file_path, false).unwrap();
+        let fi_rec = captured_fi.native.auxiliary_records.iter().find(|r| r.kind == "macos.finder-info").expect("FinderInfo record must exist");
+        assert_eq!(fi_rec.payload, finder_info);
+        assert_eq!(fi_rec.profile, "macos-backup-v1");
+        assert_eq!(fi_rec.restore_class, RestoreClass::SameOs);
+
+        // Nonexistent file
+        let missing = dir.path().join("missing.txt");
+        assert!(capture_macos_metadata(&missing, false).is_err());
+    }
+
+    #[test]
+    fn capture_macos_metadata_symlink() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        fs::write(&target, b"symlink target").unwrap();
+        let link_path = dir.path().join("link.txt");
+        std::os::unix::fs::symlink(&target, &link_path).unwrap();
+
+        let captured = capture_macos_metadata(&link_path, true).unwrap();
+        assert!(captured.identity.symlink);
+        assert_eq!(captured.native.required_profiles, vec!["macos-backup-v1", "posix-backup-v1"]);
+
+        // Symlink mismatch when called with symlink = false
+        assert!(capture_macos_metadata(&link_path, false).is_err());
+    }
+
+    #[test]
+    fn open_macos_resource_fork_tests() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("rf_test.txt");
+        fs::write(&file_path, b"data").unwrap();
+        xattr::set(&file_path, "com.apple.ResourceFork", b"resource fork content").unwrap();
+        let captured = capture_macos_metadata(&file_path, false).unwrap();
+
+        // Valid resource fork
+        let mut reader = open_macos_resource_fork(&file_path, false, captured.identity, 21).unwrap();
+        let mut buf = [0u8; 64];
+        let n = reader.read(&mut buf).unwrap();
+        assert_eq!(n, 21);
+        assert_eq!(&buf[..21], b"resource fork content");
+
+        // Size mismatch error
+        let Err(err) = open_macos_resource_fork(&file_path, false, captured.identity, 100) else {
+            panic!("expected size mismatch error");
+        };
+        assert_eq!(err.to_string(), "macOS resource fork changed after metadata scan");
+
+        // Identity mismatch error
+        let mut corrupted_identity = captured.identity;
+        corrupted_identity.len += 100;
+        let Err(err_id) = open_macos_resource_fork(&file_path, false, corrupted_identity, 21) else {
+            panic!("expected identity mismatch error");
+        };
+        assert_eq!(err_id.to_string(), "macOS resource-fork owner changed before read");
+    }
 }

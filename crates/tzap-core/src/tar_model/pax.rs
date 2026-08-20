@@ -34,11 +34,11 @@ pub(crate) struct StreamingSparsePrimary {
 }
 
 impl StreamingSparsePrimary {
-    fn new(logical_size: u64) -> Self {
+    pub(crate) fn new(logical_size: u64) -> Self {
         Self { validator: SparseStreamValidator::new(logical_size), layout: None, extent_index: 0, extent_consumed: 0, logical_cursor: 0, native_output: None }
     }
 
-    fn observe<O: TarStreamObserver>(&mut self, bytes: &[u8], observer: &mut O) -> Result<(), FormatError> {
+    pub(crate) fn observe<O: TarStreamObserver>(&mut self, bytes: &[u8], observer: &mut O) -> Result<(), FormatError> {
         let before = self.validator.position();
         self.validator.observe(bytes)?;
         if self.layout.is_none() {
@@ -85,7 +85,7 @@ impl StreamingSparsePrimary {
         Ok(())
     }
 
-    fn finish<O: TarStreamObserver>(self, observer: &mut O) -> Result<(), FormatError> {
+    pub(crate) fn finish<O: TarStreamObserver>(self, observer: &mut O) -> Result<(), FormatError> {
         let layout = self.validator.finish()?;
         if self.extent_index != layout.extents.len() || self.extent_consumed != 0 {
             return Err(FormatError::InvalidArchive("sparse primary extent data is incomplete"));

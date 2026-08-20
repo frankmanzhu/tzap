@@ -2380,3 +2380,502 @@ fn windows_selected_hardlinks_store_data_once_and_restore_shared_file_identity()
     assert_eq!(alpha_identity.link_count, 2);
     assert_eq!(beta_identity.link_count, 2);
 }
+
+fn create_test_cli_archive(dir: &std::path::Path) -> std::path::PathBuf {
+    let input_dir = dir.join("inputs");
+    fs::create_dir(&input_dir).unwrap();
+    let file1 = input_dir.join("file1.txt");
+    let file2 = input_dir.join("file2.txt");
+    fs::write(&file1, b"first file content").unwrap();
+    fs::write(&file2, b"second file content").unwrap();
+
+    let archive_path = dir.join("test_cli.tzap");
+    commands::create::run_create(
+        true,
+        commands::create::CreateArgs {
+            output: archive_path.to_string_lossy().to_string(),
+            volumes: None,
+            volume_size: None,
+            volume_loss_tolerance: Some(0),
+            bit_rot_buffer_pct: 0,
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_cert: None,
+            no_encryption: true,
+            insecure_zero_key: false,
+            force: true,
+            argon2_t_cost: 1,
+            argon2_m_cost_kib: 8,
+            argon2_parallelism: 1,
+            dictionary: None,
+            signing_key: None,
+            signing_cert: None,
+            signing_private_key: None,
+            signing_chain: Vec::new(),
+            x509_signature_scheme: None,
+            bootstrap_out: None,
+            tar_stdin: false,
+            raw_stdin: false,
+            stdin_name: None,
+            stdin_size: None,
+            spool_stdin: false,
+            compression_level: 1,
+            chunk_size: None,
+            envelope_size: None,
+            block_size: None,
+            jobs: Some(1),
+            timings: false,
+            dry_run: false,
+            paths: vec![file1.to_string_lossy().to_string(), file2.to_string_lossy().to_string()],
+        },
+    )
+    .unwrap();
+
+    archive_path
+}
+
+#[test]
+fn test_run_list_modes_and_jobs() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive_path = create_test_cli_archive(temp.path());
+
+    // Standard list
+    let res = commands::list::run_list(
+        true,
+        commands::list::ListArgs {
+            archive: archive_path.to_string_lossy().to_string(),
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            bootstrap: None,
+            volumes: Vec::new(),
+            long: false,
+            json: false,
+            jobs: Some(2),
+        },
+    );
+    assert!(res.is_ok());
+
+    // Long list
+    let res_long = commands::list::run_list(
+        true,
+        commands::list::ListArgs {
+            archive: archive_path.to_string_lossy().to_string(),
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            bootstrap: None,
+            volumes: Vec::new(),
+            long: true,
+            json: false,
+            jobs: None,
+        },
+    );
+    assert!(res_long.is_ok());
+
+    // JSON list
+    let res_json = commands::list::run_list(
+        true,
+        commands::list::ListArgs {
+            archive: archive_path.to_string_lossy().to_string(),
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            bootstrap: None,
+            volumes: Vec::new(),
+            long: false,
+            json: true,
+            jobs: None,
+        },
+    );
+    assert!(res_json.is_ok());
+}
+
+#[test]
+fn test_run_extract_modes_and_helpers() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive_path = create_test_cli_archive(temp.path());
+    let extract_dir = temp.path().join("extracted");
+
+    // Dry run
+    let res_dry = commands::extract::run_extract(
+        true,
+        commands::extract::ExtractArgs {
+            archive: archive_path.to_string_lossy().to_string(),
+            paths: Vec::new(),
+            directory: extract_dir.to_string_lossy().to_string(),
+            stdout: false,
+            dry_run: true,
+            overwrite: false,
+            restore: commands::CliRestorePolicy::Portable,
+            allow_degraded: false,
+            allow_absolute_symlinks: false,
+            fsync: false,
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            bootstrap: None,
+            volumes: Vec::new(),
+            jobs: Some(1),
+        },
+    );
+    assert!(res_dry.is_ok());
+
+    // Stdout extraction with exactly 1 path
+    let res_stdout = commands::extract::run_extract(
+        true,
+        commands::extract::ExtractArgs {
+            archive: archive_path.to_string_lossy().to_string(),
+            paths: vec!["file1.txt".to_string()],
+            directory: extract_dir.to_string_lossy().to_string(),
+            stdout: true,
+            dry_run: false,
+            overwrite: false,
+            restore: commands::CliRestorePolicy::Portable,
+            allow_degraded: false,
+            allow_absolute_symlinks: false,
+            fsync: false,
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            bootstrap: None,
+            volumes: Vec::new(),
+            jobs: None,
+        },
+    );
+    assert!(res_stdout.is_ok());
+
+    // Stdout extraction with multiple paths (rejected)
+    let res_bad_stdout = commands::extract::run_extract(
+        true,
+        commands::extract::ExtractArgs {
+            archive: archive_path.to_string_lossy().to_string(),
+            paths: vec!["file1.txt".to_string(), "file2.txt".to_string()],
+            directory: extract_dir.to_string_lossy().to_string(),
+            stdout: true,
+            dry_run: false,
+            overwrite: false,
+            restore: commands::CliRestorePolicy::Portable,
+            allow_degraded: false,
+            allow_absolute_symlinks: false,
+            fsync: false,
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            bootstrap: None,
+            volumes: Vec::new(),
+            jobs: None,
+        },
+    );
+    assert!(res_bad_stdout.is_err());
+
+    // Missing paths error
+    let res_missing = commands::extract::run_extract(
+        true,
+        commands::extract::ExtractArgs {
+            archive: archive_path.to_string_lossy().to_string(),
+            paths: vec!["nonexistent.txt".to_string()],
+            directory: extract_dir.to_string_lossy().to_string(),
+            stdout: false,
+            dry_run: false,
+            overwrite: false,
+            restore: commands::CliRestorePolicy::Portable,
+            allow_degraded: false,
+            allow_absolute_symlinks: false,
+            fsync: false,
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            bootstrap: None,
+            volumes: Vec::new(),
+            jobs: None,
+        },
+    );
+    assert!(res_missing.is_err());
+
+    // Full extraction
+    let res_full = commands::extract::run_extract(
+        true,
+        commands::extract::ExtractArgs {
+            archive: archive_path.to_string_lossy().to_string(),
+            paths: Vec::new(),
+            directory: extract_dir.to_string_lossy().to_string(),
+            stdout: false,
+            dry_run: false,
+            overwrite: true,
+            restore: commands::CliRestorePolicy::Portable,
+            allow_degraded: false,
+            allow_absolute_symlinks: false,
+            fsync: false,
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            bootstrap: None,
+            volumes: Vec::new(),
+            jobs: Some(2),
+        },
+    );
+    assert!(res_full.is_ok());
+    assert_eq!(fs::read(extract_dir.join("file1.txt")).unwrap(), b"first file content");
+    assert_eq!(fs::read(extract_dir.join("file2.txt")).unwrap(), b"second file content");
+}
+
+#[test]
+fn test_extract_helper_functions() {
+    assert!(commands::extract::reject_stdout_extract_shape(true, 1).is_ok());
+    assert!(commands::extract::reject_stdout_extract_shape(true, 0).is_err());
+    assert!(commands::extract::reject_stdout_extract_shape(true, 2).is_err());
+    assert!(commands::extract::reject_stdout_extract_shape(false, 0).is_ok());
+    assert!(commands::extract::reject_stdout_extract_shape(false, 5).is_ok());
+
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("dummy.txt");
+    fs::write(&file, b"content").unwrap();
+    let meta = fs::metadata(&file).unwrap();
+    assert_ne!(os_input::readonly_mode(&meta), 0);
+
+    // Archive stdin validation options
+    assert!(commands::reject_archive_stdin_list_options(&["vol2.tzap".into()], false, false, None, None, false).is_err());
+    assert!(commands::reject_archive_stdin_key_options(true, false, None, None, false).is_err());
+    assert!(commands::reject_archive_stdin_key_options(false, true, None, None, false).is_err());
+    assert!(commands::reject_archive_stdin_key_options(false, false, None, None, true).is_err());
+    assert!(commands::reject_archive_stdin_key_options(false, false, Some("key.bin"), None, false).is_ok());
+
+    // Bootstrap sidecar reading
+    assert_eq!(commands::read_optional_bootstrap_sidecar(None).unwrap(), None);
+    assert_eq!(commands::read_optional_bootstrap_sidecar(Some(&file.to_string_lossy())).unwrap(), Some(b"content".to_vec()));
+    assert!(commands::read_optional_bootstrap_sidecar(Some("nonexistent_sidecar.bin")).is_err());
+}
+
+#[test]
+fn test_create_dry_run_and_timings_and_bootstrap() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("file.txt");
+    fs::write(&file, b"sample payload").unwrap();
+    let out_archive = temp.path().join("dry.tzap");
+    let bootstrap_path = temp.path().join("sidecar.bin");
+
+    // Dry-run create
+    let res_dry = commands::create::run_create(
+        false,
+        commands::create::CreateArgs {
+            output: out_archive.to_string_lossy().to_string(),
+            volumes: None,
+            volume_size: None,
+            volume_loss_tolerance: Some(0),
+            bit_rot_buffer_pct: 0,
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_cert: None,
+            no_encryption: true,
+            insecure_zero_key: false,
+            force: true,
+            argon2_t_cost: 1,
+            argon2_m_cost_kib: 8,
+            argon2_parallelism: 1,
+            dictionary: None,
+            signing_key: None,
+            signing_cert: None,
+            signing_private_key: None,
+            signing_chain: Vec::new(),
+            x509_signature_scheme: None,
+            bootstrap_out: None,
+            tar_stdin: false,
+            raw_stdin: false,
+            stdin_name: None,
+            stdin_size: None,
+            spool_stdin: false,
+            compression_level: 1,
+            chunk_size: None,
+            envelope_size: None,
+            block_size: None,
+            jobs: Some(1),
+            timings: true,
+            dry_run: true,
+            paths: vec![file.to_string_lossy().to_string()],
+        },
+    );
+    assert!(res_dry.is_ok());
+    assert!(!out_archive.exists());
+
+    // Actual create with timings and bootstrap output
+    let res_actual = commands::create::run_create(
+        false,
+        commands::create::CreateArgs {
+            output: out_archive.to_string_lossy().to_string(),
+            volumes: None,
+            volume_size: None,
+            volume_loss_tolerance: Some(0),
+            bit_rot_buffer_pct: 0,
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_cert: None,
+            no_encryption: true,
+            insecure_zero_key: false,
+            force: true,
+            argon2_t_cost: 1,
+            argon2_m_cost_kib: 8,
+            argon2_parallelism: 1,
+            dictionary: None,
+            signing_key: None,
+            signing_cert: None,
+            signing_private_key: None,
+            signing_chain: Vec::new(),
+            x509_signature_scheme: None,
+            bootstrap_out: Some(bootstrap_path.to_string_lossy().to_string()),
+            tar_stdin: false,
+            raw_stdin: false,
+            stdin_name: None,
+            stdin_size: None,
+            spool_stdin: false,
+            compression_level: 1,
+            chunk_size: None,
+            envelope_size: None,
+            block_size: None,
+            jobs: Some(1),
+            timings: true,
+            dry_run: false,
+            paths: vec![file.to_string_lossy().to_string()],
+        },
+    );
+    assert!(res_actual.is_ok());
+    assert!(out_archive.exists());
+    assert!(bootstrap_path.exists());
+}
+
+#[test]
+fn test_verify_option_rejections_and_warnings() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive_path = create_test_cli_archive(temp.path());
+
+    // Write-repaired with public_no_key (rejected)
+    let res_public_no_key_repair = commands::verify::run_verify(
+        true,
+        commands::verify::VerifyArgs {
+            archives: vec![archive_path.to_string_lossy().to_string()],
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            trusted_public_key: None,
+            trusted_ca_cert: Vec::new(),
+            trusted_system_roots: false,
+            public_no_key: true,
+            bootstrap: None,
+            json: false,
+            write_repaired: true,
+            fast: false,
+            jobs: None,
+        },
+    );
+    assert!(res_public_no_key_repair.is_err());
+
+    // Write-repaired on archive stdin (rejected)
+    let res_stdin_repair = commands::verify::run_verify(
+        true,
+        commands::verify::VerifyArgs {
+            archives: vec!["-".to_string()],
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            trusted_public_key: None,
+            trusted_ca_cert: Vec::new(),
+            trusted_system_roots: false,
+            public_no_key: false,
+            bootstrap: None,
+            json: false,
+            write_repaired: true,
+            fast: false,
+            jobs: None,
+        },
+    );
+    assert!(res_stdin_repair.is_err());
+
+    // Write-repaired with --fast (rejected)
+    let res_fast_repair = commands::verify::run_verify(
+        true,
+        commands::verify::VerifyArgs {
+            archives: vec![archive_path.to_string_lossy().to_string()],
+            password_stdin: false,
+            password: false,
+            keyfile: None,
+            recipient_key: None,
+            insecure_zero_key: false,
+            trusted_public_key: None,
+            trusted_ca_cert: Vec::new(),
+            trusted_system_roots: false,
+            public_no_key: false,
+            bootstrap: None,
+            json: false,
+            write_repaired: true,
+            fast: true,
+            jobs: None,
+        },
+    );
+    assert!(res_fast_repair.is_err());
+
+    // Root auth warning emission
+    assert!(commands::verify::emit_root_auth_skipped_warning(true).is_ok());
+    assert!(commands::verify::emit_root_auth_skipped_warning(false).is_ok());
+}
+
+#[test]
+fn test_sparse_extent_input_reader_and_macos_system_xattr() {
+    use std::io::{Read, Write};
+    use tzap_core::entry_metadata::SparseExtent;
+    let temp = tempfile::tempdir().unwrap();
+    let file_path = temp.path().join("sparse_test.bin");
+    let mut f = fs::File::create(&file_path).unwrap();
+    f.write_all(&[0u8; 100]).unwrap();
+    f.write_all(b"extent 1 data 50 bytes long-----------------------").unwrap(); // 50 bytes
+    f.write_all(&[0u8; 150]).unwrap();
+    f.write_all(b"extent 2 data 50 bytes long-----------------------").unwrap(); // 50 bytes
+    drop(f);
+
+    let opened_file = fs::File::open(&file_path).unwrap();
+    let identity = os_input::input_identity(&opened_file.metadata().unwrap()).unwrap();
+    let extents = [SparseExtent { offset: 100, length: 50 }, SparseExtent { offset: 300, length: 50 }];
+    let mut reader = os_input::SparseExtentInputReader {
+        file: opened_file,
+        expected: identity,
+        expected_extents: &extents,
+        extent_index: 0,
+        extent_remaining: 0,
+        validated: false,
+    };
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf).unwrap();
+    assert_eq!(buf.len(), 100);
+    assert_eq!(&buf[0..50], b"extent 1 data 50 bytes long-----------------------");
+    assert_eq!(&buf[50..100], b"extent 2 data 50 bytes long-----------------------");
+
+    #[cfg(target_os = "macos")]
+    {
+        assert!(os_input::macos_system_xattr(b"security.mac"));
+        assert!(os_input::macos_system_xattr(b"trusted.mac"));
+        assert!(os_input::macos_system_xattr(b"system.mac"));
+        assert!(!os_input::macos_system_xattr(b"user.comment"));
+    }
+}

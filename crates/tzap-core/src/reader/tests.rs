@@ -7205,3 +7205,25 @@ fn list_directory_contents_functional_verification() {
     assert_eq!(sub_dir.name, "sub");
     assert_eq!(sub_dir.kind, TarEntryKind::Directory);
 }
+
+#[test]
+fn extract_file_with_diagnostics_and_lookup_normalization() {
+    let files = [RegularFile::new("docs/intro.txt", b"introduction content"), RegularFile::new("docs/guide.txt", b"user guide content")];
+    let archive = write_archive(&files, &master_key(), single_stream_options()).unwrap();
+    let opened = open_archive(&archive.bytes, &master_key()).unwrap();
+
+    // extract_file_with_diagnostics on existing file
+    let extracted = opened.extract_file_with_diagnostics("docs/intro.txt").unwrap();
+    assert!(extracted.is_some());
+    let (data, diagnostics) = extracted.unwrap();
+    assert_eq!(data, b"introduction content");
+    assert_eq!(diagnostics.len(), 0);
+
+    // extract_file_with_diagnostics on nonexistent file
+    let missing = opened.extract_file_with_diagnostics("docs/missing.txt").unwrap();
+    assert!(missing.is_none());
+
+    // lookup_index_entry on existing and missing
+    assert!(opened.lookup_index_entry("docs/guide.txt").unwrap().is_some());
+    assert!(opened.lookup_index_entry("docs/unknown.txt").unwrap().is_none());
+}

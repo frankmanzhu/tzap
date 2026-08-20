@@ -1,8 +1,13 @@
+use super::pax::StreamingSparsePrimary;
 #[cfg(unix)]
 use super::restore::create_directory;
-use super::restore::{plan_restore, prepare_destination, restore_tar_member};
-use super::sparse::{create_temp_regular_file, publish_regular_file};
+use super::restore::{
+    plan_restore, prepare_destination, restore_tar_member, PreparedDestination, StreamedTarMemberMetadata, TarMemberGroupReader, TarMemberStreamHandler,
+    TarStreamObserver,
+};
+use super::sparse::{create_temp_regular_file, publish_regular_file, stream_sparse_primary_payload, write_zero_run};
 use super::*;
+use crate::encode_v45_sparse_map;
 use crate::entry_metadata::*;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::collections::BTreeMap;
@@ -1166,4 +1171,478 @@ fn validate_symlink_target_rules() {
 
     // Invalid relative target escaping root
     assert!(validate_symlink_target(b"sub/link", b"../../file.txt").is_err());
+}
+
+struct SliceMemberReader<'a> {
+    data: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> SliceMemberReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, offset: 0 }
+    }
+}
+
+impl TarMemberGroupReader for SliceMemberReader<'_> {
+    fn read_some_member_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ExtractError> {
+        let available = &self.data[self.offset..];
+        let n = buf.len().min(available.len());
+        buf[..n].copy_from_slice(&available[..n]);
+        self.offset += n;
+        Ok(n)
+    }
+}
+
+#[derive(Default)]
+struct MockSparseStreamHandler {
+    native_mode: bool,
+    regular_payload: Vec<u8>,
+    sparse_extents: Vec<(u64, Vec<u8>)>,
+    finished: bool,
+}
+
+impl TarMemberStreamHandler for MockSparseStreamHandler {
+    fn on_member(&mut self, _member: &StreamedTarMemberMetadata) -> Result<(), ExtractError> {
+        Ok(())
+    }
+    fn write_regular_payload(&mut self, bytes: &[u8]) -> Result<(), ExtractError> {
+        self.regular_payload.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn begin_sparse_payload(&mut self, _logical_size: u64, _extents: &[SparseExtent]) -> Result<bool, ExtractError> {
+        Ok(self.native_mode)
+    }
+    fn write_sparse_extent(&mut self, offset: u64, bytes: &[u8]) -> Result<(), ExtractError> {
+        self.sparse_extents.push((offset, bytes.to_vec()));
+        Ok(())
+    }
+    fn finish_sparse_payload(&mut self) -> Result<(), ExtractError> {
+        self.finished = true;
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct MockStreamObserver {
+    native_mode: bool,
+    regular_payload: Vec<u8>,
+    sparse_extents: Vec<(u64, Vec<u8>)>,
+    completed: bool,
+}
+
+impl TarStreamObserver for MockStreamObserver {
+    fn on_regular_payload(&mut self, bytes: &[u8]) -> Result<(), FormatError> {
+        self.regular_payload.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn on_sparse_layout(&mut self, _logical_size: u64, _extents: &[SparseExtent]) -> Result<bool, FormatError> {
+        Ok(self.native_mode)
+    }
+    fn on_sparse_extent(&mut self, offset: u64, bytes: &[u8]) -> Result<(), FormatError> {
+        self.sparse_extents.push((offset, bytes.to_vec()));
+        Ok(())
+    }
+    fn on_sparse_complete(&mut self) -> Result<(), FormatError> {
+        self.completed = true;
+        Ok(())
+    }
+}
+
+#[test]
+fn stream_sparse_primary_payload_native_and_regular_modes() {
+    let extents = vec![SparseExtent { offset: 100, length: 50 }, SparseExtent { offset: 200, length: 60 }];
+    let logical_size = 300u64;
+    let map = encode_v45_sparse_map(&extents, logical_size).unwrap();
+    let extent1_data = vec![0x11u8; 50];
+    let extent2_data = vec![0x22u8; 60];
+
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&map);
+    payload.extend_from_slice(&extent1_data);
+    payload.extend_from_slice(&extent2_data);
+    let stored_size = payload.len() as u64;
+
+    // Test native output mode
+    {
+        let mut reader = SliceMemberReader::new(&payload);
+        let mut remaining = stored_size;
+        let mut handler = MockSparseStreamHandler { native_mode: true, ..Default::default() };
+        stream_sparse_primary_payload(&mut reader, stored_size, logical_size, &mut remaining, &mut handler).unwrap();
+        assert_eq!(remaining, 0);
+        assert!(handler.finished);
+        assert_eq!(handler.sparse_extents.len(), 2);
+        assert_eq!(handler.sparse_extents[0], (100, extent1_data.clone()));
+        assert_eq!(handler.sparse_extents[1], (200, extent2_data.clone()));
+    }
+
+    // Test non-native (degraded regular) mode
+    {
+        let mut reader = SliceMemberReader::new(&payload);
+        let mut remaining = stored_size;
+        let mut handler = MockSparseStreamHandler { native_mode: false, ..Default::default() };
+        stream_sparse_primary_payload(&mut reader, stored_size, logical_size, &mut remaining, &mut handler).unwrap();
+        assert_eq!(remaining, 0);
+        assert_eq!(handler.regular_payload.len(), 300);
+        assert_eq!(&handler.regular_payload[0..100], &[0u8; 100]);
+        assert_eq!(&handler.regular_payload[100..150], &extent1_data);
+        assert_eq!(&handler.regular_payload[150..200], &[0u8; 50]);
+        assert_eq!(&handler.regular_payload[200..260], &extent2_data);
+        assert_eq!(&handler.regular_payload[260..300], &[0u8; 40]);
+    }
+}
+
+#[test]
+fn stream_sparse_primary_payload_error_cases() {
+    let mut handler = MockSparseStreamHandler::default();
+
+    // stored_size < 512
+    let mut reader = SliceMemberReader::new(&[0u8; 256]);
+    let mut remaining = 256;
+    let err = stream_sparse_primary_payload(&mut reader, 256, 1000, &mut remaining, &mut handler).unwrap_err();
+    assert!(matches!(err, ExtractError::Format(FormatError::InvalidArchive("sparse primary map is truncated"))));
+
+    // Map stored size mismatch
+    let extents = vec![SparseExtent { offset: 10, length: 20 }];
+    let map = encode_v45_sparse_map(&extents, 100).unwrap();
+    let mut payload = map.clone();
+    payload.extend_from_slice(&[0u8; 10]); // shorter than declared 20 bytes
+    let mut reader = SliceMemberReader::new(&payload);
+    let mut remaining = payload.len() as u64;
+    let err = stream_sparse_primary_payload(&mut reader, payload.len() as u64, 100, &mut remaining, &mut handler).unwrap_err();
+    assert!(matches!(err, ExtractError::Format(FormatError::InvalidArchive("sparse primary stored size does not match its map"))));
+}
+
+#[test]
+fn write_zero_run_variations() {
+    let mut handler = MockSparseStreamHandler::default();
+    let zeros = [0u8; 64 * 1024];
+
+    // 0 length
+    write_zero_run(&mut handler, &zeros, 0).unwrap();
+    assert!(handler.regular_payload.is_empty());
+
+    // Small length
+    write_zero_run(&mut handler, &zeros, 15).unwrap();
+    assert_eq!(handler.regular_payload.len(), 15);
+    assert_eq!(handler.regular_payload, vec![0u8; 15]);
+
+    // Multi-chunk length
+    handler.regular_payload.clear();
+    let big_len = (64 * 1024 * 2) + 500;
+    write_zero_run(&mut handler, &zeros, big_len as u64).unwrap();
+    assert_eq!(handler.regular_payload.len(), big_len);
+    assert!(handler.regular_payload.iter().all(|&b| b == 0));
+}
+
+#[test]
+fn create_and_publish_temp_regular_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let ambient_dir = cap_std::fs::Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+    let prep = PreparedDestination { parent: ambient_dir, leaf: PathBuf::from("target.txt") };
+    let (tmp_leaf, mut tmp_file) = create_temp_regular_file(&prep).unwrap();
+    assert!(tmp_leaf.to_str().unwrap().contains(".tzap-tmp-"));
+    tmp_file.write_all(b"sparse file data").unwrap();
+
+    let published = publish_regular_file(
+        &prep,
+        &tmp_leaf,
+        tmp_file,
+        SafeExtractionOptions { overwrite_existing: false, sync_published_files: false, ..Default::default() },
+    )
+    .unwrap();
+    drop(published);
+
+    assert_eq!(fs::read(dir.path().join("target.txt")).unwrap(), b"sparse file data");
+
+    // Publishing again without overwrite_existing must fail
+    let (tmp_leaf2, mut tmp_file2) = create_temp_regular_file(&prep).unwrap();
+    tmp_file2.write_all(b"new data").unwrap();
+    let err = publish_regular_file(
+        &prep,
+        &tmp_leaf2,
+        tmp_file2,
+        SafeExtractionOptions { overwrite_existing: false, sync_published_files: false, ..Default::default() },
+    )
+    .unwrap_err();
+    assert_eq!(err, FormatError::UnsafeOverwrite);
+
+    // Publishing with overwrite_existing and sync_published_files must succeed
+    let (tmp_leaf3, mut tmp_file3) = create_temp_regular_file(&prep).unwrap();
+    tmp_file3.write_all(b"overwritten content").unwrap();
+    let published3 = publish_regular_file(
+        &prep,
+        &tmp_leaf3,
+        tmp_file3,
+        SafeExtractionOptions { overwrite_existing: true, sync_published_files: true, ..Default::default() },
+    )
+    .unwrap();
+    drop(published3);
+    assert_eq!(fs::read(dir.path().join("target.txt")).unwrap(), b"overwritten content");
+}
+
+#[test]
+fn streaming_sparse_primary_observer_behaviour() {
+    let extents = vec![SparseExtent { offset: 50, length: 30 }, SparseExtent { offset: 120, length: 40 }];
+    let logical_size = 200u64;
+    let map = encode_v45_sparse_map(&extents, logical_size).unwrap();
+    let extent1 = vec![0x33u8; 30];
+    let extent2 = vec![0x44u8; 40];
+
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&map);
+    payload.extend_from_slice(&extent1);
+    payload.extend_from_slice(&extent2);
+
+    // Test with native observer
+    {
+        let mut observer = MockStreamObserver { native_mode: true, ..Default::default() };
+        let mut sparse = StreamingSparsePrimary::new(logical_size);
+        for chunk in payload.chunks(64) {
+            sparse.observe(chunk, &mut observer).unwrap();
+        }
+        sparse.finish(&mut observer).unwrap();
+        assert!(observer.completed);
+        let total_sparse_bytes: usize = observer.sparse_extents.iter().map(|(_, b)| b.len()).sum();
+        assert_eq!(total_sparse_bytes, 70);
+    }
+
+    // Test with non-native observer (expands holes as zeros)
+    {
+        let mut observer = MockStreamObserver { native_mode: false, ..Default::default() };
+        let mut sparse = StreamingSparsePrimary::new(logical_size);
+        for chunk in payload.chunks(64) {
+            sparse.observe(chunk, &mut observer).unwrap();
+        }
+        sparse.finish(&mut observer).unwrap();
+        assert_eq!(observer.regular_payload.len(), 200);
+        assert_eq!(&observer.regular_payload[0..50], &[0u8; 50]);
+        assert_eq!(&observer.regular_payload[50..80], &extent1);
+        assert_eq!(&observer.regular_payload[80..120], &[0u8; 40]);
+        assert_eq!(&observer.regular_payload[120..160], &extent2);
+        assert_eq!(&observer.regular_payload[160..200], &[0u8; 40]);
+    }
+}
+
+#[test]
+fn parse_tar_member_group_error_branches() {
+    // Length not a multiple of 512
+    assert_eq!(parse_tar_member_group(&[0u8; 100], 4096).unwrap_err(), FormatError::InvalidArchive("tar member group is not block aligned"));
+
+    // Empty / all-zero header block
+    let zeros = vec![0u8; 1536];
+    assert_eq!(parse_tar_member_group(&zeros, 4096).unwrap_err(), FormatError::InvalidArchive("tar member header is empty"));
+
+    // Corrupted checksum (change payload byte without updating checksum)
+    let mut valid_group = member(b"test.txt", b'0', b"hello", b"");
+    valid_group[0] = b'X'; // modifies header name so checksum won't match
+    assert_eq!(parse_tar_member_group(&valid_group, 4096).unwrap_err(), FormatError::InvalidArchive("tar header checksum mismatch"));
+
+    // Non-zero padding after payload
+    let mut non_zero_pad = member(b"test.txt", b'0', b"hello", b"");
+    // Find the end of payload data (which is 5 bytes), then corrupt padding in the block
+    let last_byte = non_zero_pad.len() - 1;
+    non_zero_pad[last_byte] = 0xFF;
+    assert_eq!(parse_tar_member_group(&non_zero_pad, 4096).unwrap_err(), FormatError::InvalidArchive("tar member padding is non-zero"));
+}
+
+#[test]
+fn validate_v45_member_graph_and_owned_restore_plan_error_branches() {
+    use super::pax::validate_owned_restore_plan;
+
+    // Case 1: Hardlink target not present in the graph
+    let alias_bytes = member(b"link.txt", b'1', b"", b"nonexistent.txt");
+    let alias = member_summary(&alias_bytes, 0);
+    assert_eq!(validate_v45_member_graph(&[alias]).unwrap_err(), FormatError::InvalidArchive("hardlink target is not present in the selected archive graph"));
+
+    // Case 2: Hardlink target is not a regular file (e.g. target is a symlink)
+    let link_bytes = member(b"alias_to_sym.txt", b'1', b"", b"symlink_target");
+    let sym_bytes = member(b"symlink_target", b'2', b"", b"real_file");
+    let link = member_summary(&link_bytes, 0);
+    let sym = member_summary(&sym_bytes, link_bytes.len() as u64);
+    assert_eq!(validate_v45_member_graph(&[link, sym]).unwrap_err(), FormatError::InvalidArchive("hardlink target is not a canonical regular primary"));
+
+    // Case 3: Path traverses a non-directory ancestor (e.g., "file" is a regular file, but "file/child.txt" is selected)
+    let file_bytes = member(b"file", b'0', b"data", b"");
+    let child_bytes = member(b"file/child.txt", b'0', b"data", b"");
+    let file = member_summary(&file_bytes, 0);
+    let child = member_summary(&child_bytes, file_bytes.len() as u64);
+    assert_eq!(validate_v45_member_graph(&[file, child]).unwrap_err(), FormatError::InvalidArchive("selected path graph traverses a non-directory ancestor"));
+
+    // Case 4: validate_owned_restore_plan duplicate paths
+    let m1_bytes = member(b"duplicate.txt", b'0', b"a", b"");
+    let m1 = parse_tar_member_group(&m1_bytes, 4096).unwrap().to_owned_member().unwrap();
+    let m2_bytes = member(b"duplicate.txt", b'0', b"b", b"");
+    let m2 = parse_tar_member_group(&m2_bytes, 4096).unwrap().to_owned_member().unwrap();
+    assert_eq!(
+        validate_owned_restore_plan(&[&m1, &m2], SafeExtractionOptions::default()).unwrap_err(),
+        FormatError::InvalidArchive("restore plan contains duplicate selected paths")
+    );
+
+    // Case 5: validate_owned_restore_plan hardlink target missing in restore graph
+    let h1_bytes = member(b"alias.txt", b'1', b"", b"missing.txt");
+    let h1 = parse_tar_member_group(&h1_bytes, 4096).unwrap().to_owned_member().unwrap();
+    assert_eq!(
+        validate_owned_restore_plan(&[&h1], SafeExtractionOptions::default()).unwrap_err(),
+        FormatError::InvalidArchive("hardlink target is not present in the selected restore graph")
+    );
+}
+
+fn member_with_auxiliary(path: &[u8], aux_kind: &str, aux_name: &[u8], aux_data: &[u8], file_data: &[u8]) -> Vec<u8> {
+    use sha2::Digest;
+    let mut records = crate::entry_metadata::portable_primary_pax(path, 0o644, "linux", false).unwrap();
+    records.insert("TZAP.metadata.optional-profiles".into(), b"posix-backup-v1".to_vec());
+    let primary_pax = crate::entry_metadata::encode_canonical_pax(&records).unwrap();
+    let mut primary_pax_header = header(b"TZAP-PAX/PRIMARY", b'x', primary_pax.len(), b"");
+    write_octal(&mut primary_pax_header[100..108], 0);
+    primary_pax_header[148..156].fill(b' ');
+    let checksum = primary_pax_header.iter().map(|b| *b as u64).sum::<u64>();
+    write_checksum(&mut primary_pax_header[148..156], checksum);
+
+    let sha256_hex = format!("{:x}", sha2::Sha256::digest(aux_data));
+    let mut aux_records = PaxRecords::new();
+    aux_records.insert("TZAP.aux.version".into(), b"1".to_vec());
+    aux_records.insert("TZAP.aux.kind".into(), aux_kind.as_bytes().to_vec());
+    aux_records.insert("TZAP.aux.profile".into(), b"posix-backup-v1".to_vec());
+    aux_records.insert("TZAP.aux.restore-class".into(), b"same-os".to_vec());
+    aux_records.insert("TZAP.aux.native".into(), b"1".to_vec());
+    aux_records.insert("TZAP.aux.name-encoding".into(), b"bytes-base64".to_vec());
+    aux_records.insert("TZAP.aux.name".into(), canonical_base64_encode(aux_name));
+    aux_records.insert("TZAP.aux.flags".into(), b"0000000000000000".to_vec());
+    aux_records.insert("TZAP.aux.logical-size".into(), format!("{}", aux_data.len()).into_bytes());
+    aux_records.insert("TZAP.aux.sha256".into(), sha256_hex.into_bytes());
+
+    let aux_pax = crate::entry_metadata::encode_canonical_pax(&aux_records).unwrap();
+    let mut aux_pax_header = header(b"TZAP-PAX/AUX/00000000", b'x', aux_pax.len(), b"");
+    write_octal(&mut aux_pax_header[100..108], 0);
+    aux_pax_header[148..156].fill(b' ');
+    let checksum = aux_pax_header.iter().map(|b| *b as u64).sum::<u64>();
+    write_checksum(&mut aux_pax_header[148..156], checksum);
+
+    let mut aux_data_header = header(b"TZAP-AUX/00000000", b'Z', aux_data.len(), b"");
+    write_octal(&mut aux_data_header[100..108], 0);
+    aux_data_header[148..156].fill(b' ');
+    let checksum = aux_data_header.iter().map(|b| *b as u64).sum::<u64>();
+    write_checksum(&mut aux_data_header[148..156], checksum);
+
+    let mut out = Vec::new();
+    out.extend_from_slice(&aux_pax_header);
+    out.extend_from_slice(&aux_pax);
+    out.resize(out.len() + padding_to_512(aux_pax.len()), 0);
+
+    out.extend_from_slice(&aux_data_header);
+    out.extend_from_slice(aux_data);
+    out.resize(out.len() + padding_to_512(aux_data.len()), 0);
+
+    out.extend_from_slice(&primary_pax_header);
+    out.extend_from_slice(&primary_pax);
+    out.resize(out.len() + padding_to_512(primary_pax.len()), 0);
+
+    out.extend_from_slice(&header(path, b'0', file_data.len(), b""));
+    out.extend_from_slice(file_data);
+    out.resize(out.len() + padding_to_512(file_data.len()), 0);
+
+    out
+}
+
+#[test]
+fn parse_tar_member_group_with_auxiliary_records_and_stream_handling() {
+    let aux_group = member_with_auxiliary(b"hello.txt", "generic.xattr", b"user.meta", b"custom metadata value", b"file body text");
+    let parsed = parse_tar_member_group(&aux_group, 4096).unwrap();
+    assert_eq!(parsed.path, b"hello.txt");
+    assert_eq!(parsed.kind, TarEntryKind::Regular);
+    assert_eq!(parsed.v45_metadata.auxiliary.len(), 1);
+    assert_eq!(parsed.v45_metadata.auxiliary[0].kind, "generic.xattr");
+    assert_eq!(parsed.v45_metadata.auxiliary[0].decoded_name, b"user.meta");
+
+    // Trait default implementations coverage
+    struct DefaultHandler;
+    impl TarMemberStreamHandler for DefaultHandler {
+        fn on_member(&mut self, _member: &StreamedTarMemberMetadata) -> Result<(), ExtractError> {
+            Ok(())
+        }
+        fn write_regular_payload(&mut self, _bytes: &[u8]) -> Result<(), ExtractError> {
+            Ok(())
+        }
+    }
+
+    let mut handler = DefaultHandler;
+    let aux_rec = &parsed.v45_metadata.auxiliary[0];
+    assert!(!handler.begin_auxiliary_payload(aux_rec).unwrap());
+    assert!(handler.write_auxiliary_payload(b"test").is_ok());
+    assert!(handler.finish_auxiliary_payload(aux_rec).is_ok());
+    assert!(!handler.begin_sparse_payload(100, &[]).unwrap());
+    assert!(handler.write_sparse_extent(0, b"data").is_err());
+    assert!(handler.finish_sparse_payload().is_ok());
+}
+
+#[test]
+fn restore_tar_member_various_kinds_and_policies() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+
+    // 1. Regular file restore under Content policy
+    let reg_bytes = member(b"regular.txt", b'0', b"hello content", b"");
+    let reg_member = parse_tar_member_group(&reg_bytes, 4096).unwrap().to_owned_member().unwrap();
+    let opts_content =
+        SafeExtractionOptions { restore_policy: RestorePolicy::Content, overwrite_existing: true, allow_degraded: true, ..SafeExtractionOptions::default() };
+    let diags = restore_tar_member(root, &reg_member, opts_content).unwrap();
+    assert_eq!(std::fs::read(root.join("regular.txt")).unwrap(), b"hello content");
+    assert_eq!(diags.len(), 2);
+    assert_eq!(diags[0].status, MetadataDiagnosticStatus::Skipped);
+
+    // 2. Directory restore under Content and Portable policies
+    let dir_bytes = member(b"somedir", b'5', b"", b"");
+    let dir_member = parse_tar_member_group(&dir_bytes, 4096).unwrap().to_owned_member().unwrap();
+    let diags_dir = restore_tar_member(root, &dir_member, opts_content).unwrap();
+    assert!(root.join("somedir").is_dir());
+    assert_eq!(diags_dir.len(), 2);
+    assert_eq!(diags_dir[0].status, MetadataDiagnosticStatus::Skipped);
+
+    let opts_portable =
+        SafeExtractionOptions { restore_policy: RestorePolicy::Portable, overwrite_existing: true, allow_degraded: true, ..SafeExtractionOptions::default() };
+    let diags_dir_port = restore_tar_member(root, &dir_member, opts_portable).unwrap();
+    assert!(diags_dir_port.is_empty());
+
+    // 3. Hardlink restore under Content policy (materializes target bytes)
+    let hl_bytes = member(b"hardlink_copy.txt", b'1', b"", b"regular.txt");
+    let hl_member = parse_tar_member_group(&hl_bytes, 4096).unwrap().to_owned_member().unwrap();
+    let diags_hl = restore_tar_member(root, &hl_member, opts_content).unwrap();
+    assert_eq!(std::fs::read(root.join("hardlink_copy.txt")).unwrap(), b"hello content");
+    assert_eq!(diags_hl.len(), 3);
+    assert!(diags_hl.iter().any(|d| d.status == MetadataDiagnosticStatus::Materialized));
+
+    // 4. Special object (Fifo) under Portable policy (skipped)
+    let mut fifo_records = crate::entry_metadata::portable_primary_pax(b"my_fifo", 0o644, "linux", false).unwrap();
+    fifo_records.insert("TZAP.metadata.required-profiles".into(), b"portable-v1,posix-backup-v1".to_vec());
+    let fifo_pax = crate::entry_metadata::encode_canonical_pax(&fifo_records).unwrap();
+    let mut fifo_pax_header = header(b"TZAP-PAX/PRIMARY", b'x', fifo_pax.len(), b"");
+    write_octal(&mut fifo_pax_header[100..108], 0);
+    fifo_pax_header[148..156].fill(b' ');
+    let checksum = fifo_pax_header.iter().map(|b| *b as u64).sum::<u64>();
+    write_checksum(&mut fifo_pax_header[148..156], checksum);
+    let mut fifo_bytes = Vec::new();
+    fifo_bytes.extend_from_slice(&fifo_pax_header);
+    fifo_bytes.extend_from_slice(&fifo_pax);
+    fifo_bytes.resize(fifo_bytes.len() + padding_to_512(fifo_pax.len()), 0);
+    fifo_bytes.extend_from_slice(&header(b"my_fifo", b'6', 0, b""));
+    fifo_bytes.resize(fifo_bytes.len() + padding_to_512(0), 0);
+
+    let fifo_member = parse_tar_member_group(&fifo_bytes, 4096).unwrap().to_owned_member().unwrap();
+    let diags_fifo = restore_tar_member(root, &fifo_member, opts_portable).unwrap();
+    assert_eq!(diags_fifo.len(), 3);
+    assert!(diags_fifo.iter().all(|d| d.status == MetadataDiagnosticStatus::Skipped));
+
+    // 5. Symlink restore under Content policy (symlink skipped)
+    let sym_bytes = member(b"symlink_rel", b'2', b"", b"regular.txt");
+    let sym_member = parse_tar_member_group(&sym_bytes, 4096).unwrap().to_owned_member().unwrap();
+    let diags_sym_content = restore_tar_member(root, &sym_member, opts_content).unwrap();
+    assert_eq!(diags_sym_content.len(), 3);
+    assert!(diags_sym_content.iter().all(|d| d.status == MetadataDiagnosticStatus::Skipped));
+
+    // 6. Symlink restore under Portable policy
+    let diags_sym_port = restore_tar_member(root, &sym_member, opts_portable).unwrap();
+    assert!(diags_sym_port.is_empty());
+    #[cfg(unix)]
+    assert_eq!(std::fs::read_link(root.join("symlink_rel")).unwrap(), std::path::Path::new("regular.txt"));
 }

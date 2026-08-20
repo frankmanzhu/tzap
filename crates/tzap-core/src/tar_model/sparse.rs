@@ -102,7 +102,7 @@ where
     Ok(())
 }
 
-fn write_zero_run<H: TarMemberStreamHandler>(handler: &mut H, zeros: &[u8], mut len: u64) -> Result<(), ExtractError> {
+pub(crate) fn write_zero_run<H: TarMemberStreamHandler>(handler: &mut H, zeros: &[u8], mut len: u64) -> Result<(), ExtractError> {
     while len > 0 {
         let chunk_len = len.min(zeros.len() as u64) as usize;
         handler.write_regular_payload(&zeros[..chunk_len])?;
