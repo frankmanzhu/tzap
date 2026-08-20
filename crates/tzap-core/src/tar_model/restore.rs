@@ -22,6 +22,8 @@ use super::sparse::{create_temp_regular_file, publish_regular_file, stream_spars
 use super::sparse::{prepare_windows_sparse_file, verify_windows_sparse_file};
 use super::*;
 
+use std::collections::HashMap;
+
 #[cfg(windows)]
 use cap_std::fs::OpenOptionsExt as _;
 #[cfg(windows)]
@@ -203,6 +205,81 @@ impl TarStreamObserver for TarStreamFilesystemRestoreObserver<'_> {
 
     fn on_archive_complete(&mut self) -> Result<Vec<MetadataDiagnostic>, FormatError> {
         self.handler.finish_archive()
+    }
+}
+
+/// Per-path metadata expected from the archive index, used to reject a
+/// streamed tar member before any of its bytes reach the filesystem.
+pub(crate) struct ExpectedMember {
+    pub file_data_size: u64,
+    pub flags: u32,
+}
+
+/// Wraps another observer and cross-checks each member's decoded size and
+/// flags against the archive index *before* delegating to the wrapped
+/// observer, so a member the index doesn't vouch for is rejected before
+/// `inner` writes a single byte of it. This validates only what's already
+/// known once a member's header is decoded (no extra decode work); whole-
+/// archive invariants (total tar size, block-count sums, directory-hint
+/// coverage) still require the full scan and are checked by the caller
+/// afterward.
+pub(crate) struct ValidatingRestoreObserver<'a, O> {
+    expected: &'a HashMap<Vec<u8>, ExpectedMember>,
+    inner: O,
+}
+
+impl<'a, O: TarStreamObserver> ValidatingRestoreObserver<'a, O> {
+    pub(crate) fn new(expected: &'a HashMap<Vec<u8>, ExpectedMember>, inner: O) -> Self {
+        Self { expected, inner }
+    }
+}
+
+impl<O: TarStreamObserver> TarStreamObserver for ValidatingRestoreObserver<'_, O> {
+    fn on_member_start(&mut self, member: &StreamedTarMemberMetadata) -> Result<(), FormatError> {
+        let expected = self.expected.get(member.path.as_slice()).ok_or(FormatError::InvalidArchive("tar member path is absent from the archive index"))?;
+        if expected.file_data_size != member.logical_size {
+            return Err(FormatError::InvalidArchive("tar member size does not match FileEntry file_data_size"));
+        }
+        if expected.flags != member.file_entry_flags {
+            return Err(FormatError::InvalidArchive("tar member flags do not match FileEntry flags"));
+        }
+        self.inner.on_member_start(member)
+    }
+
+    fn on_regular_payload(&mut self, bytes: &[u8]) -> Result<(), FormatError> {
+        self.inner.on_regular_payload(bytes)
+    }
+
+    fn on_auxiliary_start(&mut self, record: &AuxiliaryRecord) -> Result<bool, FormatError> {
+        self.inner.on_auxiliary_start(record)
+    }
+
+    fn on_auxiliary_payload(&mut self, bytes: &[u8]) -> Result<(), FormatError> {
+        self.inner.on_auxiliary_payload(bytes)
+    }
+
+    fn on_auxiliary_complete(&mut self, record: &AuxiliaryRecord) -> Result<(), FormatError> {
+        self.inner.on_auxiliary_complete(record)
+    }
+
+    fn on_sparse_layout(&mut self, logical_size: u64, extents: &[SparseExtent]) -> Result<bool, FormatError> {
+        self.inner.on_sparse_layout(logical_size, extents)
+    }
+
+    fn on_sparse_extent(&mut self, offset: u64, bytes: &[u8]) -> Result<(), FormatError> {
+        self.inner.on_sparse_extent(offset, bytes)
+    }
+
+    fn on_sparse_complete(&mut self) -> Result<(), FormatError> {
+        self.inner.on_sparse_complete()
+    }
+
+    fn on_member_complete(&mut self, member: &StreamedTarMemberMetadata) -> Result<Vec<MetadataDiagnostic>, FormatError> {
+        self.inner.on_member_complete(member)
+    }
+
+    fn on_archive_complete(&mut self) -> Result<Vec<MetadataDiagnostic>, FormatError> {
+        self.inner.on_archive_complete()
     }
 }
 

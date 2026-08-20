@@ -4183,6 +4183,22 @@ fn verify_rejects_file_entry_tar_path_and_size_mismatches() {
 }
 
 #[test]
+fn seekable_extract_all_to_rejects_size_mismatch_before_writing_the_file() {
+    let (mut opened, _) = multi_envelope_reader_fixture();
+    rewrite_as_single_healthy_file(&mut opened, |file, _path| {
+        file.file_data_size += 1;
+    });
+    let tmp = tempfile::tempdir().unwrap();
+
+    assert_eq!(
+        opened.extract_all_to(tmp.path(), SafeExtractionOptions::default()).unwrap_err(),
+        FormatError::InvalidArchive("tar member size does not match FileEntry file_data_size")
+    );
+    assert!(!tmp.path().join("healthy.txt").exists());
+    assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 0);
+}
+
+#[test]
 fn verify_rejects_inconsistent_duplicate_local_frame_rows_across_shards() {
     let (mut opened, _) = multi_envelope_reader_fixture();
     let locating = opened.index_root.shards[0].clone();

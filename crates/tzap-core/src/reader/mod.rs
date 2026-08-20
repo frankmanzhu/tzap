@@ -27,9 +27,9 @@ use crate::root_auth::{
 use crate::tar_model::replay_windows_descendant_metadata;
 use crate::tar_model::{
     metadata_verification_report, parse_tar_member_group, plan_owned_member_restore, restore_phase, restore_regular_file_metadata_to_open_file,
-    restore_streaming_tar_member_group, stream_regular_tar_member_group_to_writer, validate_owned_restore_plan, MetadataDiagnostic, MetadataVerificationReport,
-    NoopTarStreamObserver, OwnedTarMember, SafeExtractionOptions, StreamingMemberExpectation, TarEntryKind, TarMemberGroupReader,
-    TarStreamFilesystemRestoreObserver, TarStreamObserver, TarStreamSummaryValidator,
+    restore_streaming_tar_member_group, stream_regular_tar_member_group_to_writer, validate_owned_restore_plan, ExpectedMember, MetadataDiagnostic,
+    MetadataVerificationReport, NoopTarStreamObserver, OwnedTarMember, SafeExtractionOptions, StreamingMemberExpectation, TarEntryKind, TarMemberGroupReader,
+    TarStreamFilesystemRestoreObserver, TarStreamObserver, TarStreamSummaryValidator, ValidatingRestoreObserver,
 };
 use crate::wire::{BlockRecord, CryptoHeader, CryptoHeaderFixed, ManifestFooter, RootAuthFooterV1, VolumeHeader, VolumeTrailer};
 
@@ -2057,7 +2057,19 @@ impl OpenedArchive {
             return Err(FormatError::ReaderUnsupported(FAST_FULL_EXTRACT_UNIQUE_PATHS_UNSUPPORTED));
         }
 
-        let observer = TarStreamFilesystemRestoreObserver::new(root, options);
+        // Cross-check every member's decoded size/flags against the index before its
+        // bytes are written, so a member the index doesn't vouch for is rejected up
+        // front instead of landing on disk ahead of the whole-archive check below.
+        let mut expected_members = HashMap::with_capacity(tables.file_count as usize);
+        for shard in &tables.shards {
+            for idx in 0..shard.files.len() {
+                let file = &shard.files[idx];
+                let path = shard.file_path(idx).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
+                expected_members.insert(path.to_vec(), ExpectedMember { file_data_size: file.file_data_size, flags: file.flags });
+            }
+        }
+
+        let observer = ValidatingRestoreObserver::new(&expected_members, TarStreamFilesystemRestoreObserver::new(root, options));
         let streamed = self.scan_seekable_payload(
             &tables,
             total_extraction_size_cap(self.options, self.observed_archive_bytes),
