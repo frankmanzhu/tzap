@@ -1,7 +1,7 @@
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap};
 use std::fs::File;
 use std::io::Write;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use sha2::{Digest, Sha256};
 
@@ -2645,10 +2645,20 @@ impl OpenedArchive {
                     })
                     .collect::<Result<Vec<_>, FormatError>>()?
             } else {
+                // A shared latch: once one worker hits a real failure, siblings that haven't
+                // started yet bail out immediately with that same error instead of writing
+                // more files, bounding the partial output left on disk without adding any
+                // synchronization cost to the (overwhelmingly common) success path.
+                let failure = OnceLock::<FormatError>::new();
                 parallel_map_ref(phase_entries, jobs, |(path, entry, _)| {
+                    if let Some(error) = failure.get() {
+                        return Err(*error);
+                    }
                     let shard = &shards[entry.shard_index];
-                    let diagnostics = self.stream_loaded_file_to_path(shard, entry.file_index, root, options)?;
-                    Ok((path.clone(), diagnostics))
+                    self.stream_loaded_file_to_path(shard, entry.file_index, root, options).map(|diagnostics| (path.clone(), diagnostics)).map_err(|error| {
+                        let _ = failure.set(error);
+                        error
+                    })
                 })?
             };
             restored.extend(phase_restored);

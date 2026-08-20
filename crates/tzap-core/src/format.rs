@@ -243,7 +243,7 @@ impl BlockKind {
     }
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Error, PartialEq, Eq)]
 pub enum FormatError {
     #[error("unknown compression algorithm id {0}")]
     UnknownCompressionAlgo(u16),
