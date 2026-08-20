@@ -2915,14 +2915,27 @@ fn test_sparse_extent_input_reader_and_macos_system_xattr() {
         };
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf).unwrap();
-        if source_ranges.len() == 2 {
-            let first_len = usize::try_from(source_ranges[0].length).unwrap();
-            assert_eq!(&buf[0..50], b"extent 1 data 50 bytes long-----------------------");
-            assert_eq!(&buf[first_len..first_len + 50], b"extent 2 data 50 bytes long-----------------------");
-        } else {
-            assert_eq!(&buf[64 * 1024..64 * 1024 + 50], b"extent 1 data 50 bytes long-----------------------");
-            assert_eq!(&buf[logical_size as usize - 4096..logical_size as usize - 4096 + 50], b"extent 2 data 50 bytes long-----------------------");
+        let mut offset_in_buf = 0usize;
+        let mut found_1 = false;
+        let mut found_2 = false;
+        for range in &source_ranges {
+            let range_start = range.offset;
+            let range_end = range.offset + range.length;
+            let range_len = usize::try_from(range.length).unwrap();
+            if (64 * 1024 >= range_start) && (64 * 1024 + 50 <= range_end) {
+                let pos = offset_in_buf + usize::try_from(64 * 1024 - range_start).unwrap();
+                assert_eq!(&buf[pos..pos + 50], b"extent 1 data 50 bytes long-----------------------");
+                found_1 = true;
+            }
+            if (logical_size - 4096 >= range_start) && (logical_size - 4096 + 50 <= range_end) {
+                let pos = offset_in_buf + usize::try_from(logical_size - 4096 - range_start).unwrap();
+                assert_eq!(&buf[pos..pos + 50], b"extent 2 data 50 bytes long-----------------------");
+                found_2 = true;
+            }
+            offset_in_buf += range_len;
         }
+        assert_eq!(buf.len(), offset_in_buf);
+        assert!(found_1 && found_2);
     }
 
     #[cfg(target_os = "macos")]
