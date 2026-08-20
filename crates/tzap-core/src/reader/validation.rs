@@ -784,7 +784,7 @@ pub(crate) fn load_decrypted_object_from_parts_with_parity_policy(
     context: ObjectLoadContext<'_>,
     parity_policy: ParityReadPolicy,
 ) -> Result<Vec<u8>, FormatError> {
-    let repaired = load_repaired_object_data_shards_from_parts_with_parity_policy(
+    let shards = read_object_shards_with_parity_policy(
         blocks,
         context.crypto_header,
         context.extent,
@@ -794,10 +794,11 @@ pub(crate) fn load_decrypted_object_from_parts_with_parity_policy(
         context.class_parity_shard_max,
         parity_policy,
     )?;
-    let mut encrypted = Vec::with_capacity(context.extent.encrypted_size as usize);
-    for shard in repaired {
-        encrypted.extend_from_slice(&shard);
-    }
+    // `recover_data_bytes_gf16` concatenates the already-present shards directly
+    // when nothing needs repairing, instead of cloning each shard a second time
+    // (once into an owned `Vec<Vec<u8>>`, once more to concatenate it) the way a
+    // `load_repaired_object_data_shards_from_parts` + manual concatenation would.
+    let encrypted = recover_data_bytes_gf16(&shards.data_shards, &shards.parity_shards, shards.block_size)?;
     if encrypted.len() != context.extent.encrypted_size as usize {
         return Err(FormatError::InvalidArchive("object encrypted size does not match repaired shards"));
     }
@@ -837,8 +838,17 @@ pub(crate) fn load_repaired_object_data_shards_from_parts(
     )
 }
 
+/// The raw data and parity shards an encrypted object was assembled from, before
+/// repair: `parity_shards` is empty whenever `parity_policy` let the read skip
+/// parity blocks entirely (see [`read_object_shards_with_parity_policy`]).
+struct ReadObjectShards {
+    data_shards: Vec<Option<Vec<u8>>>,
+    parity_shards: Vec<Option<Vec<u8>>>,
+    block_size: usize,
+}
+
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn load_repaired_object_data_shards_from_parts_with_parity_policy(
+fn read_object_shards_with_parity_policy(
     blocks: &impl BlockProvider,
     crypto_header: &CryptoHeaderFixed,
     extent: ObjectExtent,
@@ -847,13 +857,12 @@ pub(crate) fn load_repaired_object_data_shards_from_parts_with_parity_policy(
     class_data_shard_max: u16,
     class_parity_shard_max: u16,
     parity_policy: ParityReadPolicy,
-) -> Result<Vec<Vec<u8>>, FormatError> {
+) -> Result<ReadObjectShards, FormatError> {
     validate_object_extent(extent, crypto_header, class_data_shard_max, class_parity_shard_max)?;
     let block_size = crypto_header.block_size as usize;
     let data_count = extent.data_block_count as usize;
     let parity_count = extent.parity_block_count as usize;
     let mut data_shards = Vec::with_capacity(data_count);
-    let mut parity_shards = Vec::with_capacity(parity_count);
 
     for offset in 0..data_count {
         let block_index = checked_u64_add(extent.first_block_index, offset as u64, "object")?;
@@ -872,9 +881,10 @@ pub(crate) fn load_repaired_object_data_shards_from_parts_with_parity_policy(
     }
 
     if parity_policy == ParityReadPolicy::RepairOnly && data_shards.iter().all(Option::is_some) {
-        return repair_data_gf16(&data_shards, &[], block_size);
+        return Ok(ReadObjectShards { data_shards, parity_shards: Vec::new(), block_size });
     }
 
+    let mut parity_shards = Vec::with_capacity(parity_count);
     for offset in 0..parity_count {
         let block_index = checked_u64_add(extent.first_block_index, data_count as u64 + offset as u64, "object")?;
         if let Some(record) = blocks.block(block_index)? {
@@ -890,7 +900,31 @@ pub(crate) fn load_repaired_object_data_shards_from_parts_with_parity_policy(
         }
     }
 
-    repair_data_gf16(&data_shards, &parity_shards, block_size)
+    Ok(ReadObjectShards { data_shards, parity_shards, block_size })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn load_repaired_object_data_shards_from_parts_with_parity_policy(
+    blocks: &impl BlockProvider,
+    crypto_header: &CryptoHeaderFixed,
+    extent: ObjectExtent,
+    data_kind: BlockKind,
+    parity_kind: BlockKind,
+    class_data_shard_max: u16,
+    class_parity_shard_max: u16,
+    parity_policy: ParityReadPolicy,
+) -> Result<Vec<Vec<u8>>, FormatError> {
+    let shards = read_object_shards_with_parity_policy(
+        blocks,
+        crypto_header,
+        extent,
+        data_kind,
+        parity_kind,
+        class_data_shard_max,
+        class_parity_shard_max,
+        parity_policy,
+    )?;
+    repair_data_gf16(&shards.data_shards, &shards.parity_shards, shards.block_size)
 }
 
 pub(crate) fn validate_object_extent(
@@ -1215,6 +1249,18 @@ pub(crate) fn read_at_vec_unchecked(reader: &dyn ArchiveReadAt, offset: u64, len
     Ok(out)
 }
 
+/// Map `f` over `items` in parallel, preserving input order in the result and
+/// returning the input-order-first error if any item fails.
+///
+/// Items are claimed one at a time from a shared atomic cursor rather than
+/// handed out as static contiguous chunks: `f` here has no locality to
+/// preserve (unlike [`parallel_map_ref_with_state`], whose whole point is
+/// giving each worker a run of adjacent items so a per-worker cache stays
+/// warm), so static chunking only costs correctness-neutral throughput when
+/// item cost is uneven -- a worker that draws a chunk of the few expensive
+/// items runs long after its siblings have gone idle. Work-stealing keeps
+/// every worker busy until the input is exhausted regardless of how cost is
+/// distributed across it.
 pub(crate) fn parallel_map_ref<T, U, F>(items: &[T], jobs: usize, f: F) -> Result<Vec<U>, FormatError>
 where
     T: Sync,
@@ -1225,10 +1271,62 @@ where
         return items.iter().map(f).collect();
     }
     let worker_count = jobs.min(items.len());
+    let next_index = std::sync::atomic::AtomicUsize::new(0);
+    let (result_tx, result_rx) = std::sync::mpsc::channel::<(usize, Result<U, FormatError>)>();
+    thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let result_tx = result_tx.clone();
+            let next_index = &next_index;
+            let f = &f;
+            scope.spawn(move || loop {
+                let index = next_index.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(item) = items.get(index) else { break };
+                if result_tx.send((index, f(item))).is_err() {
+                    break;
+                }
+            });
+        }
+        drop(result_tx);
+        let mut slots = (0..items.len()).map(|_| None).collect::<Vec<Option<Result<U, FormatError>>>>();
+        for (index, result) in result_rx {
+            slots[index] = Some(result);
+        }
+        slots.into_iter().map(|slot| slot.expect("every index in 0..items.len() is claimed by exactly one worker")).collect()
+    })
+}
+
+/// `parallel_map_ref` with one caller-owned scratch value per worker.
+///
+/// `init` runs once per worker, not once per item, so workers can carry decode
+/// state (a cached payload envelope, a zstd context) across the items they are
+/// given. Items keep their input order in the result.
+pub(crate) fn parallel_map_ref_with_state<T, U, S, I, F>(items: &[T], jobs: usize, init: I, f: F) -> Result<Vec<U>, FormatError>
+where
+    T: Sync,
+    U: Send,
+    S: Send,
+    I: Fn() -> Result<S, FormatError> + Sync,
+    F: Fn(&mut S, &T) -> Result<U, FormatError> + Sync,
+{
+    if jobs <= 1 || items.len() <= 1 {
+        let mut state = init()?;
+        return items.iter().map(|item| f(&mut state, item)).collect();
+    }
+    let worker_count = jobs.min(items.len());
     let chunk_size = items.len().div_ceil(worker_count);
     let mut out = Vec::with_capacity(items.len());
     thread::scope(|scope| {
-        let handles = items.chunks(chunk_size).map(|chunk| scope.spawn(|| chunk.iter().map(&f).collect::<Result<Vec<_>, _>>())).collect::<Vec<_>>();
+        let handles = items
+            .chunks(chunk_size)
+            .map(|chunk| {
+                let init = &init;
+                let f = &f;
+                scope.spawn(move || {
+                    let mut state = init()?;
+                    chunk.iter().map(|item| f(&mut state, item)).collect::<Result<Vec<_>, _>>()
+                })
+            })
+            .collect::<Vec<_>>();
         for handle in handles {
             let mut chunk = handle.join().map_err(|_| FormatError::InvalidArchive("reader worker panicked"))??;
             out.append(&mut chunk);

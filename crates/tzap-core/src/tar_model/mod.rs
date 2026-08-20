@@ -273,6 +273,17 @@ pub struct SafeExtractionOptions {
     pub system_authorized: bool,
     /// Permit absolute symlinks to be extracted. If false, an error will be returned when an absolute symlink is encountered during extraction.
     pub allow_absolute_symlinks: bool,
+    /// Fsync each restored regular file's data, and its parent directory entry,
+    /// before the next member in that directory is published. Defaults to
+    /// `false`: like `tar`, `unzip`, and `cpio`, extraction does not wait on
+    /// storage durability by default, because on spinning media and many
+    /// network filesystems a per-file fsync can dominate extraction time by an
+    /// order of magnitude or more. When `false`, a crash during or shortly
+    /// after extraction can leave a published filename pointing at incomplete
+    /// data; callers that need each file durable before the next one starts
+    /// (e.g. a restore that must survive a crash mid-run) should set this to
+    /// `true`.
+    pub sync_published_files: bool,
 }
 
 pub(super) fn checked_u64_add(lhs: u64, rhs: u64) -> Result<u64, FormatError> {

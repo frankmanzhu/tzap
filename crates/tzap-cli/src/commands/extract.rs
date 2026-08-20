@@ -25,6 +25,7 @@ pub(crate) fn run_extract(quiet: bool, args: ExtractArgs) -> Result<()> {
         restore,
         allow_degraded,
         allow_absolute_symlinks,
+        fsync,
         password_stdin,
         password,
         keyfile,
@@ -62,6 +63,7 @@ pub(crate) fn run_extract(quiet: bool, args: ExtractArgs) -> Result<()> {
             allow_degraded,
             system_authorized: restore == CliRestorePolicy::System,
             allow_absolute_symlinks,
+            sync_published_files: fsync,
         };
         let bootstrap_bytes = read_optional_bootstrap_sidecar(bootstrap.as_deref())?;
         let stdin = io::stdin();
@@ -175,6 +177,7 @@ pub(crate) fn run_extract(quiet: bool, args: ExtractArgs) -> Result<()> {
         allow_degraded,
         system_authorized: restore == CliRestorePolicy::System,
         allow_absolute_symlinks,
+        sync_published_files: fsync,
     };
     let diagnostics = if paths.is_empty() {
         opened.extract_indexed_files_to(&root, options, reader_options.jobs)?
@@ -200,6 +203,7 @@ pub(crate) struct ExtractArgs {
     pub(crate) restore: CliRestorePolicy,
     pub(crate) allow_degraded: bool,
     pub(crate) allow_absolute_symlinks: bool,
+    pub(crate) fsync: bool,
     pub(crate) password_stdin: bool,
     pub(crate) password: bool,
     pub(crate) keyfile: Option<String>,

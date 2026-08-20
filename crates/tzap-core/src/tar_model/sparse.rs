@@ -363,7 +363,9 @@ pub(crate) fn publish_regular_file(
 
     #[cfg(windows)]
     {
-        temp_file.sync_data().map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        if options.sync_published_files {
+            temp_file.sync_data().map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        }
         if let Err(error) = rename_open_file_noreplace(&temp_file, &destination.parent, &destination.leaf) {
             let _ = destination.parent.remove_file_or_symlink(temp_leaf);
             return Err(error);
@@ -376,7 +378,9 @@ pub(crate) fn publish_regular_file(
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt as _;
 
-        temp_file.sync_data().map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        if options.sync_published_files {
+            temp_file.sync_data().map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        }
         let source = CString::new(temp_leaf.as_os_str().as_bytes()).map_err(|_| FormatError::UnsafeArchivePath)?;
         let target = CString::new(destination.leaf.as_os_str().as_bytes()).map_err(|_| FormatError::UnsafeArchivePath)?;
         // libc does not expose renameat2 on every Linux libc target, so invoke the
@@ -403,14 +407,51 @@ pub(crate) fn publish_regular_file(
         }
         #[cfg(not(windows))]
         {
-            // Persist the rename before reporting success: the file data is already
-            // synced, and the directory fsync makes the entry durable against power loss.
-            sync_directory(&destination.parent)?;
+            if options.sync_published_files {
+                // Persist the rename before reporting success: the file data is
+                // already synced, and the directory fsync makes the entry durable
+                // against power loss.
+                sync_directory(&destination.parent)?;
+            }
             Ok(temp_file)
         }
     }
 
-    #[cfg(all(not(windows), not(target_os = "linux")))]
+    #[cfg(target_vendor = "apple")]
+    {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt as _;
+
+        if options.sync_published_files {
+            temp_file.sync_data().map_err(|_| FormatError::FilesystemExtractionFailed("failed to sync regular file data"))?;
+        }
+        let source = CString::new(temp_leaf.as_os_str().as_bytes()).map_err(|_| FormatError::UnsafeArchivePath)?;
+        let target = CString::new(destination.leaf.as_os_str().as_bytes()).map_err(|_| FormatError::UnsafeArchivePath)?;
+        // renameatx_np(..., RENAME_EXCL) is the Apple equivalent of the Linux
+        // renameat2(RENAME_NOREPLACE) call above: an atomic rename that fails
+        // instead of replacing an existing destination. Both names are validated
+        // single components beneath the same pinned parent.
+        if unsafe { libc::renameatx_np(destination.parent.as_raw_fd(), source.as_ptr(), destination.parent.as_raw_fd(), target.as_ptr(), libc::RENAME_EXCL) }
+            != 0
+        {
+            let error = std::io::Error::last_os_error();
+            let _ = destination.parent.remove_file_or_symlink(temp_leaf);
+            return if error.raw_os_error() == Some(libc::EEXIST) {
+                Err(FormatError::UnsafeOverwrite)
+            } else {
+                Err(FormatError::FilesystemExtractionFailed("failed to publish allocation-preserving output"))
+            };
+        }
+        if options.sync_published_files {
+            // Persist the rename before reporting success: the file data is
+            // already synced, and the directory fsync makes the entry durable
+            // against power loss.
+            sync_directory(&destination.parent)?;
+        }
+        Ok(temp_file)
+    }
+
+    #[cfg(all(not(windows), not(target_os = "linux"), not(target_vendor = "apple")))]
     let mut output = match destination.parent.open_with(&destination.leaf, &create_new_file_options()) {
         Ok(file) => file.into_std(),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -425,24 +466,32 @@ pub(crate) fn publish_regular_file(
 
     // The Windows and Linux publish paths never mutate `temp_file`, so the parameter is
     // declared without `mut`; the copy-based path rebinds it mutable.
-    #[cfg(all(not(windows), not(target_os = "linux")))]
+    #[cfg(all(not(windows), not(target_os = "linux"), not(target_vendor = "apple")))]
     let mut temp_file = temp_file;
 
-    #[cfg(all(not(windows), not(target_os = "linux")))]
-    let copy_result = temp_file.seek(SeekFrom::Start(0)).and_then(|_| std::io::copy(&mut temp_file, &mut output)).and_then(|_| output.sync_data());
+    #[cfg(all(not(windows), not(target_os = "linux"), not(target_vendor = "apple")))]
+    let copy_result = temp_file.seek(SeekFrom::Start(0)).and_then(|_| std::io::copy(&mut temp_file, &mut output)).and_then(|_| {
+        if options.sync_published_files {
+            output.sync_data()
+        } else {
+            Ok(())
+        }
+    });
 
-    #[cfg(all(not(windows), not(target_os = "linux")))]
+    #[cfg(all(not(windows), not(target_os = "linux"), not(target_vendor = "apple")))]
     if copy_result.is_err() {
         let _ = destination.parent.remove_file_or_symlink(&destination.leaf);
         let _ = destination.parent.remove_file_or_symlink(temp_leaf);
         return Err(FormatError::FilesystemExtractionFailed("failed to write regular file"));
     }
 
-    #[cfg(all(not(windows), not(target_os = "linux")))]
+    #[cfg(all(not(windows), not(target_os = "linux"), not(target_vendor = "apple")))]
     {
-        // Persist the directory entry before reporting success, matching the
-        // sync-then-rename ordering of the other publish paths.
-        sync_directory(&destination.parent)?;
+        if options.sync_published_files {
+            // Persist the directory entry before reporting success, matching the
+            // sync-then-rename ordering of the other publish paths.
+            sync_directory(&destination.parent)?;
+        }
         let _ = destination.parent.remove_file_or_symlink(temp_leaf);
         Ok(output)
     }

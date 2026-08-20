@@ -1458,7 +1458,8 @@ fn safe_extract_writes_regular_file_under_root() {
 fn decoded_primary_metadata_storage(opened: &OpenedArchive, path: &str) -> (crate::entry_metadata::PaxRecords, [u8; 512]) {
     let located = opened.locate_index_file(path.as_bytes()).unwrap().unwrap();
     let file = &located.shard.files[located.file_index];
-    let mut reader = DecodedTarMemberGroupReader::new(opened, &located.shard, file).unwrap();
+    let mut scratch = crate::reader::PayloadReadScratch::new(opened).unwrap();
+    let mut reader = DecodedTarMemberGroupReader::new(opened, &located.shard, file, &mut scratch);
     let mut group = vec![0u8; usize::try_from(file.tar_member_group_size).unwrap()];
     let mut offset = 0usize;
     while offset < group.len() {

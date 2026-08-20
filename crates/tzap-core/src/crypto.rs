@@ -14,7 +14,7 @@ use crate::format::{
     AeadAlgo, FormatError, KdfAlgo, MASTER_KEY_LEN, READER_MAX_ARGON2ID_MEMORY_TIME_PRODUCT, READER_MAX_ARGON2ID_M_COST_KIB, READER_MAX_ARGON2ID_PARALLELISM,
     READER_MAX_ARGON2ID_T_COST, READER_MAX_KEY_WRAP_TABLE_LEN, READER_MAX_KEY_WRAP_TABLE_RECIPIENT_RECORDS, SUBKEY_LEN,
 };
-use crate::padding::{depad_suffix_padding, suffix_pad_for_aead};
+use crate::padding::{suffix_pad_for_aead, truncate_suffix_padding};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -275,15 +275,18 @@ pub fn aead_encrypt(algo: AeadAlgo, key: &[u8; SUBKEY_LEN], nonce: &[u8], aad: &
         AeadAlgo::None => Ok(plaintext.to_vec()),
         AeadAlgo::AesGcmSiv256 => {
             let cipher = Aes256GcmSiv::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
-            cipher.encrypt(aes_gcm_siv::Nonce::from_slice(nonce), Payload { msg: plaintext, aad }).map_err(|_| FormatError::AeadFailure)
+            let nonce = aes_gcm_siv::Nonce::try_from(nonce).map_err(|_| nonce_length_error(algo, nonce))?;
+            cipher.encrypt(&nonce, Payload { msg: plaintext, aad }).map_err(|_| FormatError::AeadFailure)
         }
         AeadAlgo::XChaCha20Poly1305 => {
             let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
-            cipher.encrypt(chacha20poly1305::XNonce::from_slice(nonce), Payload { msg: plaintext, aad }).map_err(|_| FormatError::AeadFailure)
+            let nonce = chacha20poly1305::XNonce::try_from(nonce).map_err(|_| nonce_length_error(algo, nonce))?;
+            cipher.encrypt(&nonce, Payload { msg: plaintext, aad }).map_err(|_| FormatError::AeadFailure)
         }
         AeadAlgo::AesGcm256 => {
             let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
-            cipher.encrypt(aes_gcm::Nonce::from_slice(nonce), Payload { msg: plaintext, aad }).map_err(|_| FormatError::AeadFailure)
+            let nonce = aes_gcm::Nonce::try_from(nonce).map_err(|_| nonce_length_error(algo, nonce))?;
+            cipher.encrypt(&nonce, Payload { msg: plaintext, aad }).map_err(|_| FormatError::AeadFailure)
         }
     }
 }
@@ -294,15 +297,18 @@ pub fn aead_decrypt(algo: AeadAlgo, key: &[u8; SUBKEY_LEN], nonce: &[u8], aad: &
         AeadAlgo::None => Ok(ciphertext_and_tag.to_vec()),
         AeadAlgo::AesGcmSiv256 => {
             let cipher = Aes256GcmSiv::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
-            cipher.decrypt(aes_gcm_siv::Nonce::from_slice(nonce), Payload { msg: ciphertext_and_tag, aad }).map_err(|_| FormatError::AeadFailure)
+            let nonce = aes_gcm_siv::Nonce::try_from(nonce).map_err(|_| nonce_length_error(algo, nonce))?;
+            cipher.decrypt(&nonce, Payload { msg: ciphertext_and_tag, aad }).map_err(|_| FormatError::AeadFailure)
         }
         AeadAlgo::XChaCha20Poly1305 => {
             let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
-            cipher.decrypt(chacha20poly1305::XNonce::from_slice(nonce), Payload { msg: ciphertext_and_tag, aad }).map_err(|_| FormatError::AeadFailure)
+            let nonce = chacha20poly1305::XNonce::try_from(nonce).map_err(|_| nonce_length_error(algo, nonce))?;
+            cipher.decrypt(&nonce, Payload { msg: ciphertext_and_tag, aad }).map_err(|_| FormatError::AeadFailure)
         }
         AeadAlgo::AesGcm256 => {
             let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| FormatError::InvalidAeadKeyLength)?;
-            cipher.decrypt(aes_gcm::Nonce::from_slice(nonce), Payload { msg: ciphertext_and_tag, aad }).map_err(|_| FormatError::AeadFailure)
+            let nonce = aes_gcm::Nonce::try_from(nonce).map_err(|_| nonce_length_error(algo, nonce))?;
+            cipher.decrypt(&nonce, Payload { msg: ciphertext_and_tag, aad }).map_err(|_| FormatError::AeadFailure)
         }
     }
 }
@@ -328,8 +334,9 @@ pub fn encrypt_padded_aead_object(context: AeadObjectContext<'_>, block_size: us
 pub fn decrypt_padded_aead_object(context: AeadObjectContext<'_>, ciphertext_and_tag: &[u8]) -> Result<Vec<u8>, FormatError> {
     let nonce = derive_nonce(context.nonce_seed, context.domain, context.archive_uuid, context.session_id, context.counter, context.algo.nonce_len())?;
     let aad = build_aad(context.domain, context.archive_uuid, context.session_id, context.counter)?;
-    let padded = aead_decrypt(context.algo, context.key, &nonce, &aad, ciphertext_and_tag)?;
-    Ok(depad_suffix_padding(&padded)?.to_vec())
+    let mut padded = aead_decrypt(context.algo, context.key, &nonce, &aad, ciphertext_and_tag)?;
+    truncate_suffix_padding(&mut padded)?;
+    Ok(padded)
 }
 
 fn parse_raw_kdf_params(bytes: &[u8]) -> Result<(KdfParams, usize), FormatError> {
@@ -488,6 +495,14 @@ fn nonce_or_aad_info(prefix: &[u8], domain: &[u8], archive_uuid: &[u8; 16], sess
     info.extend_from_slice(session_id);
     info.extend_from_slice(&counter.to_le_bytes());
     Ok(info)
+}
+
+/// Reported when a nonce slice cannot be converted into the algorithm's fixed-size
+/// nonce array. `validate_nonce_len` already rejects the wrong length before either
+/// AEAD entry point reaches the conversion, so this exists to keep the conversion
+/// total rather than to describe a reachable state.
+fn nonce_length_error(algo: AeadAlgo, nonce: &[u8]) -> FormatError {
+    FormatError::InvalidNonceLength { algo, expected: algo.nonce_len(), actual: nonce.len() }
 }
 
 fn validate_nonce_len(algo: AeadAlgo, nonce: &[u8]) -> Result<(), FormatError> {

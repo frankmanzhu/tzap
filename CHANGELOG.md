@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Extraction is dramatically faster: `tzap extract` no longer fsyncs each
+  restored file's data and directory entry by default (pass `--fsync` to
+  restore the old durable-by-default behavior), and payload envelopes are
+  cached across the members that share one instead of being re-decrypted and
+  re-decompressed per file.
+- `verify` and `extract --all` decode payload frames in parallel instead of on
+  a single thread.
+- Upgrades `aes-gcm`, `aes-gcm-siv`, and `chacha20poly1305` to pick up
+  hardware-accelerated AES on aarch64, substantially speeding up encrypt,
+  decrypt, and verify on Apple Silicon and other 64-bit ARM hosts.
+- macOS extraction publishes files with an atomic rename (`renameatx_np`)
+  instead of a full-file copy, matching the existing Linux and Windows
+  publish paths.
+- Reduces allocation and copying on the payload decrypt and repair paths, and
+  in the archive writer's chunk buffer.
+
 ## 0.2.2 - 2026-08-09
 
 - Adds `tzap-plugin-signing::x509_chain::verify_root_auth_signature` — a

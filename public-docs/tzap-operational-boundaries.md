@@ -429,6 +429,45 @@ What to do:
   `--stdout`, passphrase KDF discovery, public no-key verification,
   RootAuth external verification, or multi-volume recovery.
 
+## Extraction durability
+
+`tzap extract` does not fsync restored files or their directory entries by
+default. Each file is written and published (via an atomic same-directory
+rename where the platform supports one) without waiting on storage durability,
+matching the default behavior of `tar`, `unzip`, and `cpio`.
+
+If the process or the machine crashes during or shortly after an extraction,
+an already-published filename can point at incomplete or empty content, and
+the extraction destination should not be treated as verified until a
+subsequent successful run (or `tzap verify` against the source archive plus a
+content check of the destination) confirms it. This is the same guarantee
+those other tools give by default; it is a deliberate trade against the cost
+of a synchronous write for every file, which on some filesystems dominates
+total extraction time by an order of magnitude or more.
+
+Pass `--fsync` to restore the stronger guarantee: each file's data, and its
+parent directory entry, is made durable before the next file in that
+directory is written. Use it for restores that must survive a crash mid-run
+without a later verification pass, such as an unattended restore onto media
+that will not be re-checked.
+
+```sh
+tzap extract --keyfile project.key -C restored project.tzap
+# fast path: files are published without an fsync barrier between them
+
+tzap extract --keyfile project.key --fsync -C restored project.tzap
+# durable path: each file's data and directory entry are fsynced before
+# extraction continues to the next file
+```
+
+What to do:
+
+- Use the default (no `--fsync`) for interactive restores, CI artifact
+  extraction, and any workflow where a failed or interrupted run will simply
+  be re-run or is followed by a verification step.
+- Pass `--fsync` when the destination volume may lose power or the process may
+  be killed mid-restore, and no later step will verify the extracted content.
+
 ## Create outputs are archive files, not stdout
 
 The convenience core writer APIs, such as `write_archive`, return completed

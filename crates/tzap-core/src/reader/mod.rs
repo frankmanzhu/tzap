@@ -1,4 +1,4 @@
-use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::File;
 use std::io::Write;
 use std::sync::{Arc, OnceLock};
@@ -499,13 +499,60 @@ pub(crate) struct DecodedTarMemberGroupReader<'a> {
     archive: &'a OpenedArchive,
     shard: &'a IndexShard,
     file: &'a FileEntry,
-    decompressor: zstd::bulk::Decompressor<'static>,
+    scratch: &'a mut PayloadReadScratch,
     next_frame_offset: u64,
-    cached_envelope_index: Option<u64>,
-    cached_envelope_plaintext: Vec<u8>,
     current_frame: Vec<u8>,
     current_frame_offset: usize,
     remaining_group_bytes: u64,
+}
+
+/// Reusable per-worker decode state for the payload path.
+///
+/// Payload envelopes default to `DEFAULT_ENVELOPE_TARGET_SIZE` of plaintext, so a
+/// single envelope routinely holds hundreds of small members. Decoding one member
+/// at a time with per-call state made every member re-read, re-repair, re-decrypt
+/// and re-decompress the whole envelope it lives in. Callers that walk members in
+/// tar order thread one scratch across the whole walk instead, which turns that
+/// back into one envelope load per envelope. The scratch also carries the zstd
+/// context, which is otherwise rebuilt for every frame.
+pub(crate) struct PayloadReadScratch {
+    /// `None` whenever `envelope_plaintext` does not hold a fully loaded envelope.
+    /// The parity policy is part of the key because a `RepairOnly` load must never
+    /// be served to an `Always` caller: the two differ in whether parity blocks are
+    /// read and checked, so they are not interchangeable results.
+    envelope_key: Option<(u64, ParityReadPolicy)>,
+    envelope_plaintext: Vec<u8>,
+    decompressor: zstd::bulk::Decompressor<'static>,
+}
+
+impl PayloadReadScratch {
+    fn new(archive: &OpenedArchive) -> Result<Self, FormatError> {
+        Ok(Self { envelope_key: None, envelope_plaintext: Vec::new(), decompressor: archive.new_payload_decompressor()? })
+    }
+
+    /// Decode one payload frame, loading its envelope only when it is not the one
+    /// already held.
+    ///
+    /// The envelope lookup and the decompression live in one method body on
+    /// purpose: that is what lets the borrow checker split the shared borrow of
+    /// `envelope_plaintext` from the unique borrow of `decompressor`.
+    fn decode_frame(
+        &mut self,
+        archive: &OpenedArchive,
+        envelope: &EnvelopeEntry,
+        frame: &FrameEntry,
+        parity_policy: ParityReadPolicy,
+    ) -> Result<Vec<u8>, FormatError> {
+        if self.envelope_key != Some((envelope.envelope_index, parity_policy)) {
+            // Clear the key before the load so a failure cannot leave the previous
+            // envelope's plaintext associated with this envelope's index.
+            self.envelope_key = None;
+            self.envelope_plaintext = archive.load_payload_envelope(envelope, parity_policy)?;
+            self.envelope_key = Some((envelope.envelope_index, parity_policy));
+        }
+        let compressed = slice(&self.envelope_plaintext, frame.offset_in_envelope as usize, frame.compressed_size as usize, "FrameEntry")?;
+        archive.decompress_payload_frame_with(&mut self.decompressor, compressed, frame.decompressed_size)
+    }
 }
 
 pub(crate) struct SeekableVolumeSource {
@@ -1668,13 +1715,13 @@ impl OpenedArchive {
             return Ok(Vec::new());
         }
 
-        let mut loaded_shards = Vec::new();
-        for &row_index in &shard_rows {
-            if let Some(shard_entry) = self.index_root.shards.get(row_index as usize) {
-                let shard = self.load_index_shard(shard_entry)?;
-                loaded_shards.push(shard);
-            }
-        }
+        let loaded_shards = parallel_map_ref(&shard_rows, self.options.jobs, |&row_index| match self.index_root.shards.get(row_index as usize) {
+            Some(shard_entry) => self.load_index_shard(shard_entry).map(Some),
+            None => Ok(None),
+        })?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
 
         let winners = final_index_entry_winners(&loaded_shards)?;
 
@@ -1767,11 +1814,12 @@ impl OpenedArchive {
 
     pub fn list_files(&self) -> Result<Vec<ArchiveEntry>, FormatError> {
         let shards = self.load_all_index_shards()?;
+        let mut scratch = PayloadReadScratch::new(self)?;
         final_index_entry_winners(&shards)?
             .into_iter()
             .map(|(path, winner)| {
                 let shard = &shards[winner.shard_index];
-                let member = self.decode_loaded_owned_tar_member(shard, winner.file_index, false)?;
+                let member = self.decode_loaded_owned_tar_member_with_scratch(shard, winner.file_index, false, &mut scratch)?;
                 let v45 = member.v45_metadata.as_ref().ok_or(FormatError::InvalidArchive("revision-45 member metadata is missing"))?;
                 let mtime = v45.portable_mirror.mtime;
                 Ok(ArchiveEntry {
@@ -1798,9 +1846,10 @@ impl OpenedArchive {
     /// creating destination paths.
     pub fn plan_metadata_restore(&self, options: SafeExtractionOptions) -> Result<Vec<(String, Vec<MetadataDiagnostic>)>, FormatError> {
         let shards = self.load_all_index_shards()?;
+        let mut scratch = PayloadReadScratch::new(self)?;
         let mut planned = Vec::new();
         for (path, winner) in final_index_entry_winners(&shards)? {
-            let member = self.decode_loaded_owned_tar_member(&shards[winner.shard_index], winner.file_index, false)?;
+            let member = self.decode_loaded_owned_tar_member_with_scratch(&shards[winner.shard_index], winner.file_index, false, &mut scratch)?;
             planned.push((path, member));
         }
         let members: Vec<_> = planned.iter().map(|(_, member)| member).collect();
@@ -2256,22 +2305,17 @@ impl OpenedArchive {
                 frame_count: envelope.frame_count,
             })
             .collect::<Vec<_>>();
-        let mut cached_envelope_index = None;
-        let mut cached_envelope_plaintext = Vec::new();
-        let mut decompressor = self.new_payload_decompressor()?;
-
-        for frame in tables.frames.values() {
-            let envelope = tables.envelopes.get(&frame.envelope_index).ok_or(FormatError::InvalidArchive("FrameEntry references missing EnvelopeEntry"))?;
-            if cached_envelope_index != Some(envelope.envelope_index) {
-                cached_envelope_plaintext = self.load_payload_envelope(envelope, parity_policy)?;
-                cached_envelope_index = Some(envelope.envelope_index);
-            }
-            let compressed = slice(&cached_envelope_plaintext, frame.offset_in_envelope as usize, frame.compressed_size as usize, "FrameEntry")?;
-            let tar_stream_offset = tar.tar_total_size();
-            let decoded = self.decompress_payload_frame_with(&mut decompressor, compressed, frame.decompressed_size)?;
+        // The tar-stream observer and the running content hash are strictly
+        // order-dependent (the observer tracks a running byte offset, and a hash is
+        // order-dependent by definition), so they stay on this single thread. Frame
+        // decode -- load the envelope, repair it, decrypt it, decompress the frame --
+        // is a pure function of the frame and its envelope, so that part is safe to
+        // fan out. `push_decoded_frame` is the serial side of that split.
+        let mut push_decoded_frame = |frame: &FrameEntry, decoded: Vec<u8>| -> Result<(), FormatError> {
             if decoded.is_empty() {
                 return Err(FormatError::InvalidArchive("zstd payload frame decompressed to zero bytes"));
             }
+            let tar_stream_offset = tar.tar_total_size();
             if let Some(hasher) = &mut content_hasher {
                 hasher.update(&decoded);
             }
@@ -2280,10 +2324,46 @@ impl OpenedArchive {
                 frame_index: frame.frame_index,
                 envelope_index: frame.envelope_index,
                 offset_in_envelope: frame.offset_in_envelope,
-                compressed_size: u32::try_from(compressed.len()).map_err(|_| FormatError::InvalidArchive("FrameEntry.compressed_size overflow"))?,
+                compressed_size: frame.compressed_size,
                 decompressed_size: u32::try_from(decoded.len()).map_err(|_| FormatError::InvalidArchive("FrameEntry.decompressed_size overflow"))?,
                 tar_stream_offset,
             });
+            Ok(())
+        };
+
+        let jobs = self.options.jobs;
+        let frames = tables.frames.values().collect::<Vec<_>>();
+        if jobs <= 1 || frames.len() <= 1 {
+            let mut scratch = PayloadReadScratch::new(self)?;
+            for frame in &frames {
+                let envelope = tables.envelopes.get(&frame.envelope_index).ok_or(FormatError::InvalidArchive("FrameEntry references missing EnvelopeEntry"))?;
+                let decoded = scratch.decode_frame(self, envelope, frame, parity_policy)?;
+                push_decoded_frame(frame, decoded)?;
+            }
+        } else {
+            // Decode a bounded batch of frames in parallel, then hand the whole batch
+            // to the serial observer/hasher before starting the next one. This keeps
+            // extra buffered memory bounded by `batch_size * READER_MAX_ENVELOPE_TARGET_SIZE`
+            // in the worst case (an attacker-controlled archive can make every frame in
+            // the batch claim the maximum decompressed size) rather than by the size of
+            // the whole tar stream, at the cost of idling the decode workers while each
+            // batch drains through the observer.
+            let batch_size = jobs.saturating_mul(4).max(1);
+            for batch in frames.chunks(batch_size) {
+                let decoded_batch = parallel_map_ref_with_state(
+                    batch,
+                    jobs,
+                    || PayloadReadScratch::new(self),
+                    |scratch, frame| {
+                        let envelope =
+                            tables.envelopes.get(&frame.envelope_index).ok_or(FormatError::InvalidArchive("FrameEntry references missing EnvelopeEntry"))?;
+                        scratch.decode_frame(self, envelope, frame, parity_policy)
+                    },
+                )?;
+                for (frame, decoded) in batch.iter().zip(decoded_batch) {
+                    push_decoded_frame(frame, decoded)?;
+                }
+            }
         }
 
         let mut content_sha256 = [0u8; 32];
@@ -2558,7 +2638,8 @@ impl OpenedArchive {
         let file = shard.files.get(file_index).ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
         self.validate_total_extraction_size(file.file_data_size)?;
         let expected_path = shard.file_path(file_index).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
-        let mut reader = DecodedTarMemberGroupReader::new(self, shard, file)?;
+        let mut scratch = PayloadReadScratch::new(self)?;
+        let mut reader = DecodedTarMemberGroupReader::new(self, shard, file, &mut scratch);
         stream_regular_tar_member_group_to_writer(
             &mut reader,
             expected_path,
@@ -2582,7 +2663,8 @@ impl OpenedArchive {
         let expected_path = shard.file_path(file_index).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
         let archive_path = utf8_path(expected_path)?;
         let mut progress_writer = ExtractProgressWriter::new(writer, &archive_path, file.file_data_size, progress);
-        let mut reader = DecodedTarMemberGroupReader::new(self, shard, file)?;
+        let mut scratch = PayloadReadScratch::new(self)?;
+        let mut reader = DecodedTarMemberGroupReader::new(self, shard, file, &mut scratch);
         stream_regular_tar_member_group_to_writer(
             &mut reader,
             expected_path,
@@ -2600,11 +2682,12 @@ impl OpenedArchive {
         file_index: usize,
         root: &std::path::Path,
         options: SafeExtractionOptions,
+        scratch: &mut PayloadReadScratch,
     ) -> Result<Vec<MetadataDiagnostic>, FormatError> {
         let file = shard.files.get(file_index).ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
         self.validate_total_extraction_size(file.file_data_size)?;
         let expected_path = shard.file_path(file_index).ok_or(FormatError::InvalidArchive("FileEntry path is missing"))?;
-        let mut reader = DecodedTarMemberGroupReader::new(self, shard, file)?;
+        let mut reader = DecodedTarMemberGroupReader::new(self, shard, file, scratch);
         restore_streaming_tar_member_group(
             root,
             StreamingMemberExpectation {
@@ -2631,10 +2714,18 @@ impl OpenedArchive {
         if entries.is_empty() {
             return Ok(Vec::new());
         }
-        let metadata = parallel_map_ref(&entries, jobs, |(_, entry)| {
-            let shard = shards.get(entry.shard_index).ok_or(FormatError::InvalidArchive("winning FileEntry shard is out of bounds"))?;
-            self.decode_loaded_owned_tar_member(shard, entry.file_index, false)
-        })?;
+        // `entries` arrives sorted by tar member start, so consecutive entries share an
+        // envelope; one scratch per worker collapses what used to be one envelope load
+        // per member down to one per envelope.
+        let metadata = parallel_map_ref_with_state(
+            &entries,
+            jobs,
+            || PayloadReadScratch::new(self),
+            |scratch, (_, entry)| {
+                let shard = shards.get(entry.shard_index).ok_or(FormatError::InvalidArchive("winning FileEntry shard is out of bounds"))?;
+                self.decode_loaded_owned_tar_member_with_scratch(shard, entry.file_index, false, scratch)
+            },
+        )?;
         validate_owned_restore_plan(&metadata.iter().collect::<Vec<_>>(), options)?;
         let mut planned = entries.into_iter().zip(metadata).map(|((path, entry), member)| (path, entry, member)).collect::<Vec<_>>();
         planned.sort_by(|left, right| restore_phase(&left.2).cmp(&restore_phase(&right.2)).then_with(|| left.2.path.cmp(&right.2.path)));
@@ -2648,11 +2739,12 @@ impl OpenedArchive {
             }
             let phase_entries = &planned[phase_start..phase_end];
             let phase_restored = if current_phase == 4 || phase_entries.len() <= 1 {
+                let mut scratch = PayloadReadScratch::new(self)?;
                 phase_entries
                     .iter()
                     .map(|(path, entry, _)| {
                         let shard = &shards[entry.shard_index];
-                        let diagnostics = self.stream_loaded_file_to_path(shard, entry.file_index, root, options)?;
+                        let diagnostics = self.stream_loaded_file_to_path(shard, entry.file_index, root, options, &mut scratch)?;
                         Ok((path.clone(), diagnostics))
                     })
                     .collect::<Result<Vec<_>, FormatError>>()?
@@ -2662,16 +2754,22 @@ impl OpenedArchive {
                 // more files, bounding the partial output left on disk without adding any
                 // synchronization cost to the (overwhelmingly common) success path.
                 let failure = OnceLock::<FormatError>::new();
-                parallel_map_ref(phase_entries, jobs, |(path, entry, _)| {
-                    if let Some(error) = failure.get() {
-                        return Err(*error);
-                    }
-                    let shard = &shards[entry.shard_index];
-                    self.stream_loaded_file_to_path(shard, entry.file_index, root, options).map(|diagnostics| (path.clone(), diagnostics)).map_err(|error| {
-                        let _ = failure.set(error);
-                        error
-                    })
-                })?
+                parallel_map_ref_with_state(
+                    phase_entries,
+                    jobs,
+                    || PayloadReadScratch::new(self),
+                    |scratch, (path, entry, _)| {
+                        if let Some(error) = failure.get() {
+                            return Err(*error);
+                        }
+                        let shard = &shards[entry.shard_index];
+                        self.stream_loaded_file_to_path(shard, entry.file_index, root, options, scratch)
+                            .map(|diagnostics| (path.clone(), diagnostics))
+                            .inspect_err(|&error| {
+                                let _ = failure.set(error);
+                            })
+                    },
+                )?
             };
             restored.extend(phase_restored);
             phase_start = phase_end;
@@ -2696,6 +2794,17 @@ impl OpenedArchive {
     }
 
     fn decode_loaded_owned_tar_member(&self, shard: &IndexShard, file_index: usize, enforce_extraction_cap: bool) -> Result<OwnedTarMember, FormatError> {
+        let mut scratch = PayloadReadScratch::new(self)?;
+        self.decode_loaded_owned_tar_member_with_scratch(shard, file_index, enforce_extraction_cap, &mut scratch)
+    }
+
+    fn decode_loaded_owned_tar_member_with_scratch(
+        &self,
+        shard: &IndexShard,
+        file_index: usize,
+        enforce_extraction_cap: bool,
+        scratch: &mut PayloadReadScratch,
+    ) -> Result<OwnedTarMember, FormatError> {
         let file = shard.files.get(file_index).ok_or(FormatError::InvalidArchive("FileEntry index out of bounds"))?;
         // Always enforce the extraction cap: this path materializes the file's full
         // decompressed content into memory regardless of enforce_extraction_cap, so the
@@ -2707,17 +2816,11 @@ impl OpenedArchive {
         let required_bytes = offset.checked_add(group_len).ok_or(FormatError::InvalidArchive("member group offset overflow"))?;
 
         let frames = frame_range_for_file(shard, file)?;
-        let mut envelope_cache = HashMap::<u64, Vec<u8>>::new();
         let mut decoded = Vec::new();
 
         for frame in frames {
             let envelope = envelope_by_index(shard, frame.envelope_index)?;
-            if let Entry::Vacant(entry) = envelope_cache.entry(envelope.envelope_index) {
-                entry.insert(self.load_payload_envelope(envelope, ParityReadPolicy::RepairOnly)?);
-            }
-            let envelope_plaintext = envelope_cache.get(&envelope.envelope_index).expect("inserted above");
-            let compressed = slice(envelope_plaintext, frame.offset_in_envelope as usize, frame.compressed_size as usize, "FrameEntry")?;
-            decoded.extend_from_slice(&self.decompress_payload_frame(compressed, frame.decompressed_size)?);
+            decoded.extend_from_slice(&scratch.decode_frame(self, envelope, frame, ParityReadPolicy::RepairOnly)?);
             if decoded.len() >= required_bytes {
                 break;
             }
@@ -2992,11 +3095,6 @@ impl OpenedArchive {
         Ok(())
     }
 
-    fn decompress_payload_frame(&self, compressed: &[u8], decompressed_size: u32) -> Result<Vec<u8>, FormatError> {
-        let mut decompressor = self.new_payload_decompressor()?;
-        self.decompress_payload_frame_with(&mut decompressor, compressed, decompressed_size)
-    }
-
     fn new_payload_decompressor(&self) -> Result<zstd::bulk::Decompressor<'static>, FormatError> {
         match &self.payload_dictionary {
             Some(dictionary) => zstd::bulk::Decompressor::with_dictionary(dictionary),
@@ -3070,19 +3168,17 @@ impl OpenedArchive {
 }
 
 impl<'a> DecodedTarMemberGroupReader<'a> {
-    fn new(archive: &'a OpenedArchive, shard: &'a IndexShard, file: &'a FileEntry) -> Result<Self, FormatError> {
-        Ok(Self {
+    fn new(archive: &'a OpenedArchive, shard: &'a IndexShard, file: &'a FileEntry, scratch: &'a mut PayloadReadScratch) -> Self {
+        Self {
             archive,
             shard,
             file,
-            decompressor: archive.new_payload_decompressor()?,
+            scratch,
             next_frame_offset: 0,
-            cached_envelope_index: None,
-            cached_envelope_plaintext: Vec::new(),
             current_frame: Vec::new(),
             current_frame_offset: 0,
             remaining_group_bytes: file.tar_member_group_size,
-        })
+        }
     }
 
     fn ensure_frame_available(&mut self) -> Result<(), ExtractError> {
@@ -3094,12 +3190,7 @@ impl<'a> DecodedTarMemberGroupReader<'a> {
                 self.file.first_frame_index.checked_add(self.next_frame_offset).ok_or(FormatError::InvalidArchive("FileEntry frame range overflow"))?;
             let frame = frame_by_index(self.shard, frame_index)?;
             let envelope = envelope_by_index(self.shard, frame.envelope_index)?;
-            if self.cached_envelope_index != Some(envelope.envelope_index) {
-                self.cached_envelope_plaintext = self.archive.load_payload_envelope(envelope, ParityReadPolicy::RepairOnly)?;
-                self.cached_envelope_index = Some(envelope.envelope_index);
-            }
-            let compressed = slice(&self.cached_envelope_plaintext, frame.offset_in_envelope as usize, frame.compressed_size as usize, "FrameEntry")?;
-            let decoded = self.archive.decompress_payload_frame_with(&mut self.decompressor, compressed, frame.decompressed_size)?;
+            let decoded = self.scratch.decode_frame(self.archive, envelope, frame, ParityReadPolicy::RepairOnly)?;
             let offset = if self.next_frame_offset == 0 { self.file.offset_in_first_frame_plaintext as usize } else { 0 };
             if offset > decoded.len() {
                 return Err(FormatError::InvalidArchive("offset in first frame is outside the first referenced frame").into());

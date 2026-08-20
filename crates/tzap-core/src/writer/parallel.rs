@@ -393,8 +393,16 @@ impl<O: ArchiveWriteSink> OrderedParallelArchiveWriter<'_, O> {
         while member_offset < member_group_size {
             let remaining = member_group_size - member_offset;
             let read_len = remaining.min(self.options.chunk_size as u64);
-            let mut plaintext = vec![0u8; to_usize_writer(read_len, "payload chunk")?];
-            reader.read_exact(&mut plaintext).map_err(ArchiveWriteError::Io)?;
+            let read_len_usize = to_usize_writer(read_len, "payload chunk")?;
+            // `read_to_end` grows the buffer as bytes arrive instead of pre-zeroing
+            // `read_len_usize` bytes up front the way `vec![0u8; n]` + `read_exact`
+            // does: on an archive with many small chunks that memset is comparable in
+            // size to the whole archive.
+            let mut plaintext = Vec::with_capacity(read_len_usize);
+            reader.by_ref().take(read_len).read_to_end(&mut plaintext).map_err(ArchiveWriteError::Io)?;
+            if plaintext.len() != read_len_usize {
+                return Err(ArchiveWriteError::Io(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "member source ended before its declared size")));
+            }
             self.ordered.hasher.update(&plaintext);
             let frame_index = self.ordered.next_frame_job_index;
             self.ordered.next_frame_job_index = checked_u64_add(self.ordered.next_frame_job_index, 1, "PayloadFrame.frame_index")?;

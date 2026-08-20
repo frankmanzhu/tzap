@@ -12,6 +12,7 @@ fn cli_extract_help_includes_examples_and_flags() {
     assert!(stdout.contains("--stdout"));
     assert!(stdout.contains("--dry-run"));
     assert!(stdout.contains("--overwrite"));
+    assert!(stdout.contains("--fsync"));
     assert!(stdout.contains("--password"));
     assert!(stdout.contains("--bootstrap"));
     assert!(stdout.contains("--volume"));
@@ -317,6 +318,33 @@ fn cli_extracts_archive_created_with_volume_size_split() {
     Command::cargo_bin("tzap").unwrap().args(args).assert().success().stderr(predicate::str::contains("extracted 1 file(s)"));
 
     assert_eq!(fs::read(output.join("sized-extract.bin")).unwrap(), expected);
+}
+
+#[test]
+fn cli_extract_fsync_flag_round_trips_content() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let input = temp.path().join("hello.txt");
+    let archive = temp.path().join("sample.tzap");
+    let output = temp.path().join("out");
+    let payload = b"fsync round trip\n";
+
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    fs::write(&input, payload).unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input.to_str().unwrap()])
+        .assert()
+        .success();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "--fsync", "-C", output.to_str().unwrap(), archive.to_str().unwrap()])
+        .assert()
+        .success();
+
+    assert_eq!(fs::read(output.join("hello.txt")).unwrap(), payload);
 }
 
 #[test]

@@ -241,6 +241,12 @@ pub(crate) enum Command {
         allow_absolute_symlinks: bool,
 
         #[arg(
+            long = "fsync",
+            help = "Fsync each file's data and its directory entry before extracting the next file. Off by default; extraction is markedly faster without it, at the cost of a crash mid-extraction potentially leaving a published file incomplete."
+        )]
+        fsync: bool,
+
+        #[arg(
             long = "password-stdin",
             conflicts_with = "keyfile",
             conflicts_with = "password",
