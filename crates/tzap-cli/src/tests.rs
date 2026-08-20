@@ -2845,31 +2845,85 @@ fn test_verify_option_rejections_and_warnings() {
 fn test_sparse_extent_input_reader_and_macos_system_xattr() {
     use std::io::{Read, Write};
     use tzap_core::entry_metadata::SparseExtent;
-    let temp = tempfile::tempdir().unwrap();
-    let file_path = temp.path().join("sparse_test.bin");
-    let mut f = fs::File::create(&file_path).unwrap();
-    f.write_all(&[0u8; 100]).unwrap();
-    f.write_all(b"extent 1 data 50 bytes long-----------------------").unwrap(); // 50 bytes
-    f.write_all(&[0u8; 150]).unwrap();
-    f.write_all(b"extent 2 data 50 bytes long-----------------------").unwrap(); // 50 bytes
-    drop(f);
 
-    let opened_file = fs::File::open(&file_path).unwrap();
-    let identity = os_input::input_identity(&opened_file.metadata().unwrap()).unwrap();
-    let extents = [SparseExtent { offset: 100, length: 50 }, SparseExtent { offset: 300, length: 50 }];
-    let mut reader = os_input::SparseExtentInputReader {
-        file: opened_file,
-        expected: identity,
-        expected_extents: &extents,
-        extent_index: 0,
-        extent_remaining: 0,
-        validated: false,
-    };
-    let mut buf = Vec::new();
-    reader.read_to_end(&mut buf).unwrap();
-    assert_eq!(buf.len(), 100);
-    assert_eq!(&buf[0..50], b"extent 1 data 50 bytes long-----------------------");
-    assert_eq!(&buf[50..100], b"extent 2 data 50 bytes long-----------------------");
+    #[cfg(not(windows))]
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("sparse_test.bin");
+        let mut f = fs::File::create(&file_path).unwrap();
+        f.write_all(&[0u8; 100]).unwrap();
+        f.write_all(b"extent 1 data 50 bytes long-----------------------").unwrap(); // 50 bytes
+        f.write_all(&[0u8; 150]).unwrap();
+        f.write_all(b"extent 2 data 50 bytes long-----------------------").unwrap(); // 50 bytes
+        drop(f);
+
+        let opened_file = fs::File::open(&file_path).unwrap();
+        let identity = os_input::input_identity(&opened_file.metadata().unwrap()).unwrap();
+        let extents = [SparseExtent { offset: 100, length: 50 }, SparseExtent { offset: 300, length: 50 }];
+        let mut reader = os_input::SparseExtentInputReader {
+            file: opened_file,
+            expected: identity,
+            expected_extents: &extents,
+            extent_index: 0,
+            extent_remaining: 0,
+            validated: false,
+        };
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).unwrap();
+        assert_eq!(buf.len(), 100);
+        assert_eq!(&buf[0..50], b"extent 1 data 50 bytes long-----------------------");
+        assert_eq!(&buf[50..100], b"extent 2 data 50 bytes long-----------------------");
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use std::ptr;
+        use windows_sys::Win32::System::Ioctl::FSCTL_SET_SPARSE;
+        use windows_sys::Win32::System::IO::DeviceIoControl;
+
+        let temp = windows_test_tempdir();
+        let file_path = temp.path().join("sparse_test.bin");
+        let mut f = fs::OpenOptions::new().read(true).write(true).create_new(true).open(&file_path).unwrap();
+        let mut bytes_returned = 0u32;
+        // SAFETY: the file handle is live and FSCTL_SET_SPARSE accepts empty synchronous buffers.
+        assert_ne!(
+            unsafe { DeviceIoControl(f.as_raw_handle().cast(), FSCTL_SET_SPARSE, ptr::null(), 0, ptr::null_mut(), 0, &mut bytes_returned, ptr::null_mut(),) },
+            0
+        );
+        let logical_size = 1024 * 1024u64;
+        f.set_len(logical_size).unwrap();
+        f.seek(SeekFrom::Start(64 * 1024)).unwrap();
+        f.write_all(b"extent 1 data 50 bytes long-----------------------").unwrap();
+        f.seek(SeekFrom::Start(logical_size - 4096)).unwrap();
+        f.write_all(b"extent 2 data 50 bytes long-----------------------").unwrap();
+        f.flush().unwrap();
+
+        let source_ranges = os_input::query_windows_allocated_ranges(&f, logical_size).unwrap();
+        assert!(!source_ranges.is_empty());
+        let opened_file = fs::File::open(&file_path).unwrap();
+        let mut identity = os_input::input_identity(&opened_file.metadata().unwrap()).unwrap();
+        os_input::augment_windows_input_identity(&mut identity, &opened_file).unwrap();
+
+        let mut reader = os_input::SparseExtentInputReader {
+            file: opened_file,
+            expected: identity,
+            expected_extents: &source_ranges,
+            extent_index: 0,
+            extent_remaining: 0,
+            validated: false,
+        };
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).unwrap();
+        if source_ranges.len() == 2 {
+            let first_len = usize::try_from(source_ranges[0].length).unwrap();
+            assert_eq!(&buf[0..50], b"extent 1 data 50 bytes long-----------------------");
+            assert_eq!(&buf[first_len..first_len + 50], b"extent 2 data 50 bytes long-----------------------");
+        } else {
+            assert_eq!(&buf[64 * 1024..64 * 1024 + 50], b"extent 1 data 50 bytes long-----------------------");
+            assert_eq!(&buf[logical_size as usize - 4096..logical_size as usize - 4096 + 50], b"extent 2 data 50 bytes long-----------------------");
+        }
+    }
 
     #[cfg(target_os = "macos")]
     {
