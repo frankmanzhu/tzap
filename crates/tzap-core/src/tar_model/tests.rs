@@ -16,7 +16,8 @@ use tempfile::tempdir;
 fn header(path: &[u8], kind: u8, size: usize, link: &[u8]) -> [u8; TAR_BLOCK_LEN] {
     let mut header = [0u8; TAR_BLOCK_LEN];
     header[..path.len()].copy_from_slice(path);
-    write_octal(&mut header[100..108], 0o644);
+    let mode = if kind == b'5' { 0o755 } else { 0o644 };
+    write_octal(&mut header[100..108], mode);
     write_octal(&mut header[108..116], 0);
     write_octal(&mut header[116..124], 0);
     write_octal(&mut header[124..136], size as u64);
@@ -36,7 +37,8 @@ fn member(path: &[u8], kind: u8, data: &[u8], link: &[u8]) -> Vec<u8> {
 }
 
 fn member_with_declared_size(path: &[u8], kind: u8, declared_size: usize, data: &[u8], link: &[u8]) -> Vec<u8> {
-    let records = crate::entry_metadata::portable_primary_pax(path, 0o644, "other", false).unwrap();
+    let mode = if kind == b'5' { 0o755 } else { 0o644 };
+    let records = crate::entry_metadata::portable_primary_pax(path, mode, "other", false).unwrap();
     let pax = crate::entry_metadata::encode_canonical_pax(&records).unwrap();
     let mut pax_header = header(b"TZAP-PAX/PRIMARY", b'x', pax.len(), b"");
     write_octal(&mut pax_header[100..108], 0);
@@ -1194,6 +1196,19 @@ impl TarMemberGroupReader for SliceMemberReader<'_> {
     }
 }
 
+struct SliceReader<'a> {
+    slice: &'a [u8],
+}
+
+impl<'a> TarMemberGroupReader for SliceReader<'a> {
+    fn read_some_member_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ExtractError> {
+        let n = self.slice.len().min(buf.len());
+        buf[..n].copy_from_slice(&self.slice[..n]);
+        self.slice = &self.slice[n..];
+        Ok(n)
+    }
+}
+
 #[derive(Default)]
 struct MockSparseStreamHandler {
     native_mode: bool,
@@ -1290,6 +1305,30 @@ fn stream_sparse_primary_payload_native_and_regular_modes() {
         assert_eq!(&handler.regular_payload[200..260], &extent2_data);
         assert_eq!(&handler.regular_payload[260..300], &[0u8; 40]);
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn punch_linux_sparse_holes_comprehensive() {
+    use super::sparse::punch_linux_sparse_holes;
+    use tempfile::tempfile;
+
+    let file = tempfile().unwrap();
+    file.set_len(1000).unwrap();
+
+    let extents = vec![SparseExtent { offset: 100, length: 200 }, SparseExtent { offset: 500, length: 300 }];
+    assert!(punch_linux_sparse_holes(&file, 1000, &extents).is_ok());
+
+    // Empty extents
+    assert!(punch_linux_sparse_holes(&file, 1000, &[]).is_ok());
+    // Zero length logical size
+    assert!(punch_linux_sparse_holes(&file, 0, &[]).is_ok());
+}
+
+fn parsed_member(path: &[u8], kind: u8, data: &[u8], link: &[u8]) -> OwnedTarMember {
+    let bytes = member(path, kind, data, link);
+    let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
+    parsed.to_owned_member().unwrap()
 }
 
 #[test]
@@ -1645,4 +1684,258 @@ fn restore_tar_member_various_kinds_and_policies() {
     assert!(diags_sym_port.is_empty());
     #[cfg(unix)]
     assert_eq!(std::fs::read_link(root.join("symlink_rel")).unwrap(), std::path::Path::new("regular.txt"));
+}
+
+#[test]
+fn restore_directory_and_symlink_and_hardlink_members() {
+    let tmp = tempdir().unwrap();
+
+    // 1. Restore Directory
+    let dir_member = parsed_member(b"subdir", b'5', b"", b"");
+    restore_tar_member(tmp.path(), &dir_member, SafeExtractionOptions::default()).unwrap();
+    assert!(tmp.path().join("subdir").is_dir());
+
+    // 2. Restore Regular file in Directory
+    let file_member = parsed_member(b"subdir/file.txt", b'0', b"hello world", b"");
+    restore_tar_member(tmp.path(), &file_member, SafeExtractionOptions::default()).unwrap();
+    assert_eq!(fs::read(tmp.path().join("subdir/file.txt")).unwrap(), b"hello world");
+
+    // 3. Restore Symlink
+    #[cfg(unix)]
+    {
+        let symlink_member = parsed_member(b"subdir/link.txt", b'2', b"", b"file.txt");
+        restore_tar_member(tmp.path(), &symlink_member, SafeExtractionOptions::default()).unwrap();
+        assert!(tmp.path().join("subdir/link.txt").is_symlink());
+    }
+
+    // 4. Restore Hardlink
+    let hardlink_member = parsed_member(b"subdir/hard.txt", b'1', b"", b"subdir/file.txt");
+    restore_tar_member(tmp.path(), &hardlink_member, SafeExtractionOptions::default()).unwrap();
+    assert_eq!(fs::read(tmp.path().join("subdir/hard.txt")).unwrap(), b"hello world");
+
+    // 5. Hardlink with missing target fails
+    let bad_hardlink = parsed_member(b"subdir/bad_hard.txt", b'1', b"", b"nonexistent.txt");
+    assert_eq!(restore_tar_member(tmp.path(), &bad_hardlink, SafeExtractionOptions::default()).unwrap_err(), FormatError::UnsafeArchivePath);
+}
+
+#[test]
+fn metadata_verification_report_generation() {
+    use super::os_restore::metadata_verification_report;
+
+    let bytes = member(b"file.txt", b'0', b"hello", b"");
+    let summary = member_summary(&bytes, 0);
+
+    let report = metadata_verification_report(&[summary]).unwrap();
+    assert!(report.all_capture_complete);
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].path, b"file.txt");
+    assert!(report.entries[0].policy_capabilities.iter().any(|c| c.policy == RestorePolicy::Portable && c.policy_complete));
+}
+
+#[test]
+fn safe_restore_rejects_unsafe_paths_and_overwrites() {
+    let tmp = tempdir().unwrap();
+
+    // Absolute path
+    let mut abs_member = parsed_member(b"file.txt", b'0', b"bad", b"");
+    abs_member.path = b"/etc/passwd".to_vec();
+    assert_eq!(restore_tar_member(tmp.path(), &abs_member, SafeExtractionOptions::default()).unwrap_err(), FormatError::UnsafeArchivePath);
+
+    // Path with ..
+    let mut escape_member = parsed_member(b"file.txt", b'0', b"bad", b"");
+    escape_member.path = b"../escape.txt".to_vec();
+    assert_eq!(restore_tar_member(tmp.path(), &escape_member, SafeExtractionOptions::default()).unwrap_err(), FormatError::UnsafeArchivePath);
+
+    // Overwriting existing file without overwrite flag
+    let regular = parsed_member(b"exists.txt", b'0', b"v1", b"");
+    restore_tar_member(tmp.path(), &regular, SafeExtractionOptions::default()).unwrap();
+
+    let overwrite_attempt = parsed_member(b"exists.txt", b'0', b"v2", b"");
+    assert_eq!(
+        restore_tar_member(tmp.path(), &overwrite_attempt, SafeExtractionOptions { overwrite_existing: false, ..SafeExtractionOptions::default() })
+            .unwrap_err(),
+        FormatError::UnsafeOverwrite
+    );
+
+    // With overwrite = true, it succeeds
+    assert!(restore_tar_member(tmp.path(), &overwrite_attempt, SafeExtractionOptions { overwrite_existing: true, ..SafeExtractionOptions::default() }).is_ok());
+    assert_eq!(fs::read(tmp.path().join("exists.txt")).unwrap(), b"v2");
+}
+
+#[test]
+fn os_restore_flags_and_auxiliary_checks() {
+    use super::os_restore::{
+        macos_flags_require_system, macos_flags_supported, native_auxiliary_restore_supported,
+        parse_macos_flags, source_os_matches_current_host, special_object_restore_supported,
+        system_xattr_name,
+    };
+    #[cfg(target_os = "macos")]
+    use super::os_restore::validate_darwin_acl_external;
+
+    // 1. macOS flags
+    assert_eq!(parse_macos_flags(b"00000000").unwrap(), 0);
+    assert_eq!(parse_macos_flags(b"00008000").unwrap(), 0x8000);
+    assert!(parse_macos_flags(b"invalid").is_err());
+    assert!(parse_macos_flags(b"100000000").is_err()); // overflow u32
+    assert!(macos_flags_supported(0x8000));
+    assert!(macos_flags_require_system(0x0002_0000)); // SF_IMMUTABLE
+
+    // 2. Special object and source OS checks
+    assert!(special_object_restore_supported(TarEntryKind::Fifo));
+    assert!(special_object_restore_supported(TarEntryKind::CharacterDevice));
+    assert!(special_object_restore_supported(TarEntryKind::BlockDevice));
+
+    assert!(source_os_matches_current_host(std::env::consts::OS));
+    assert!(!source_os_matches_current_host("unknown_os_12345"));
+
+    // 3. System xattr name checks
+    assert!(system_xattr_name(b"security.selinux", "linux"));
+    assert!(system_xattr_name(b"system.posix_acl_access", "linux"));
+    assert!(system_xattr_name(b"trusted.overlay", "linux"));
+    assert!(!system_xattr_name(b"user.comment", "linux"));
+
+    // 4. Darwin ACL validation (on macos)
+    #[cfg(target_os = "macos")]
+    {
+        assert!(validate_darwin_acl_external(b"short").is_err());
+        let mut darwin_acl = vec![0u8; 16]; // DARWIN_ACL_EXTERNAL_HEADER_LEN = 16
+        darwin_acl[0..4].copy_from_slice(&0x0000_0001u32.to_le_bytes()); // magic
+        assert!(validate_darwin_acl_external(&darwin_acl).is_ok());
+    }
+
+    // 5. Auxiliary restore support
+    let mut aux = AuxiliaryRecord {
+        ordinal: 0,
+        kind: "generic.xattr".into(),
+        profile: "posix-backup-v1".into(),
+        restore_class: RestoreClass::SameOs,
+        native: true,
+        name_encoding: "bytes".into(),
+        decoded_name: b"user.tag".to_vec(),
+        flags: 0,
+        logical_size: 5,
+        stored_size: 5,
+        sha256: [0u8; 32],
+        meta: BTreeMap::new(),
+        sparse_layout: None,
+        capture_report_payload: None,
+    };
+    assert!(native_auxiliary_restore_supported(&aux, false, None));
+
+    aux.restore_class = RestoreClass::System;
+    assert!(!native_auxiliary_restore_supported(&aux, false, None));
+    assert!(native_auxiliary_restore_supported(&aux, true, None));
+
+    aux.kind = "unknown.kind".into();
+    assert!(!native_auxiliary_restore_supported(&aux, false, None));
+}
+
+#[test]
+fn streaming_restore_helpers_and_group_end() {
+    use super::restore::{
+        restore_streaming_tar_member_group, stream_regular_tar_member_group_to_writer, try_tar_member_group_end,
+        StreamingMemberExpectation,
+    };
+
+    let member_bytes = member(b"stream_file.txt", b'0', b"streaming contents", b"");
+    let group_len = member_bytes.len() as u64;
+    let parsed = parse_tar_member_group(&member_bytes, 4096).unwrap();
+    let expected_flags = parsed.v45_metadata.file_entry_flags;
+
+    // 1. try_tar_member_group_end on valid member
+    assert_eq!(try_tar_member_group_end(&member_bytes, 0).unwrap(), Some(member_bytes.len()));
+
+    // 2. try_tar_member_group_end on empty/short slice
+    assert_eq!(try_tar_member_group_end(&[], 0).unwrap(), None);
+    assert_eq!(try_tar_member_group_end(&member_bytes[..100], 0).unwrap(), None);
+
+    // 3. stream_regular_tar_member_group_to_writer
+    let mut reader = SliceReader { slice: &member_bytes };
+    let mut writer = Vec::new();
+    let _diag = stream_regular_tar_member_group_to_writer(
+        &mut reader,
+        b"stream_file.txt",
+        b"streaming contents".len() as u64,
+        expected_flags,
+        group_len,
+        4096,
+        &mut writer,
+    )
+    .unwrap();
+    assert_eq!(writer, b"streaming contents");
+
+    // 4. stream_regular_tar_member_group_to_writer fails on unaligned size
+    let mut bad_reader = SliceReader { slice: &member_bytes };
+    let mut bad_writer = Vec::new();
+    assert!(stream_regular_tar_member_group_to_writer(
+        &mut bad_reader,
+        b"stream_file.txt",
+        b"streaming contents".len() as u64,
+        expected_flags,
+        100,
+        4096,
+        &mut bad_writer,
+    )
+    .is_err());
+
+    // 5. restore_streaming_tar_member_group
+    let tmp = tempdir().unwrap();
+    let mut reader = SliceReader { slice: &member_bytes };
+    let expectation = StreamingMemberExpectation {
+        path: b"stream_file.txt",
+        file_data_size: b"streaming contents".len() as u64,
+        file_flags: expected_flags,
+        group_len,
+        max_path_length: 4096,
+    };
+    assert!(restore_streaming_tar_member_group(tmp.path(), expectation, SafeExtractionOptions::default(), &mut reader).is_ok());
+    assert_eq!(fs::read(tmp.path().join("stream_file.txt")).unwrap(), b"streaming contents");
+
+    // 6. restore_streaming_tar_member_group fails on path mismatch
+    let mut reader = SliceReader { slice: &member_bytes };
+    let bad_path_exp = StreamingMemberExpectation {
+        path: b"different.txt",
+        file_data_size: b"streaming contents".len() as u64,
+        file_flags: expected_flags,
+        group_len,
+        max_path_length: 4096,
+    };
+    assert!(restore_streaming_tar_member_group(tmp.path(), bad_path_exp, SafeExtractionOptions::default(), &mut reader).is_err());
+}
+
+#[test]
+fn parse_tar_member_group_negatives_and_validation() {
+    use super::pax::validate_tar_stream_total_extraction_size;
+
+    let valid_member = member(b"valid.txt", b'0', b"valid data", b"");
+
+    // 1. Total extraction size cap exceeded
+    assert!(validate_tar_stream_total_extraction_size(&valid_member, 4096, 5).is_err());
+    assert!(validate_tar_stream_total_extraction_size(&valid_member, 4096, 1024).is_ok());
+
+    // 2. Unaligned tar stream
+    assert!(validate_tar_stream_total_extraction_size(&valid_member[..100], 4096, 1024).is_err());
+
+    // 3. parse_tar_member_group with non-zero payload on directory
+    let bad_dir = member(b"baddir", b'5', b"some payload", b"");
+    assert!(parse_tar_member_group(&bad_dir, 4096).is_err());
+
+    // 4. parse_tar_member_group with metadata but no main entry
+    let records = crate::entry_metadata::portable_primary_pax(b"missing_main", 0o644, "other", false).unwrap();
+    let pax = crate::entry_metadata::encode_canonical_pax(&records).unwrap();
+    let mut pax_header = header(b"TZAP-PAX/PRIMARY", b'x', pax.len(), b"");
+    write_octal(&mut pax_header[100..108], 0);
+    pax_header[148..156].fill(b' ');
+    let checksum = pax_header.iter().map(|byte| *byte as u64).sum::<u64>();
+    write_checksum(&mut pax_header[148..156], checksum);
+    let mut only_pax = Vec::new();
+    only_pax.extend_from_slice(&pax_header);
+    only_pax.extend_from_slice(&pax);
+    only_pax.resize(only_pax.len() + padding_to_512(pax.len()), 0);
+    assert!(parse_tar_member_group(&only_pax, 4096).is_err());
+
+    // 5. parse_tar_member_group with non-canonical ustar magic
+    let mut bad_ustar = valid_member;
+    bad_ustar[257..263].copy_from_slice(b"badmag");
+    assert!(parse_tar_member_group(&bad_ustar, 4096).is_err());
 }

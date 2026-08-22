@@ -2393,13 +2393,16 @@ mod tests {
     fn pax_parsing_negative_and_fuzz_vectors() {
         // Empty payload
         assert!(parse_canonical_pax(b"").is_err());
+        assert!(parse_canonical_pax(b"10").is_err());
 
         // Non-minimal decimal: leading zero, negative, invalid digit
         assert!(parse_canonical_pax(b"05 a=b\n").is_err());
+        assert!(parse_canonical_pax(b"010 key=val\n").is_err());
         assert!(parse_canonical_pax(b"-5 a=b\n").is_err());
         assert!(parse_canonical_pax(b"+5 a=b\n").is_err());
         assert!(parse_canonical_pax(b"x5 a=b\n").is_err());
         assert!(parse_canonical_pax(b" a=b\n").is_err());
+        assert!(parse_canonical_pax(b"abc key=val\n").is_err());
 
         // Missing space delimiter
         assert!(parse_canonical_pax(b"6a=b\n").is_err());
@@ -2407,25 +2410,33 @@ mod tests {
         // Missing trailing newline
         assert!(parse_canonical_pax(b"6 a=b ").is_err());
         assert!(parse_canonical_pax(b"6 a=bX").is_err());
+        assert!(parse_canonical_pax(b"11 key=valX").is_err());
 
         // Missing equals sign in body
         assert!(parse_canonical_pax(b"6 abcd\n").is_err());
+        assert!(parse_canonical_pax(b"11 key val\n").is_err());
 
-        // Non-canonical ASCII keys (spaces, control chars, equals in key)
+        // Non-canonical ASCII keys (spaces, control chars, equals in key, empty key)
         assert!(parse_canonical_pax(b"8 a b=c\n").is_err());
         assert!(parse_canonical_pax(b"8 a\x00b=c\n").is_err());
         assert!(parse_canonical_pax(b"8 =val\n").is_err());
+        assert!(parse_canonical_pax(b"11 =val\n").is_err());
+        assert!(parse_canonical_pax(b"12 key\x01=val\n").is_err());
+        assert!(parse_canonical_pax(b"12 key=va\0l\n").is_err());
 
         // Declared length does not frame record / out of bounds
         assert!(parse_canonical_pax(b"50 a=b\n").is_err());
         assert!(parse_canonical_pax(b"3 a=b\n").is_err());
+        assert!(parse_canonical_pax(b"12 key=val\n").is_err());
 
         // Valid canonical record (11 bytes total: "11 foo=bar\n")
         let records = parse_canonical_pax(b"11 foo=bar\n").unwrap();
         assert_eq!(records.get("foo").unwrap(), b"bar");
 
-        // Non-canonical key order
+        // Non-canonical key order or duplicate keys
         assert!(parse_canonical_pax(b"10 zed=1\n10 aaa=2\n").is_err());
+        assert!(parse_canonical_pax(b"11 bbb=val\n11 aaa=val\n").is_err());
+        assert!(parse_canonical_pax(b"11 key=val\n11 key=val\n").is_err());
     }
 
     #[test]
@@ -2485,16 +2496,24 @@ mod tests {
         assert!(parse_fixed_hex_u64(b"000000000000002A", 16, "test").is_err());
         assert!(parse_fixed_hex_u64(b"2a", 16, "test").is_err());
 
+        // parse_fixed_hex_32
+        assert!(parse_fixed_hex_32(b"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff").is_ok());
+        assert!(parse_fixed_hex_32(b"short").is_err());
+        assert!(parse_fixed_hex_32(b"00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF").is_err());
+
         // parse_decimal_usize and parse_decimal_u64
         assert_eq!(parse_decimal_usize(b"123", "test").unwrap(), 123);
+        assert_eq!(parse_decimal_usize(b"42", "test").unwrap(), 42);
         assert!(parse_decimal_usize(b"0123", "test").is_err());
         assert!(parse_decimal_usize(b"", "test").is_err());
         assert!(parse_decimal_usize(b"123a", "test").is_err());
 
+        assert_eq!(parse_decimal_u64(b"0", "test").unwrap(), 0);
         assert_eq!(parse_decimal_u64(b"456", "test").unwrap(), 456);
         assert_eq!(parse_decimal_u64(b"789", "test").unwrap(), 789);
+        assert!(parse_decimal_u64(b"01", "test").is_err());
+        assert!(parse_decimal_u64(b"18446744073709551616", "test").is_err()); // overflow
         assert!(parse_decimal_u64(b"9999999999999999999999999999", "test").is_err());
-        // overflow
     }
 
     #[test]
@@ -2530,4 +2549,297 @@ mod tests {
         assert!(primary.declaration.profile_required("x.org.tzap.custom"));
         assert!(primary.declaration.profile_required("portable-v1"));
     }
+
+    #[test]
+    fn archive_timestamp_methods_and_formatting() {
+        let ts_zero = ArchiveTimestamp::from_seconds(123);
+        assert_eq!(ts_zero.seconds, 123);
+        assert_eq!(ts_zero.nanoseconds, 0);
+        assert_eq!(ts_zero.canonical_pax_value().unwrap(), b"123");
+        assert_eq!(format!("{ts_zero}"), "123");
+
+        let ts_frac = ArchiveTimestamp::new(123, 450_000_000);
+        assert_eq!(ts_frac.canonical_pax_value().unwrap(), b"123.45");
+        assert_eq!(format!("{ts_frac}"), "123.45");
+
+        let ts_full = ArchiveTimestamp::new(123, 123_456_789);
+        assert_eq!(ts_full.canonical_pax_value().unwrap(), b"123.123456789");
+        assert_eq!(format!("{ts_full}"), "123.123456789");
+
+        let ts_invalid = ArchiveTimestamp::new(123, 1_000_000_000);
+        assert!(ts_invalid.canonical_pax_value().is_err());
+    }
+
+    #[test]
+    fn metadata_declaration_query_methods() {
+        let decl = MetadataDeclaration {
+            required_profiles: vec!["portable-v1".into(), "x.custom.vendor.profile-v1".into()],
+            optional_profiles: vec!["posix-backup-v1".into(), "x.opt.vendor.profile-v1".into()],
+            source_os: "linux".into(),
+            source_filesystem: "ext4".into(),
+            capture_status: CaptureStatus::Complete,
+            owner_kind_posix: true,
+            mode_origin_native: true,
+            portable_mode: 0o755,
+            portable_attributes: Some(0),
+        };
+
+        assert!(decl.profile_selected("portable-v1"));
+        assert!(decl.profile_selected("posix-backup-v1"));
+        assert!(decl.profile_selected("x.custom.vendor.profile-v1"));
+        assert!(!decl.profile_selected("unknown-v1"));
+
+        assert!(decl.profile_required("portable-v1"));
+        assert!(decl.profile_required("x.custom.vendor.profile-v1"));
+        assert!(!decl.profile_required("posix-backup-v1"));
+
+        assert!(decl.has_unknown_required_profile());
+        let unk_req: Vec<_> = decl.unknown_required_profiles().collect();
+        assert_eq!(unk_req, vec!["x.custom.vendor.profile-v1"]);
+
+        let unk_opt: Vec<_> = decl.unknown_optional_profiles().collect();
+        assert_eq!(unk_opt, vec!["x.opt.vendor.profile-v1"]);
+    }
+
+    #[test]
+    fn canonical_pax_encode_error_cases() {
+        let empty = PaxRecords::new();
+        assert!(encode_canonical_pax(&empty).is_err());
+
+        let mut invalid_key = PaxRecords::new();
+        invalid_key.insert("invalid=key".into(), b"val".to_vec());
+        assert!(encode_canonical_pax(&invalid_key).is_err());
+
+        let mut nul_val = PaxRecords::new();
+        nul_val.insert("valid_key".into(), b"val\0with_nul".to_vec());
+        assert!(encode_canonical_pax(&nul_val).is_err());
+    }
+
+    #[test]
+    fn parse_timestamp_comprehensive() {
+        assert_eq!(parse_timestamp(b"0").unwrap(), (0, 0));
+        assert_eq!(parse_timestamp(b"123456").unwrap(), (123456, 0));
+        assert_eq!(parse_timestamp(b"-123456").unwrap(), (-123456, 0));
+        assert_eq!(parse_timestamp(b"123.456").unwrap(), (123, 456_000_000));
+        assert_eq!(parse_timestamp(b"123.1").unwrap(), (123, 100_000_000));
+        assert_eq!(parse_timestamp(b"123.000000001").unwrap(), (123, 1));
+        assert_eq!(parse_timestamp(b"-123.001").unwrap(), (-123, 1_000_000));
+
+        assert!(parse_timestamp(b"").is_err());
+        assert!(parse_timestamp(b"+123").is_err());
+        assert!(parse_timestamp(b"0123").is_err());
+        assert!(parse_timestamp(b"-0123").is_err());
+        assert!(parse_timestamp(b"123.").is_err());
+        assert!(parse_timestamp(b"123.0").is_err()); // trailing zero in fraction
+        assert!(parse_timestamp(b"123.10").is_err());
+        assert!(parse_timestamp(b"123.1234567890").is_err()); // > 9 digits
+        assert!(parse_timestamp(b"123.abc").is_err());
+        assert!(parse_timestamp(b"abc").is_err());
+    }
+
+    #[test]
+    fn auxiliary_name_decoding_comprehensive() {
+        assert_eq!(decode_auxiliary_name("none", b"").unwrap(), Vec::<u8>::new());
+        assert!(decode_auxiliary_name("none", b"not-empty").is_err());
+
+        assert_eq!(decode_auxiliary_name("utf8", b"valid-name").unwrap(), b"valid-name");
+        assert!(decode_auxiliary_name("utf8", b"").is_err());
+        assert!(decode_auxiliary_name("utf8", b"\xff\xff").is_err());
+
+        assert_eq!(decode_auxiliary_name("bytes-base64", b"aGVsbG8").unwrap(), b"hello");
+        assert!(decode_auxiliary_name("bytes-base64", b"").is_err());
+
+        // UTF-16LE base64
+        let utf16le = "test".encode_utf16().flat_map(|u| u.to_le_bytes()).collect::<Vec<_>>();
+        let encoded_utf16 = canonical_base64_encode(&utf16le);
+        assert_eq!(decode_auxiliary_name("utf16le-base64", &encoded_utf16).unwrap(), utf16le);
+        assert!(decode_auxiliary_name("utf16le-base64", b"aA").is_err()); // odd byte length
+        assert!(decode_auxiliary_name("unknown-encoding", b"abc").is_err());
+    }
+
+    #[test]
+    fn windows_security_descriptor_validation_comprehensive() {
+        // Minimum valid self-relative SD with Owner and Group SIDs, no DACL/SACL
+        // Owner SID: S-1-5-18 (8 bytes: [1, 1, 0,0,0,0,0,5, 18,0,0,0] = 12 bytes)
+        // Header: [1, 0, control(2), owner_off(4), group_off(4), sacl_off(4), dacl_off(4)]
+        let mut sd = vec![0u8; 20];
+        sd[0] = 1; // Revision 1
+        let control = 0x8000u16; // Self-relative
+        sd[2..4].copy_from_slice(&control.to_le_bytes());
+        sd[4..8].copy_from_slice(&20u32.to_le_bytes()); // Owner offset at 20
+        sd[8..12].copy_from_slice(&32u32.to_le_bytes()); // Group offset at 32
+        let sid1 = [1u8, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0]; // 12 bytes
+        let sid2 = [1u8, 1, 0, 0, 0, 0, 0, 5, 19, 0, 0, 0]; // 12 bytes
+        sd.extend_from_slice(&sid1);
+        sd.extend_from_slice(&sid2);
+
+        let sec_info = 0x0000_0001 | 0x0000_0002; // OWNER | GROUP
+        assert!(validate_self_relative_security_descriptor(&sd, sec_info).is_ok());
+
+        // Error: security_information = 0
+        assert!(validate_self_relative_security_descriptor(&sd, 0).is_err());
+        // Error: truncated header < 20
+        assert!(validate_self_relative_security_descriptor(&sd[..16], sec_info).is_err());
+        // Error: not self-relative (control missing 0x8000)
+        let mut not_sr = sd.clone();
+        not_sr[2..4].copy_from_slice(&0u16.to_le_bytes());
+        assert!(validate_self_relative_security_descriptor(&not_sr, sec_info).is_err());
+        // Error: unaligned offset
+        let mut unaligned = sd.clone();
+        unaligned[4..8].copy_from_slice(&21u32.to_le_bytes());
+        assert!(validate_self_relative_security_descriptor(&unaligned, sec_info).is_err());
+
+        // Test with DACL
+        let mut sd_dacl = vec![0u8; 20];
+        sd_dacl[0] = 1;
+        let control = 0x8000u16 | 0x0004 | 0x2000; // Self-relative | DACL Present | Unprotected DACL
+        sd_dacl[2..4].copy_from_slice(&control.to_le_bytes());
+        sd_dacl[16..20].copy_from_slice(&20u32.to_le_bytes()); // DACL offset at 20
+        // Valid empty DACL header: revision=2, sbz1=0, acl_size=8, ace_count=0, sbz2=0
+        let mut dacl = vec![0u8; 8];
+        dacl[0] = 2; // ACL revision 2
+        dacl[2..4].copy_from_slice(&8u16.to_le_bytes());
+        sd_dacl.extend_from_slice(&dacl);
+
+        let dacl_info = 0x0000_0004 | 0x2000_0000; // DACL | UNPROTECTED_DACL
+        assert!(validate_self_relative_security_descriptor(&sd_dacl, dacl_info).is_ok());
+
+        // Error: DACL with invalid revision
+        let mut bad_acl = sd_dacl.clone();
+        bad_acl[20] = 99;
+        assert!(validate_self_relative_security_descriptor(&bad_acl, dacl_info).is_err());
+    }
+
+    #[test]
+    fn windows_reparse_buffer_and_ea_stream_validation() {
+        // Reparse buffer: 0xA000000C (symlink)
+        let mut symlink_reparse = vec![0u8; 8 + 12 + 8];
+        symlink_reparse[0..4].copy_from_slice(&0xA000_000Cu32.to_le_bytes());
+        let data_len = 12 + 8;
+        symlink_reparse[4..6].copy_from_slice(&(data_len as u16).to_le_bytes());
+        // SubstituteNameOffset=0, SubstituteNameLength=4, PrintNameOffset=4, PrintNameLength=4
+        symlink_reparse[8..10].copy_from_slice(&0u16.to_le_bytes());
+        symlink_reparse[10..12].copy_from_slice(&4u16.to_le_bytes());
+        symlink_reparse[12..14].copy_from_slice(&4u16.to_le_bytes());
+        symlink_reparse[14..16].copy_from_slice(&4u16.to_le_bytes());
+        assert!(validate_reparse_buffer(&symlink_reparse, 0xA000_000C).is_ok());
+
+        // Error: truncated reparse buffer
+        assert!(validate_reparse_buffer(&symlink_reparse[..6], 0xA000_000C).is_err());
+        // Error: wrong tag
+        assert!(validate_reparse_buffer(&symlink_reparse, 0xA000_0003).is_err());
+
+        // Windows EA stream validation
+        // EA Header: next_offset (4), flags (1), name_len (1), val_len (2), name (name_len+1), val (val_len)
+        let mut ea = Vec::new();
+        let name = b"MY_EA\0";
+        let val = b"val123";
+        let _rec_len = 8 + name.len() + val.len(); // 8 + 6 + 6 = 20
+        ea.extend_from_slice(&0u32.to_le_bytes()); // next = 0 (last entry)
+        ea.push(0); // flags
+        ea.push(5); // name_len = 5 (excluding NUL)
+        ea.extend_from_slice(&(val.len() as u16).to_le_bytes());
+        ea.extend_from_slice(name);
+        ea.extend_from_slice(val);
+        assert!(validate_windows_ea_stream(&ea).is_ok());
+
+        // Error: empty EA stream
+        assert!(validate_windows_ea_stream(&[]).is_err());
+        // Error: EA stream with name missing NUL
+        let mut bad_ea = ea.clone();
+        bad_ea[8 + 5] = b'X';
+        assert!(validate_windows_ea_stream(&bad_ea).is_err());
+    }
+
+    #[test]
+    fn capture_report_validation_comprehensive() {
+        let records = portable_primary_pax(b"file.txt", 0o644, "linux", false).unwrap();
+        let decl = parse_primary_metadata(&records).unwrap().declaration;
+
+        // Valid capture report
+        let valid_report = b"tzap-capture-report-v1\nportable-v1\tsparse-layout\tchanged-during-read\textent%20map\n";
+        let rows = parse_capture_report(valid_report, &decl).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].profile, "portable-v1");
+        assert_eq!(rows[0].metadata_class, "sparse-layout");
+        assert_eq!(rows[0].reason, "changed-during-read");
+        assert_eq!(rows[0].encoded_detail, "extent%20map");
+
+        // Error: wrong header
+        assert!(parse_capture_report(b"bad-header\n", &decl).is_err());
+        // Error: not ending in newline
+        assert!(parse_capture_report(b"tzap-capture-report-v1\nportable-v1\tsparse-layout\tchanged-during-read\textent%20map", &decl).is_err());
+        // Error: duplicate/unsorted rows
+        let dup = b"tzap-capture-report-v1\nportable-v1\ta\tio-error\tdetail\nportable-v1\ta\tio-error\tdetail\n";
+        assert!(parse_capture_report(dup, &decl).is_err());
+        // Error: unselected profile
+        let unselected = b"tzap-capture-report-v1\nunknown-v1\ta\tio-error\tdetail\n";
+        assert!(parse_capture_report(unselected, &decl).is_err());
+        // Error: invalid reason
+        let bad_reason = b"tzap-capture-report-v1\nportable-v1\ta\tunknown-reason\tdetail\n";
+        assert!(parse_capture_report(bad_reason, &decl).is_err());
+    }
+
+    #[test]
+    fn helper_predicates_and_tokens() {
+        assert!(is_source_os("linux"));
+        assert!(is_source_os("macos"));
+        assert!(is_source_os("windows"));
+        assert!(is_source_os("freebsd"));
+        assert!(is_source_os("other"));
+        assert!(!is_source_os("plan9"));
+
+        assert!(valid_filesystem_token("unknown"));
+        assert!(valid_filesystem_token("ext4"));
+        assert!(valid_filesystem_token("apfs"));
+        assert!(valid_filesystem_token("ntfs"));
+        assert!(!valid_filesystem_token(""));
+        assert!(!valid_filesystem_token("INVALID_UPPERCASE"));
+
+        assert!(is_valid_profile_id("portable-v1"));
+        assert!(is_valid_profile_id("x.custom.vendor.profile-v1"));
+        assert!(!is_valid_profile_id("x.short"));
+        assert!(!is_valid_profile_id("custom-without-x"));
+    }
+
+    #[test]
+    fn parse_primary_metadata_negatives() {
+        let path = b"test.txt";
+        let valid_records = portable_primary_pax(path, 0o644, "linux", false).unwrap();
+
+        // 1. Unknown source OS
+        let mut rec = valid_records.clone();
+        rec.insert("TZAP.source.os".into(), b"plan9".to_vec());
+        assert!(parse_primary_metadata(&rec).is_err());
+
+        // 2. Invalid filesystem token
+        let mut rec = valid_records.clone();
+        rec.insert("TZAP.source.fs".into(), b"EXT4_CAPS".to_vec());
+        assert!(parse_primary_metadata(&rec).is_err());
+
+        // 3. Invalid capture status
+        let mut rec = valid_records.clone();
+        rec.insert("TZAP.capture.status".into(), b"corrupted".to_vec());
+        assert!(parse_primary_metadata(&rec).is_err());
+
+        // 4. Invalid portable owner kind
+        let mut rec = valid_records.clone();
+        rec.insert("TZAP.portable.owner.kind".into(), b"root".to_vec());
+        assert!(parse_primary_metadata(&rec).is_err());
+
+        // 5. Invalid portable mode origin
+        let mut rec = valid_records.clone();
+        rec.insert("TZAP.portable.mode.origin".into(), b"invalid".to_vec());
+        assert!(parse_primary_metadata(&rec).is_err());
+
+        // 6. Incomplete GNU sparse declaration
+        let mut rec = valid_records;
+        rec.insert("GNU.sparse.major".into(), b"1".to_vec());
+        rec.insert("GNU.sparse.minor".into(), b"0".to_vec());
+        rec.insert("GNU.sparse.name".into(), b"test.txt".to_vec());
+        // missing GNU.sparse.numblocks
+        assert!(parse_primary_metadata(&rec).is_err());
+    }
 }
+
+

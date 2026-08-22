@@ -28,8 +28,8 @@ use crate::wire::{
 };
 use crate::writer::NativeFileMetadata;
 use crate::writer::{
-    write_archive, write_archive_sources_to_sink_single_pass, write_archive_unencrypted, write_archive_with_dictionary, write_archive_with_kdf,
-    write_archive_with_recipient_wrap_records, write_archive_with_root_auth, write_archive_with_root_auth_and_kdf,
+    write_archive, write_archive_sources_to_sink, write_archive_sources_to_sink_single_pass, write_archive_unencrypted, write_archive_with_dictionary,
+    write_archive_with_kdf, write_archive_with_recipient_wrap_records, write_archive_with_root_auth, write_archive_with_root_auth_and_kdf,
     write_archive_with_root_auth_and_recipient_wrap_records, MemoryArchiveSink, PortableFileMetadata, PortableModeOrigin, PortablePosixOwner, RegularFile,
     RegularFileSource, RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, WriterOptions,
 };
@@ -7226,4 +7226,214 @@ fn extract_file_with_diagnostics_and_lookup_normalization() {
     // lookup_index_entry on existing and missing
     assert!(opened.lookup_index_entry("docs/guide.txt").unwrap().is_some());
     assert!(opened.lookup_index_entry("docs/unknown.txt").unwrap().is_none());
+}
+
+#[test]
+fn unencrypted_non_seekable_stream_full_lifecycle() {
+    use crate::non_seekable_reader::{
+        extract_unencrypted_non_seekable_stream_to_dir, list_unencrypted_non_seekable_stream, verify_unencrypted_non_seekable_stream_with_options,
+    };
+    use std::io::Cursor;
+    use tempfile::tempdir;
+
+    let unencrypted = write_archive_unencrypted(
+        &[RegularFile::new("stream/a.txt", b"data a"), RegularFile::new("stream/b.txt", b"data b")],
+        single_stream_options(),
+    )
+    .unwrap();
+
+    let verified = verify_unencrypted_non_seekable_stream_with_options(Cursor::new(&unencrypted.bytes), NonSeekableReaderOptions::default()).unwrap();
+    assert_eq!(verified.file_count, 2);
+
+    let listed = list_unencrypted_non_seekable_stream(Cursor::new(&unencrypted.bytes), NonSeekableReaderOptions::default()).unwrap();
+    assert_eq!(listed.entries.len(), 2);
+    assert_eq!(listed.entries[0].path, "stream/a.txt");
+    assert_eq!(listed.entries[1].path, "stream/b.txt");
+
+    let tmp = tempdir().unwrap();
+    let outcome = extract_unencrypted_non_seekable_stream_to_dir(
+        Cursor::new(&unencrypted.bytes),
+        tmp.path(),
+        NonSeekableReaderOptions::default(),
+        SafeExtractionOptions { overwrite_existing: true, ..SafeExtractionOptions::default() },
+    )
+    .unwrap();
+    assert_eq!(outcome.extracted_member_count, 2);
+    assert_eq!(fs::read(tmp.path().join("stream/a.txt")).unwrap(), b"data a");
+    assert_eq!(fs::read(tmp.path().join("stream/b.txt")).unwrap(), b"data b");
+}
+
+#[test]
+fn unencrypted_non_seekable_stream_with_bootstrap_sidecar_lifecycle() {
+    use crate::non_seekable_reader::{
+        extract_unencrypted_non_seekable_stream_to_dir_with_bootstrap_sidecar, list_unencrypted_non_seekable_stream_with_bootstrap_sidecar,
+        verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar,
+    };
+    use std::io::Cursor;
+    use tempfile::tempdir;
+
+    let mut options = single_stream_options();
+    options.aead_algo = AeadAlgo::None;
+    let placeholder = MasterKey::from_raw_key(&[0; 32]).unwrap();
+    let dict = dictionary();
+    let mut sink = MemoryArchiveSink::default();
+    write_archive_sources_to_sink(
+        &[RegularFile::new("dict_stream/file.txt", b"dir/dict.txt common words payload")],
+        &placeholder,
+        options,
+        Some(dict),
+        &KdfParams::None,
+        None,
+        None,
+        &mut sink,
+    )
+    .unwrap();
+
+    let archive_bytes = &sink.volumes[0];
+    let sidecar = &sink.bootstrap_sidecar;
+
+    let verified = verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar(
+        Cursor::new(archive_bytes),
+        sidecar,
+        NonSeekableReaderOptions::default(),
+    )
+    .unwrap();
+    assert!(verified.file_count > 0);
+
+    let listed = list_unencrypted_non_seekable_stream_with_bootstrap_sidecar(
+        Cursor::new(archive_bytes),
+        sidecar,
+        NonSeekableReaderOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(listed.entries.len(), 1);
+    assert_eq!(listed.entries[0].path, "dict_stream/file.txt");
+
+    let tmp = tempdir().unwrap();
+    let outcome = extract_unencrypted_non_seekable_stream_to_dir_with_bootstrap_sidecar(
+        Cursor::new(archive_bytes),
+        sidecar,
+        tmp.path(),
+        NonSeekableReaderOptions::default(),
+        SafeExtractionOptions { overwrite_existing: true, ..SafeExtractionOptions::default() },
+    )
+    .unwrap();
+    assert_eq!(outcome.extracted_member_count, 1);
+    assert_eq!(fs::read(tmp.path().join("dict_stream/file.txt")).unwrap(), b"dir/dict.txt common words payload");
+}
+
+#[test]
+fn recipient_wrap_non_seekable_stream_full_lifecycle() {
+    use crate::non_seekable_reader::{
+        extract_non_seekable_stream_to_dir_with_recipient_wrap_resolver, list_non_seekable_stream_with_recipient_wrap_resolver,
+    };
+    use std::io::Cursor;
+    use tempfile::tempdir;
+
+    let master = master_key();
+    let archive = write_archive_with_recipient_wrap_records(
+        &[RegularFile::new("wrap_stream/f1.txt", b"wrapped non-seekable 1"), RegularFile::new("wrap_stream/f2.txt", b"wrapped non-seekable 2")],
+        &master,
+        single_stream_options(),
+        vec![recipient_wrap_test_record()],
+    )
+    .unwrap();
+
+    let listed = list_non_seekable_stream_with_recipient_wrap_resolver(
+        Cursor::new(&archive.bytes),
+        |_| Ok(vec![master.0]),
+        NonSeekableReaderOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(listed.entries.len(), 2);
+    assert_eq!(listed.entries[0].path, "wrap_stream/f1.txt");
+    assert_eq!(listed.entries[1].path, "wrap_stream/f2.txt");
+
+    let tmp = tempdir().unwrap();
+    let outcome = extract_non_seekable_stream_to_dir_with_recipient_wrap_resolver(
+        Cursor::new(&archive.bytes),
+        |_| Ok(vec![master.0]),
+        tmp.path(),
+        NonSeekableReaderOptions::default(),
+        SafeExtractionOptions { overwrite_existing: true, ..SafeExtractionOptions::default() },
+    )
+    .unwrap();
+    assert_eq!(outcome.extracted_member_count, 2);
+    assert_eq!(fs::read(tmp.path().join("wrap_stream/f1.txt")).unwrap(), b"wrapped non-seekable 1");
+    assert_eq!(fs::read(tmp.path().join("wrap_stream/f2.txt")).unwrap(), b"wrapped non-seekable 2");
+}
+
+#[test]
+fn encrypted_non_seekable_stream_with_bootstrap_sidecar_lifecycle() {
+    use crate::non_seekable_reader::{
+        extract_non_seekable_stream_to_dir_with_bootstrap_sidecar, list_non_seekable_stream_with_bootstrap_sidecar,
+        verify_non_seekable_stream_with_bootstrap_sidecar,
+    };
+    use std::io::Cursor;
+    use tempfile::tempdir;
+
+    let master = master_key();
+    let dict = dictionary();
+    let archive = write_archive_with_dictionary(
+        &[RegularFile::new("wrap_dict/f.txt", b"dir/dict.txt common words wrapped")],
+        &master,
+        single_stream_options(),
+        dict,
+    )
+    .unwrap();
+
+    let verified = verify_non_seekable_stream_with_bootstrap_sidecar(
+        Cursor::new(&archive.bytes),
+        &archive.bootstrap_sidecar,
+        &master,
+        NonSeekableReaderOptions::default(),
+    )
+    .unwrap();
+    assert!(verified.file_count > 0);
+
+    let listed = list_non_seekable_stream_with_bootstrap_sidecar(
+        Cursor::new(&archive.bytes),
+        &archive.bootstrap_sidecar,
+        &master,
+        NonSeekableReaderOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(listed.entries.len(), 1);
+    assert_eq!(listed.entries[0].path, "wrap_dict/f.txt");
+
+    let tmp = tempdir().unwrap();
+    let outcome = extract_non_seekable_stream_to_dir_with_bootstrap_sidecar(
+        Cursor::new(&archive.bytes),
+        &archive.bootstrap_sidecar,
+        &master,
+        tmp.path(),
+        NonSeekableReaderOptions::default(),
+        SafeExtractionOptions { overwrite_existing: true, ..SafeExtractionOptions::default() },
+    )
+    .unwrap();
+    assert_eq!(outcome.extracted_member_count, 1);
+    assert_eq!(fs::read(tmp.path().join("wrap_dict/f.txt")).unwrap(), b"dir/dict.txt common words wrapped");
+}
+
+#[test]
+fn root_auth_diagnostic_labels_and_archive_read_at_is_empty() {
+    let empty_vec: Vec<u8> = Vec::new();
+    assert!(ArchiveReadAt::is_empty(&empty_vec).unwrap());
+    let non_empty_vec: Vec<u8> = b"hello".to_vec();
+    assert!(!ArchiveReadAt::is_empty(&non_empty_vec).unwrap());
+
+    use crate::reader::RootAuthDiagnostic;
+    let diagnostics = [
+        RootAuthDiagnostic::RootAuthContentVerified,
+        RootAuthDiagnostic::AuthenticatedMetadataNotRootSigned,
+        RootAuthDiagnostic::RecoveryMarginNotRootAuthenticated,
+        RootAuthDiagnostic::RecoveryMarginUnchecked,
+        RootAuthDiagnostic::RootAuthDeferredFullArchiveScanRequired,
+        RootAuthDiagnostic::ReplicatedGlobalCopyUncheckedDueToVolumeLoss,
+        RootAuthDiagnostic::RecoveryMarginChecked,
+        RootAuthDiagnostic::RecoveryMarginFailed,
+    ];
+    for d in diagnostics {
+        assert!(!d.label().is_empty());
+    }
 }

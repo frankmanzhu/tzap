@@ -2142,3 +2142,120 @@ fn seekable_dictionary_extent_requires_non_zero_extent_fields() {
     let err = crate::reader::validation::dictionary_extent_from_index_root(&index_root).unwrap_err();
     assert!(matches!(err, FormatError::InvalidArchive(message) if message == "dictionary extent missing from IndexRoot"));
 }
+
+#[test]
+fn native_auxiliary_metadata_streamed_sparse_and_open_auxiliary() {
+    use crate::entry_metadata::{RestoreClass, SparseExtent};
+    use crate::writer::{NativeAuxiliaryMetadata, RegularFileSource};
+
+    let extents = vec![SparseExtent { offset: 0, length: 100 }, SparseExtent { offset: 200, length: 300 }];
+    let aux = NativeAuxiliaryMetadata::new_streamed_sparse(
+        "x.custom-streamed",
+        "portable-v1",
+        RestoreClass::Portable,
+        500,
+        extents,
+        [0x55; 32],
+    )
+    .unwrap();
+
+    assert!(aux.is_streamed());
+    assert_eq!(aux.flags, 1);
+    assert_eq!(aux.logical_size, 500);
+
+    // Test open_auxiliary default method on RegularFileSource
+    struct DummySourceWithAux {
+        aux: NativeAuxiliaryMetadata,
+    }
+    impl RegularFileSource for DummySourceWithAux {
+        fn archive_path(&self) -> &str {
+            "dummy.txt"
+        }
+        fn file_data_size(&self) -> u64 {
+            0
+        }
+        fn mode(&self) -> u32 {
+            0o644
+        }
+        fn mtime(&self) -> ArchiveTimestamp {
+            ArchiveTimestamp::UNIX_EPOCH
+        }
+        fn portable_metadata(&self) -> PortableFileMetadata {
+            PortableFileMetadata {
+                source_os: "linux".into(),
+                source_filesystem: "ext4".into(),
+                mode_origin: PortableModeOrigin::Projected,
+                posix_owner: None,
+                attributes: None,
+                created: None,
+                accessed: None,
+                native: NativeFileMetadata {
+                    required_profiles: vec!["portable-v1".into()],
+                    optional_profiles: Vec::new(),
+                    primary_pax_records: crate::entry_metadata::PaxRecords::new(),
+                    auxiliary_records: vec![self.aux.clone()],
+                },
+            }
+        }
+        fn open(&self) -> Result<Box<dyn Read + '_>, ArchiveWriteError> {
+            Ok(Box::new(std::io::Cursor::new(b"")))
+        }
+    }
+
+    let source = DummySourceWithAux { aux };
+    // Should fail with WriterUnsupported because streamed auxiliary didn't override open_auxiliary
+    assert!(source.open_auxiliary(0).is_err());
+    // Missing ordinal
+    assert!(source.open_auxiliary(99).is_err());
+
+    // Inline aux record should succeed
+    let inline_aux = NativeAuxiliaryMetadata::new(
+        "generic.xattr",
+        "posix-backup-v1",
+        RestoreClass::SameOs,
+        b"test value".to_vec(),
+    );
+    let inline_source = DummySourceWithAux { aux: inline_aux };
+    let mut reader = inline_source.open_auxiliary(0).unwrap();
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf).unwrap();
+    assert_eq!(buf, b"test value");
+}
+
+#[test]
+fn writer_options_validation_edges() {
+    let master = MasterKey::from_raw_key(&[1u8; 32]).unwrap();
+    let files = [RegularFile::new("file.txt", b"data")];
+
+    // Odd or < 4096 block size
+    let mut bad_opt = WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, ..WriterOptions::default() };
+    bad_opt.block_size = 4095;
+    assert!(write_archive(&files, &master, bad_opt).is_err());
+    bad_opt.block_size = 2048;
+    assert!(write_archive(&files, &master, bad_opt).is_err());
+
+    // stripe_width = 0
+    let mut bad_stripe = WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, ..WriterOptions::default() };
+    bad_stripe.stripe_width = 0;
+    assert!(write_archive(&files, &master, bad_stripe).is_err());
+
+    // bit_rot_buffer_pct > 100
+    let mut bad_rot = WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, ..WriterOptions::default() };
+    bad_rot.bit_rot_buffer_pct = 101;
+    assert!(write_archive(&files, &master, bad_rot).is_err());
+
+    // chunk_size = 0 or chunk_size > envelope_target_size
+    let mut bad_chunk = WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, ..WriterOptions::default() };
+    bad_chunk.chunk_size = 0;
+    assert!(write_archive(&files, &master, bad_chunk).is_err());
+    bad_chunk.chunk_size = bad_chunk.envelope_target_size + 1;
+    assert!(write_archive(&files, &master, bad_chunk).is_err());
+
+    // target_volume_size = Some(0)
+    let mut bad_target = WriterOptions { stripe_width: 1, volume_loss_tolerance: 0, ..WriterOptions::default() };
+    bad_target.target_volume_size = Some(0);
+    assert!(write_archive(&files, &master, bad_target).is_err());
+}
+
+
+

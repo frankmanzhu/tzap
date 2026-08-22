@@ -20,6 +20,12 @@ use tzap_core::{
     ArchiveTimestamp, EntryMetadataVerification, KdfParams, MasterKey, MetadataDiagnostic, MetadataVerificationReport, PublicNoKeyVerification, RestorePolicy,
     RestorePolicyCapability, RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, TarEntryKind, WriterOptions,
 };
+use crate::commands::create::*;
+use crate::commands::extract::*;
+use crate::commands::keygen::*;
+use crate::commands::list::*;
+use crate::commands::verify::*;
+use crate::commands::CliRestorePolicy;
 #[cfg(test)]
 use tzap_core::{MetadataDiagnosticStatus, MetadataOperation};
 #[cfg(target_os = "macos")]
@@ -2945,4 +2951,452 @@ fn test_sparse_extent_input_reader_and_macos_system_xattr() {
         assert!(os_input::macos_system_xattr(b"system.mac"));
         assert!(!os_input::macos_system_xattr(b"user.comment"));
     }
+}
+
+#[test]
+fn cli_keygen_command_suite() {
+    let temp = tempfile::tempdir().unwrap();
+    let keyfile_path = temp.path().join("test.key");
+    let keyfile_str = keyfile_path.to_str().unwrap().to_string();
+
+    // 1. Keygen to stdout
+    assert!(run_keygen(true, KeygenArgs { output: None, stdout: true, force: false }).is_ok());
+
+    // 2. Keygen to file
+    assert!(run_keygen(false, KeygenArgs { output: Some(keyfile_str.clone()), stdout: false, force: false }).is_ok());
+    assert!(keyfile_path.exists());
+
+    // 3. Keygen without force fails when file exists
+    assert!(run_keygen(false, KeygenArgs { output: Some(keyfile_str.clone()), stdout: false, force: false }).is_err());
+
+    // 4. Keygen with force succeeds
+    assert!(run_keygen(false, KeygenArgs { output: Some(keyfile_str), stdout: false, force: true }).is_ok());
+}
+
+#[test]
+fn cli_signing_keygen_command_suite() {
+    let temp = tempfile::tempdir().unwrap();
+    let sec_path = temp.path().join("signing.sec");
+    let pub_path = temp.path().join("signing.pub");
+    let sec_str = sec_path.to_str().unwrap().to_string();
+    let pub_str = pub_path.to_str().unwrap().to_string();
+
+    // Error: identical paths
+    assert!(run_signing_keygen(
+        true,
+        SigningKeygenArgs { secret_output: sec_str.clone(), public_output: sec_str.clone(), force: false }
+    )
+    .is_err());
+
+    // Normal generation
+    assert!(run_signing_keygen(
+        false,
+        SigningKeygenArgs { secret_output: sec_str.clone(), public_output: pub_str.clone(), force: false }
+    )
+    .is_ok());
+    assert!(sec_path.exists());
+    assert!(pub_path.exists());
+
+    // Error without force
+    assert!(run_signing_keygen(
+        false,
+        SigningKeygenArgs { secret_output: sec_str.clone(), public_output: pub_str.clone(), force: false }
+    )
+    .is_err());
+
+    // Success with force
+    assert!(run_signing_keygen(
+        true,
+        SigningKeygenArgs { secret_output: sec_str, public_output: pub_str, force: true }
+    )
+    .is_ok());
+}
+
+fn default_create_args(output: String, paths: Vec<String>) -> CreateArgs {
+    CreateArgs {
+        output,
+        volumes: None,
+        volume_size: None,
+        volume_loss_tolerance: None,
+        bit_rot_buffer_pct: 0,
+        password_stdin: false,
+        password: false,
+        keyfile: None,
+        recipient_cert: None,
+        no_encryption: true,
+        insecure_zero_key: false,
+        force: true,
+        argon2_t_cost: 1,
+        argon2_m_cost_kib: 64,
+        argon2_parallelism: 1,
+        dictionary: None,
+        signing_key: None,
+        signing_cert: None,
+        signing_private_key: None,
+        signing_chain: Vec::new(),
+        x509_signature_scheme: None,
+        bootstrap_out: None,
+        tar_stdin: false,
+        raw_stdin: false,
+        stdin_name: None,
+        stdin_size: None,
+        spool_stdin: false,
+        compression_level: 0,
+        chunk_size: None,
+        envelope_size: None,
+        block_size: None,
+        jobs: Some(1),
+        timings: false,
+        dry_run: false,
+        paths,
+    }
+}
+
+fn default_list_args(archive: String) -> ListArgs {
+    ListArgs {
+        archive,
+        password_stdin: false,
+        password: false,
+        keyfile: None,
+        recipient_key: None,
+        insecure_zero_key: false,
+        bootstrap: None,
+        volumes: Vec::new(),
+        long: false,
+        json: false,
+        jobs: Some(1),
+    }
+}
+
+fn default_verify_args(archive: String) -> VerifyArgs {
+    VerifyArgs {
+        archives: vec![archive],
+        password_stdin: false,
+        password: false,
+        keyfile: None,
+        recipient_key: None,
+        insecure_zero_key: false,
+        trusted_public_key: None,
+        trusted_ca_cert: Vec::new(),
+        trusted_system_roots: false,
+        public_no_key: false,
+        fast: false,
+        bootstrap: None,
+        json: false,
+        write_repaired: false,
+        jobs: Some(1),
+    }
+}
+
+fn default_extract_args(archive: String, directory: String) -> ExtractArgs {
+    ExtractArgs {
+        archive,
+        paths: Vec::new(),
+        directory,
+        stdout: false,
+        dry_run: false,
+        overwrite: true,
+        restore: CliRestorePolicy::Portable,
+        allow_degraded: false,
+        allow_absolute_symlinks: false,
+        fsync: false,
+        password_stdin: false,
+        password: false,
+        keyfile: None,
+        recipient_key: None,
+        insecure_zero_key: false,
+        bootstrap: None,
+        volumes: Vec::new(),
+        jobs: Some(1),
+    }
+}
+
+#[test]
+fn cli_create_list_verify_extract_full_workflow() {
+    let temp = tempfile::tempdir().unwrap();
+    let src_dir = temp.path().join("src");
+    fs::create_dir_all(src_dir.join("sub")).unwrap();
+    fs::write(src_dir.join("hello.txt"), b"hello world").unwrap();
+    fs::write(src_dir.join("sub/nested.txt"), b"nested content").unwrap();
+
+    let archive_path = temp.path().join("output.tzap");
+    let archive_str = archive_path.to_str().unwrap().to_string();
+
+    // 1. Create unencrypted archive
+    let create_args = default_create_args(archive_str.clone(), vec![src_dir.to_str().unwrap().to_string()]);
+    assert!(run_create(false, create_args).is_ok());
+    assert!(archive_path.exists());
+
+    // Dry-run create
+    let mut dry_create = default_create_args(archive_str.clone(), vec![src_dir.to_str().unwrap().to_string()]);
+    dry_create.dry_run = true;
+    assert!(run_create(true, dry_create).is_ok());
+
+    // 2. List archive (normal, long, json)
+    assert!(run_list(true, default_list_args(archive_str.clone())).is_ok());
+    let mut long_list = default_list_args(archive_str.clone());
+    long_list.long = true;
+    assert!(run_list(true, long_list).is_ok());
+    let mut json_list = default_list_args(archive_str.clone());
+    json_list.json = true;
+    assert!(run_list(true, json_list).is_ok());
+
+    // 3. Verify archive (normal, fast, json)
+    assert!(run_verify(true, default_verify_args(archive_str.clone())).is_ok());
+    let mut fast_verify = default_verify_args(archive_str.clone());
+    fast_verify.fast = true;
+    assert!(run_verify(true, fast_verify).is_ok());
+    let mut json_verify = default_verify_args(archive_str.clone());
+    json_verify.json = true;
+    assert!(run_verify(true, json_verify).is_ok());
+
+    // 4. Extract archive (dry-run, selective, stdout, full)
+    let dest_dir = temp.path().join("dest");
+    let dest_str = dest_dir.to_str().unwrap().to_string();
+
+    // Dry run
+    let mut dry_extract = default_extract_args(archive_str.clone(), dest_str.clone());
+    dry_extract.dry_run = true;
+    assert!(run_extract(true, dry_extract).is_ok());
+
+    // Full extraction
+    assert!(run_extract(false, default_extract_args(archive_str.clone(), dest_str.clone())).is_ok());
+    assert!(dest_dir.join("src/hello.txt").exists());
+    assert_eq!(fs::read(dest_dir.join("src/hello.txt")).unwrap(), b"hello world");
+    assert_eq!(fs::read(dest_dir.join("src/sub/nested.txt")).unwrap(), b"nested content");
+
+    // Single file stdout extraction
+    let mut stdout_extract = default_extract_args(archive_str.clone(), dest_str.clone());
+    stdout_extract.paths = vec!["src/hello.txt".to_string()];
+    stdout_extract.stdout = true;
+    assert!(run_extract(true, stdout_extract).is_ok());
+
+    // Missing path error
+    let mut bad_extract = default_extract_args(archive_str, dest_str);
+    bad_extract.paths = vec!["nonexistent.txt".to_string()];
+    assert!(run_extract(true, bad_extract).is_err());
+}
+
+#[test]
+fn cli_encrypted_keyfile_workflow() {
+    let temp = tempfile::tempdir().unwrap();
+    let src_file = temp.path().join("secret.txt");
+    fs::write(&src_file, b"super secret content").unwrap();
+
+    let keyfile_path = temp.path().join("enc.key");
+    let keyfile_str = keyfile_path.to_str().unwrap().to_string();
+    run_keygen(true, KeygenArgs { output: Some(keyfile_str.clone()), stdout: false, force: true }).unwrap();
+
+    let archive_path = temp.path().join("enc.tzap");
+    let archive_str = archive_path.to_str().unwrap().to_string();
+
+    // Create encrypted
+    let mut create_args = default_create_args(archive_str.clone(), vec![src_file.to_str().unwrap().to_string()]);
+    create_args.no_encryption = false;
+    create_args.keyfile = Some(keyfile_str.clone());
+    assert!(run_create(true, create_args).is_ok());
+
+    // Verify with keyfile
+    let mut verify_args = default_verify_args(archive_str.clone());
+    verify_args.keyfile = Some(keyfile_str.clone());
+    assert!(run_verify(true, verify_args).is_ok());
+
+    // List with keyfile
+    let mut list_args = default_list_args(archive_str.clone());
+    list_args.keyfile = Some(keyfile_str.clone());
+    assert!(run_list(true, list_args).is_ok());
+
+    // Extract with keyfile
+    let dest_dir = temp.path().join("enc_dest");
+    let dest_str = dest_dir.to_str().unwrap().to_string();
+    let mut extract_args = default_extract_args(archive_str, dest_str);
+    extract_args.keyfile = Some(keyfile_str);
+    assert!(run_extract(true, extract_args).is_ok());
+    assert_eq!(fs::read(dest_dir.join("secret.txt")).unwrap(), b"super secret content");
+}
+
+#[test]
+fn cli_stdin_validation_and_errors() {
+    let temp = tempfile::tempdir().unwrap();
+    let dest_dir = temp.path().join("dest");
+    let dest_str = dest_dir.to_str().unwrap().to_string();
+
+    // 1. Verify on stdin "-" with --write-repaired -> error
+    let mut v_args = default_verify_args("-".to_string());
+    v_args.write_repaired = true;
+    assert!(run_verify(true, v_args).is_err());
+
+    // 2. Verify on stdin "-" with --fast -> error
+    let mut v_args2 = default_verify_args("-".to_string());
+    v_args2.fast = true;
+    assert!(run_verify(true, v_args2).is_err());
+
+    // 3. Verify on stdin "-" with --public-no-key -> error
+    let mut v_args3 = default_verify_args("-".to_string());
+    v_args3.public_no_key = true;
+    assert!(run_verify(true, v_args3).is_err());
+
+    // 4. Verify on stdin "-" with multiple archives -> error
+    let mut v_args4 = default_verify_args("-".to_string());
+    v_args4.archives = vec!["-".to_string(), "other.tzap".to_string()];
+    assert!(run_verify(true, v_args4).is_err());
+
+    // 5. Extract on stdin "-" with --stdout -> error
+    let mut e_args = default_extract_args("-".to_string(), dest_str.clone());
+    e_args.stdout = true;
+    assert!(run_extract(true, e_args).is_err());
+
+    // 6. Extract on stdin "-" with paths not empty -> error
+    let mut e_args2 = default_extract_args("-".to_string(), dest_str.clone());
+    e_args2.paths = vec!["file.txt".to_string()];
+    assert!(run_extract(true, e_args2).is_err());
+
+    // 7. Extract on stdin "-" with dry-run -> Ok
+    let mut e_args3 = default_extract_args("-".to_string(), dest_str);
+    e_args3.dry_run = true;
+    assert!(run_extract(true, e_args3).is_ok());
+
+    // 8. Create with dry-run on tar_stdin and raw_stdin
+    let mut c_tar = default_create_args("out.tzap".to_string(), vec!["-".to_string()]);
+    c_tar.tar_stdin = true;
+    c_tar.dry_run = true;
+    assert!(run_create(true, c_tar).is_ok());
+
+    let mut c_raw = default_create_args("out.tzap".to_string(), vec!["-".to_string()]);
+    c_raw.raw_stdin = true;
+    c_raw.stdin_name = Some("stream.bin".to_string());
+    c_raw.stdin_size = Some("1024".to_string());
+    c_raw.dry_run = true;
+    assert!(run_create(true, c_raw).is_ok());
+
+    // 9. Create with insecure-zero-key -> error
+    let mut c_zero = default_create_args("out.tzap".to_string(), vec!["src".to_string()]);
+    c_zero.insecure_zero_key = true;
+    assert!(run_create(true, c_zero).is_err());
+}
+
+#[test]
+fn cli_json_and_error_reporting_suite() {
+    let mut v1 = default_verify_args("-".to_string());
+    v1.write_repaired = true;
+    v1.json = true;
+    assert!(run_verify(true, v1).is_err());
+
+    let mut v2 = default_verify_args("-".to_string());
+    v2.public_no_key = true;
+    v2.json = true;
+    assert!(run_verify(true, v2).is_err());
+
+    let mut v3 = default_verify_args("-".to_string());
+    v3.trusted_public_key = Some("pk.hex".to_string());
+    v3.json = true;
+    assert!(run_verify(true, v3).is_err());
+
+    let v4 = VerifyArgs {
+        archives: vec!["-".to_string(), "other.tzap".to_string()],
+        json: true,
+        ..default_verify_args("-".to_string())
+    };
+    assert!(run_verify(true, v4).is_err());
+}
+
+#[test]
+fn cli_multivolume_and_signing_suite() {
+    let temp = tempfile::tempdir().unwrap();
+
+    // 1. Generate RootAuth signing keypair
+    let sk_path = temp.path().join("root_auth.key.hex");
+    let pk_path = temp.path().join("root_auth.pub.hex");
+    let sk_str = sk_path.to_str().unwrap().to_string();
+    let pk_str = pk_path.to_str().unwrap().to_string();
+    run_signing_keygen(true, SigningKeygenArgs {
+        secret_output: sk_str.clone(),
+        public_output: pk_str.clone(),
+        force: true,
+    })
+    .unwrap();
+
+    // 2. Prepare test files
+    let src_dir = temp.path().join("src_mv");
+    fs::create_dir_all(src_dir.join("sub")).unwrap();
+    fs::write(src_dir.join("f1.txt"), b"multi volume test payload one").unwrap();
+    fs::write(src_dir.join("sub/f2.txt"), b"multi volume test payload two").unwrap();
+
+    let archive_base = temp.path().join("mv_archive.tzap");
+    let archive_base_str = archive_base.to_str().unwrap().to_string();
+
+    // 3. Create 2-volume archive with RootAuth signature
+    let mut create_args = default_create_args(archive_base_str.clone(), vec![src_dir.to_str().unwrap().to_string()]);
+    create_args.no_encryption = true;
+    create_args.volumes = Some(2);
+    create_args.signing_key = Some(sk_str);
+    assert!(run_create(true, create_args).is_ok());
+
+    let vol0 = temp.path().join("mv_archive.vol000.tzap");
+    let vol1 = temp.path().join("mv_archive.vol001.tzap");
+    assert!(vol0.exists());
+    assert!(vol1.exists());
+
+    let vol0_str = vol0.to_str().unwrap().to_string();
+
+    // 4. Verify with trusted public key and JSON
+    let mut verify_args = default_verify_args(vol0_str.clone());
+    verify_args.trusted_public_key = Some(pk_str);
+    verify_args.json = true;
+    assert!(run_verify(true, verify_args).is_ok());
+
+    // 5. List table and JSON
+    let mut list_args = default_list_args(vol0_str.clone());
+    list_args.long = true;
+    assert!(run_list(true, list_args).is_ok());
+
+    let mut list_json_args = default_list_args(vol0_str.clone());
+    list_json_args.json = true;
+    assert!(run_list(true, list_json_args).is_ok());
+
+    // 6. Extract single path and extract all
+    let dest_dir = temp.path().join("mv_extracted");
+    let dest_str = dest_dir.to_str().unwrap().to_string();
+    let mut extract_args = default_extract_args(vol0_str, dest_str);
+    extract_args.paths = vec!["src_mv/f1.txt".to_string()];
+    assert!(run_extract(true, extract_args).is_ok());
+    assert!(dest_dir.join("src_mv/f1.txt").exists());
+}
+
+#[test]
+fn cli_bootstrap_sidecar_and_options_suite() {
+    let temp = tempfile::tempdir().unwrap();
+
+    let src_file = temp.path().join("boot_src.txt");
+    fs::write(&src_file, b"bootstrap sidecar payload").unwrap();
+
+    let archive_path = temp.path().join("boot_arch.tzap");
+    let sidecar_path = temp.path().join("boot_arch.tzap.bootstrap");
+    let archive_str = archive_path.to_str().unwrap().to_string();
+    let sidecar_str = sidecar_path.to_str().unwrap().to_string();
+
+    // 1. Create with bootstrap sidecar
+    let mut create_args = default_create_args(archive_str.clone(), vec![src_file.to_str().unwrap().to_string()]);
+    create_args.no_encryption = true;
+    create_args.bootstrap_out = Some(sidecar_str.clone());
+    assert!(run_create(true, create_args).is_ok());
+    assert!(sidecar_path.exists());
+
+    // 2. Verify with bootstrap sidecar
+    let mut verify_args = default_verify_args(archive_str.clone());
+    verify_args.bootstrap = Some(sidecar_str.clone());
+    assert!(run_verify(true, verify_args).is_ok());
+
+    // 3. Extract with bootstrap sidecar
+    let dest_dir = temp.path().join("boot_dest");
+    let dest_str = dest_dir.to_str().unwrap().to_string();
+    let mut extract_args = default_extract_args(archive_str, dest_str);
+    extract_args.bootstrap = Some(sidecar_str);
+    assert!(run_extract(true, extract_args).is_ok());
+    assert_eq!(fs::read(dest_dir.join("boot_src.txt")).unwrap(), b"bootstrap sidecar payload");
+
+    // 4. Invalid size string error
+    let mut bad_size_create = default_create_args("out.tzap".to_string(), vec!["src".to_string()]);
+    bad_size_create.volume_size = Some("not_a_size".to_string());
+    assert!(run_create(true, bad_size_create).is_err());
 }
