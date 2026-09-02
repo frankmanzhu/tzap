@@ -1764,13 +1764,12 @@ fn safe_restore_rejects_unsafe_paths_and_overwrites() {
 
 #[test]
 fn os_restore_flags_and_auxiliary_checks() {
-    use super::os_restore::{
-        macos_flags_require_system, macos_flags_supported, native_auxiliary_restore_supported,
-        parse_macos_flags, source_os_matches_current_host, special_object_restore_supported,
-        system_xattr_name,
-    };
     #[cfg(target_os = "macos")]
     use super::os_restore::validate_darwin_acl_external;
+    use super::os_restore::{
+        macos_flags_require_system, macos_flags_supported, native_auxiliary_restore_supported, parse_macos_flags, source_os_matches_current_host,
+        special_object_restore_supported, system_xattr_name,
+    };
 
     // 1. macOS flags
     assert_eq!(parse_macos_flags(b"00000000").unwrap(), 0);
@@ -1832,10 +1831,7 @@ fn os_restore_flags_and_auxiliary_checks() {
 
 #[test]
 fn streaming_restore_helpers_and_group_end() {
-    use super::restore::{
-        restore_streaming_tar_member_group, stream_regular_tar_member_group_to_writer, try_tar_member_group_end,
-        StreamingMemberExpectation,
-    };
+    use super::restore::{restore_streaming_tar_member_group, stream_regular_tar_member_group_to_writer, try_tar_member_group_end, StreamingMemberExpectation};
 
     let member_bytes = member(b"stream_file.txt", b'0', b"streaming contents", b"");
     let group_len = member_bytes.len() as u64;

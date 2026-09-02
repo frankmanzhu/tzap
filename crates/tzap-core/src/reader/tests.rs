@@ -7236,11 +7236,9 @@ fn unencrypted_non_seekable_stream_full_lifecycle() {
     use std::io::Cursor;
     use tempfile::tempdir;
 
-    let unencrypted = write_archive_unencrypted(
-        &[RegularFile::new("stream/a.txt", b"data a"), RegularFile::new("stream/b.txt", b"data b")],
-        single_stream_options(),
-    )
-    .unwrap();
+    let unencrypted =
+        write_archive_unencrypted(&[RegularFile::new("stream/a.txt", b"data a"), RegularFile::new("stream/b.txt", b"data b")], single_stream_options())
+            .unwrap();
 
     let verified = verify_unencrypted_non_seekable_stream_with_options(Cursor::new(&unencrypted.bytes), NonSeekableReaderOptions::default()).unwrap();
     assert_eq!(verified.file_count, 2);
@@ -7292,20 +7290,11 @@ fn unencrypted_non_seekable_stream_with_bootstrap_sidecar_lifecycle() {
     let archive_bytes = &sink.volumes[0];
     let sidecar = &sink.bootstrap_sidecar;
 
-    let verified = verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar(
-        Cursor::new(archive_bytes),
-        sidecar,
-        NonSeekableReaderOptions::default(),
-    )
-    .unwrap();
+    let verified =
+        verify_unencrypted_non_seekable_stream_with_bootstrap_sidecar(Cursor::new(archive_bytes), sidecar, NonSeekableReaderOptions::default()).unwrap();
     assert!(verified.file_count > 0);
 
-    let listed = list_unencrypted_non_seekable_stream_with_bootstrap_sidecar(
-        Cursor::new(archive_bytes),
-        sidecar,
-        NonSeekableReaderOptions::default(),
-    )
-    .unwrap();
+    let listed = list_unencrypted_non_seekable_stream_with_bootstrap_sidecar(Cursor::new(archive_bytes), sidecar, NonSeekableReaderOptions::default()).unwrap();
     assert_eq!(listed.entries.len(), 1);
     assert_eq!(listed.entries[0].path, "dict_stream/file.txt");
 
@@ -7324,9 +7313,7 @@ fn unencrypted_non_seekable_stream_with_bootstrap_sidecar_lifecycle() {
 
 #[test]
 fn recipient_wrap_non_seekable_stream_full_lifecycle() {
-    use crate::non_seekable_reader::{
-        extract_non_seekable_stream_to_dir_with_recipient_wrap_resolver, list_non_seekable_stream_with_recipient_wrap_resolver,
-    };
+    use crate::non_seekable_reader::{extract_non_seekable_stream_to_dir_with_recipient_wrap_resolver, list_non_seekable_stream_with_recipient_wrap_resolver};
     use std::io::Cursor;
     use tempfile::tempdir;
 
@@ -7339,12 +7326,9 @@ fn recipient_wrap_non_seekable_stream_full_lifecycle() {
     )
     .unwrap();
 
-    let listed = list_non_seekable_stream_with_recipient_wrap_resolver(
-        Cursor::new(&archive.bytes),
-        |_| Ok(vec![master.0]),
-        NonSeekableReaderOptions::default(),
-    )
-    .unwrap();
+    let listed =
+        list_non_seekable_stream_with_recipient_wrap_resolver(Cursor::new(&archive.bytes), |_| Ok(vec![master.0]), NonSeekableReaderOptions::default())
+            .unwrap();
     assert_eq!(listed.entries.len(), 2);
     assert_eq!(listed.entries[0].path, "wrap_stream/f1.txt");
     assert_eq!(listed.entries[1].path, "wrap_stream/f2.txt");
@@ -7374,13 +7358,9 @@ fn encrypted_non_seekable_stream_with_bootstrap_sidecar_lifecycle() {
 
     let master = master_key();
     let dict = dictionary();
-    let archive = write_archive_with_dictionary(
-        &[RegularFile::new("wrap_dict/f.txt", b"dir/dict.txt common words wrapped")],
-        &master,
-        single_stream_options(),
-        dict,
-    )
-    .unwrap();
+    let archive =
+        write_archive_with_dictionary(&[RegularFile::new("wrap_dict/f.txt", b"dir/dict.txt common words wrapped")], &master, single_stream_options(), dict)
+            .unwrap();
 
     let verified = verify_non_seekable_stream_with_bootstrap_sidecar(
         Cursor::new(&archive.bytes),
@@ -7391,13 +7371,9 @@ fn encrypted_non_seekable_stream_with_bootstrap_sidecar_lifecycle() {
     .unwrap();
     assert!(verified.file_count > 0);
 
-    let listed = list_non_seekable_stream_with_bootstrap_sidecar(
-        Cursor::new(&archive.bytes),
-        &archive.bootstrap_sidecar,
-        &master,
-        NonSeekableReaderOptions::default(),
-    )
-    .unwrap();
+    let listed =
+        list_non_seekable_stream_with_bootstrap_sidecar(Cursor::new(&archive.bytes), &archive.bootstrap_sidecar, &master, NonSeekableReaderOptions::default())
+            .unwrap();
     assert_eq!(listed.entries.len(), 1);
     assert_eq!(listed.entries[0].path, "wrap_dict/f.txt");
 

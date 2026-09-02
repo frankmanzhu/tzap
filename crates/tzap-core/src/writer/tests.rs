@@ -2149,15 +2149,7 @@ fn native_auxiliary_metadata_streamed_sparse_and_open_auxiliary() {
     use crate::writer::{NativeAuxiliaryMetadata, RegularFileSource};
 
     let extents = vec![SparseExtent { offset: 0, length: 100 }, SparseExtent { offset: 200, length: 300 }];
-    let aux = NativeAuxiliaryMetadata::new_streamed_sparse(
-        "x.custom-streamed",
-        "portable-v1",
-        RestoreClass::Portable,
-        500,
-        extents,
-        [0x55; 32],
-    )
-    .unwrap();
+    let aux = NativeAuxiliaryMetadata::new_streamed_sparse("x.custom-streamed", "portable-v1", RestoreClass::Portable, 500, extents, [0x55; 32]).unwrap();
 
     assert!(aux.is_streamed());
     assert_eq!(aux.flags, 1);
@@ -2209,12 +2201,7 @@ fn native_auxiliary_metadata_streamed_sparse_and_open_auxiliary() {
     assert!(source.open_auxiliary(99).is_err());
 
     // Inline aux record should succeed
-    let inline_aux = NativeAuxiliaryMetadata::new(
-        "generic.xattr",
-        "posix-backup-v1",
-        RestoreClass::SameOs,
-        b"test value".to_vec(),
-    );
+    let inline_aux = NativeAuxiliaryMetadata::new("generic.xattr", "posix-backup-v1", RestoreClass::SameOs, b"test value".to_vec());
     let inline_source = DummySourceWithAux { aux: inline_aux };
     let mut reader = inline_source.open_auxiliary(0).unwrap();
     let mut buf = Vec::new();
@@ -2256,6 +2243,3 @@ fn writer_options_validation_edges() {
     bad_target.target_volume_size = Some(0);
     assert!(write_archive(&files, &master, bad_target).is_err());
 }
-
-
-

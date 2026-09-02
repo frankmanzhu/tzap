@@ -1,6 +1,12 @@
 use std::fs::{self};
 use std::time::{Duration, UNIX_EPOCH};
 
+use crate::commands::create::*;
+use crate::commands::extract::*;
+use crate::commands::keygen::*;
+use crate::commands::list::*;
+use crate::commands::verify::*;
+use crate::commands::CliRestorePolicy;
 use anyhow::anyhow;
 use openssl::x509::X509;
 use tzap_core::entry_metadata::CaptureStatus;
@@ -20,12 +26,6 @@ use tzap_core::{
     ArchiveTimestamp, EntryMetadataVerification, KdfParams, MasterKey, MetadataDiagnostic, MetadataVerificationReport, PublicNoKeyVerification, RestorePolicy,
     RestorePolicyCapability, RootAuthSigningRequest, RootAuthWriterConfig, SourceEntryKind, TarEntryKind, WriterOptions,
 };
-use crate::commands::create::*;
-use crate::commands::extract::*;
-use crate::commands::keygen::*;
-use crate::commands::list::*;
-use crate::commands::verify::*;
-use crate::commands::CliRestorePolicy;
 #[cfg(test)]
 use tzap_core::{MetadataDiagnosticStatus, MetadataOperation};
 #[cfg(target_os = "macos")]
@@ -2982,34 +2982,18 @@ fn cli_signing_keygen_command_suite() {
     let pub_str = pub_path.to_str().unwrap().to_string();
 
     // Error: identical paths
-    assert!(run_signing_keygen(
-        true,
-        SigningKeygenArgs { secret_output: sec_str.clone(), public_output: sec_str.clone(), force: false }
-    )
-    .is_err());
+    assert!(run_signing_keygen(true, SigningKeygenArgs { secret_output: sec_str.clone(), public_output: sec_str.clone(), force: false }).is_err());
 
     // Normal generation
-    assert!(run_signing_keygen(
-        false,
-        SigningKeygenArgs { secret_output: sec_str.clone(), public_output: pub_str.clone(), force: false }
-    )
-    .is_ok());
+    assert!(run_signing_keygen(false, SigningKeygenArgs { secret_output: sec_str.clone(), public_output: pub_str.clone(), force: false }).is_ok());
     assert!(sec_path.exists());
     assert!(pub_path.exists());
 
     // Error without force
-    assert!(run_signing_keygen(
-        false,
-        SigningKeygenArgs { secret_output: sec_str.clone(), public_output: pub_str.clone(), force: false }
-    )
-    .is_err());
+    assert!(run_signing_keygen(false, SigningKeygenArgs { secret_output: sec_str.clone(), public_output: pub_str.clone(), force: false }).is_err());
 
     // Success with force
-    assert!(run_signing_keygen(
-        true,
-        SigningKeygenArgs { secret_output: sec_str, public_output: pub_str, force: true }
-    )
-    .is_ok());
+    assert!(run_signing_keygen(true, SigningKeygenArgs { secret_output: sec_str, public_output: pub_str, force: true }).is_ok());
 }
 
 fn default_create_args(output: String, paths: Vec<String>) -> CreateArgs {
@@ -3292,11 +3276,7 @@ fn cli_json_and_error_reporting_suite() {
     v3.json = true;
     assert!(run_verify(true, v3).is_err());
 
-    let v4 = VerifyArgs {
-        archives: vec!["-".to_string(), "other.tzap".to_string()],
-        json: true,
-        ..default_verify_args("-".to_string())
-    };
+    let v4 = VerifyArgs { archives: vec!["-".to_string(), "other.tzap".to_string()], json: true, ..default_verify_args("-".to_string()) };
     assert!(run_verify(true, v4).is_err());
 }
 
@@ -3309,12 +3289,7 @@ fn cli_multivolume_and_signing_suite() {
     let pk_path = temp.path().join("root_auth.pub.hex");
     let sk_str = sk_path.to_str().unwrap().to_string();
     let pk_str = pk_path.to_str().unwrap().to_string();
-    run_signing_keygen(true, SigningKeygenArgs {
-        secret_output: sk_str.clone(),
-        public_output: pk_str.clone(),
-        force: true,
-    })
-    .unwrap();
+    run_signing_keygen(true, SigningKeygenArgs { secret_output: sk_str.clone(), public_output: pk_str.clone(), force: true }).unwrap();
 
     // 2. Prepare test files
     let src_dir = temp.path().join("src_mv");
