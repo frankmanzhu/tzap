@@ -1531,6 +1531,55 @@ fn cli_create_supports_unicode_archive_paths() {
 }
 
 #[test]
+fn cli_unicode_directory_filename_content_end_to_end() {
+    let temp = tempdir().unwrap();
+    let keyfile = temp.path().join("key.hex");
+    let input_root = temp.path().join("资料");
+    let input_file = input_root.join("проекты").join("e\u{301}quipe-日本語").join("مرحبا-世界.txt");
+    let archive = temp.path().join("unicode-e2e.tzap");
+    let output = temp.path().join("extracted");
+    let content = "こんにちは、世界！\nПривет, мир!\nمرحبا بالعالم!\n";
+    let archive_file = "资料/проекты/équipe-日本語/مرحبا-世界.txt";
+
+    fs::create_dir_all(input_file.parent().unwrap()).unwrap();
+    fs::write(&keyfile, KEY_HEX).unwrap();
+    fs::write(&input_file, content.as_bytes()).unwrap();
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args(["create", "--keyfile", keyfile.to_str().unwrap(), "-o", archive.to_str().unwrap(), input_root.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let listing = Command::cargo_bin("tzap")
+        .unwrap()
+        .args(["list", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let listing = String::from_utf8(listing).unwrap();
+    assert!(listing.contains("资料/проекты/équipe-日本語\n"));
+    assert!(listing.contains(&format!("{archive_file}\n")));
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args(["verify", "--keyfile", keyfile.to_str().unwrap(), archive.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("OK"));
+
+    Command::cargo_bin("tzap")
+        .unwrap()
+        .args(["extract", "--keyfile", keyfile.to_str().unwrap(), "-C", output.to_str().unwrap(), archive.to_str().unwrap()])
+        .assert()
+        .success();
+
+    assert_eq!(fs::read(output.join(archive_file)).unwrap(), content.as_bytes());
+}
+
+#[test]
 fn cli_create_supports_long_archive_paths() {
     let temp = tempdir().unwrap();
     let keyfile = temp.path().join("key.hex");

@@ -1780,9 +1780,27 @@ fn os_restore_flags_and_auxiliary_checks() {
     assert!(macos_flags_require_system(0x0002_0000)); // SF_IMMUTABLE
 
     // 2. Special object and source OS checks
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     assert!(special_object_restore_supported(TarEntryKind::Fifo));
-    assert!(special_object_restore_supported(TarEntryKind::CharacterDevice));
-    assert!(special_object_restore_supported(TarEntryKind::BlockDevice));
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    assert!(!special_object_restore_supported(TarEntryKind::Fifo));
+
+    #[cfg(target_os = "linux")]
+    {
+        assert!(special_object_restore_supported(TarEntryKind::CharacterDevice));
+        assert!(special_object_restore_supported(TarEntryKind::BlockDevice));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let device_restore_supported = (unsafe { libc::geteuid() }) == 0;
+        assert_eq!(special_object_restore_supported(TarEntryKind::CharacterDevice), device_restore_supported);
+        assert_eq!(special_object_restore_supported(TarEntryKind::BlockDevice), device_restore_supported);
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        assert!(!special_object_restore_supported(TarEntryKind::CharacterDevice));
+        assert!(!special_object_restore_supported(TarEntryKind::BlockDevice));
+    }
 
     assert!(source_os_matches_current_host(std::env::consts::OS));
     assert!(!source_os_matches_current_host("unknown_os_12345"));
@@ -1797,8 +1815,8 @@ fn os_restore_flags_and_auxiliary_checks() {
     #[cfg(target_os = "macos")]
     {
         assert!(validate_darwin_acl_external(b"short").is_err());
-        let mut darwin_acl = vec![0u8; 16]; // DARWIN_ACL_EXTERNAL_HEADER_LEN = 16
-        darwin_acl[0..4].copy_from_slice(&0x0000_0001u32.to_le_bytes()); // magic
+        let mut darwin_acl = vec![0u8; 40]; // DARWIN external ACL header with zero entries
+        darwin_acl[0..4].copy_from_slice(&[0x01, 0x2c, 0xc1, 0x6d]); // magic
         assert!(validate_darwin_acl_external(&darwin_acl).is_ok());
     }
 

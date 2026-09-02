@@ -2694,8 +2694,8 @@ mod tests {
         sd_dacl[0] = 1;
         let control = 0x8000u16 | 0x0004 | 0x2000; // Self-relative | DACL Present | Unprotected DACL
         sd_dacl[2..4].copy_from_slice(&control.to_le_bytes());
+        // Valid empty DACL header: revision=2, sbz1=0, acl_size=8, ace_count=0, sbz2=0.
         sd_dacl[16..20].copy_from_slice(&20u32.to_le_bytes()); // DACL offset at 20
-                                                               // Valid empty DACL header: revision=2, sbz1=0, acl_size=8, ace_count=0, sbz2=0
         let mut dacl = vec![0u8; 8];
         dacl[0] = 2; // ACL revision 2
         dacl[2..4].copy_from_slice(&8u16.to_le_bytes());
