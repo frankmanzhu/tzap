@@ -104,7 +104,8 @@ fn strip_case_insensitive_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a
     if value.len() < suffix.len() {
         return None;
     }
-    let (head, tail) = value.split_at(value.len() - suffix.len());
+    let split_at = value.len() - suffix.len();
+    let (head, tail) = (value.get(..split_at)?, value.get(split_at..)?);
     if tail.eq_ignore_ascii_case(suffix) {
         Some(head)
     } else {
@@ -139,6 +140,13 @@ mod tests {
         assert_eq!(multi_volume_base_name("backup.tzap"), "backup");
         assert_eq!(multi_volume_base_name("backup.TZAP"), "backup");
         assert_eq!(multi_volume_base_name("backup"), "backup");
+    }
+
+    #[test]
+    fn non_tzap_unicode_names_do_not_panic_during_suffix_checks() {
+        let name = "金庸-神雕侠侣txt精校版.txt";
+        assert_eq!(parse_volume_file_name(name), None);
+        assert_eq!(multi_volume_base_name(name), name);
     }
 
     #[test]
