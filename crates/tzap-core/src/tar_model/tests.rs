@@ -9,7 +9,7 @@ use super::sparse::{create_temp_regular_file, publish_regular_file, stream_spars
 use super::*;
 use crate::encode_v45_sparse_map;
 use crate::entry_metadata::*;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(unix, windows))]
 use std::collections::BTreeMap;
 use tempfile::tempdir;
 

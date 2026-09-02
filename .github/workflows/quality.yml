@@ -102,12 +102,12 @@ jobs:
 
       - name: Run bounded fixed-structure fuzzing
         working-directory: fuzz
-        run: cargo fuzz run --features libfuzzer parse_fixed_structures -- -max_total_time=30 -timeout=10
+        run: cargo +nightly fuzz run --features libfuzzer parse_fixed_structures -- -max_total_time=30 -timeout=10
 
       - name: Run bounded metadata fuzzing
         working-directory: fuzz
-        run: cargo fuzz run --features libfuzzer parse_metadata -- -max_total_time=30 -timeout=10
+        run: cargo +nightly fuzz run --features libfuzzer parse_metadata -- -max_total_time=30 -timeout=10
 
       - name: Run bounded compression fuzzing
         working-directory: fuzz
-        run: cargo fuzz run --features libfuzzer parse_compressed_and_padding -- -max_total_time=30 -timeout=10
+        run: cargo +nightly fuzz run --features libfuzzer parse_compressed_and_padding -- -max_total_time=30 -timeout=10

@@ -1,11 +1,9 @@
 use std::fs::{self};
 use std::time::{Duration, UNIX_EPOCH};
 
-use crate::commands::create::*;
 use crate::commands::extract::*;
 use crate::commands::keygen::*;
 use crate::commands::list::*;
-use crate::commands::verify::*;
 use crate::commands::CliRestorePolicy;
 use anyhow::anyhow;
 use openssl::x509::X509;
