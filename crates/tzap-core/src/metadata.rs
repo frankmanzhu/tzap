@@ -1764,6 +1764,7 @@ fn invalid<T>(structure: &'static str, reason: &'static str) -> Result<T, Format
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn default_reader_caps_match_v45() {
@@ -2834,5 +2835,63 @@ mod tests {
 
         assert_eq!(parsed.lookup_file_index(path), Some(0));
         assert_eq!(parsed.file_path(0), Some(path.as_slice()));
+    }
+
+    #[test]
+    fn generated_unicode_paths_preserve_the_path_validation_invariants() {
+        const COMPONENTS: &[&str] = &["alpha", "資料", "проекты", "مرحبا", "日本語", "équipe", "🙂"];
+
+        // A small deterministic generator gives this test property-style breadth without adding
+        // a test-only dependency or making failures dependent on external randomness.
+        let mut state = 0x5eed_cafe_d00d_beefu64;
+        for _case in 0..512 {
+            let component_count = (next_u64(&mut state) % 4 + 1) as usize;
+            let mut path = String::new();
+            for component_index in 0..component_count {
+                if component_index != 0 {
+                    path.push('/');
+                }
+                let repeats = (next_u64(&mut state) % 3 + 1) as usize;
+                for _ in 0..repeats {
+                    path.push_str(COMPONENTS[(next_u64(&mut state) as usize) % COMPONENTS.len()]);
+                }
+            }
+
+            let path_bytes = path.as_bytes();
+            assert!(validate_file_path_bytes(path_bytes, 4096).is_ok(), "generated path rejected: {path}");
+
+            let mut parent_escape = path.clone();
+            parent_escape.push_str("/../escape");
+            assert!(validate_file_path_bytes(parent_escape.as_bytes(), 4096).is_err());
+
+            let mut absolute = String::from('/');
+            absolute.push_str(&path);
+            assert!(validate_file_path_bytes(absolute.as_bytes(), 4096).is_err());
+        }
+
+        assert!(validate_file_path_bytes(&[0xff, 0xfe], 4096).is_err());
+        assert!(validate_file_path_bytes(b"a\\b", 4096).is_err());
+        assert!(validate_file_path_bytes(b"a:b", 4096).is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_unicode_component_paths_are_safe(
+            components in prop::collection::vec(prop::sample::select(&["資料", "проекты", "مرحبا", "日本語", "équipe", "🙂"]), 1..5),
+        ) {
+            let path = components.join("/");
+            prop_assert!(validate_file_path_bytes(path.as_bytes(), 4096).is_ok());
+
+            let escaped = format!("{path}/../escape");
+            prop_assert!(validate_file_path_bytes(escaped.as_bytes(), 4096).is_err());
+
+            let absolute = format!("/{path}");
+            prop_assert!(validate_file_path_bytes(absolute.as_bytes(), 4096).is_err());
+        }
+    }
+
+    fn next_u64(state: &mut u64) -> u64 {
+        *state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        *state
     }
 }

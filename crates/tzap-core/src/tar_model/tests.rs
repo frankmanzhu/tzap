@@ -1953,3 +1953,63 @@ fn parse_tar_member_group_negatives_and_validation() {
     bad_ustar[257..263].copy_from_slice(b"badmag");
     assert!(parse_tar_member_group(&bad_ustar, 4096).is_err());
 }
+
+#[test]
+fn tar_member_parsers_survive_deterministic_header_and_payload_mutations() {
+    let original = member("mutation/資料/مرحبا.txt".as_bytes(), b'0', b"payload with a non-ASCII path", b"");
+    assert!(parse_tar_member_group(&original, 4096).is_ok());
+
+    // Exercise both the buffered and streaming parsers against mutations in every logical
+    // region. A mutation is allowed to remain valid, but it must never panic or consume beyond
+    // the member group boundary.
+    for offset in (0..original.len()).step_by(7) {
+        for mask in [0x01, 0x40, 0x80] {
+            let mut mutated = original.clone();
+            mutated[offset] ^= mask;
+            let _ = parse_tar_member_group(&mutated, 4096);
+            let mut streaming = TarStreamSummaryValidator::with_observer(4096, u64::MAX, 4096, 16, NoopTarStreamObserver);
+            let _ = streaming.observe(&mutated);
+        }
+    }
+}
+
+#[test]
+fn restore_policy_matrix_keeps_content_restore_free_of_native_metadata_requirements() {
+    let bytes = member(b"policy.txt", b'0', b"policy payload", b"");
+    let parsed = parse_tar_member_group(&bytes, 4096).unwrap();
+    let mut metadata = parsed.v45_metadata;
+    metadata.declaration.source_os = "plan9".into();
+    metadata.declaration.required_profiles = vec!["portable-v1".into()];
+    metadata.primary_has_native_scalar = true;
+
+    let content = plan_restore(
+        b"policy.txt",
+        &metadata,
+        TarEntryKind::Regular,
+        false,
+        SafeExtractionOptions { restore_policy: RestorePolicy::Content, ..SafeExtractionOptions::default() },
+    )
+    .unwrap();
+    assert!(content.iter().all(|diagnostic| diagnostic.status != MetadataDiagnosticStatus::Failed));
+
+    let mut unsupported_metadata = metadata.clone();
+    unsupported_metadata.declaration.required_profiles = vec!["x.vendor.required-v1".into()];
+    let strict_native = plan_restore(
+        b"policy.txt",
+        &unsupported_metadata,
+        TarEntryKind::Regular,
+        false,
+        SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, ..SafeExtractionOptions::default() },
+    );
+    assert_eq!(strict_native.unwrap_err(), FormatError::ReaderUnsupported("requested restore policy requires an unsupported required profile"));
+
+    let degraded_native = plan_restore(
+        b"policy.txt",
+        &unsupported_metadata,
+        TarEntryKind::Regular,
+        false,
+        SafeExtractionOptions { restore_policy: RestorePolicy::SameOs, allow_degraded: true, ..SafeExtractionOptions::default() },
+    )
+    .unwrap();
+    assert!(degraded_native.iter().any(|diagnostic| diagnostic.status == MetadataDiagnosticStatus::Skipped));
+}

@@ -1,0 +1,113 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage-and-hygiene:
+    name: Coverage, dependency hygiene, and benchmark smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check workspace
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Check dependency usage
+        run: |
+          cargo install cargo-machete --locked
+          cargo machete
+
+      - name: Measure and enforce coverage
+        run: |
+          cargo install cargo-llvm-cov --locked
+          cargo llvm-cov --workspace --all-features --fail-under-lines 85 --fail-under-functions 85 --fail-under-regions 80 --lcov --output-path coverage.lcov
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: tzap-coverage
+          path: coverage*.lcov
+
+      - name: Install nightly Rust for branch coverage
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Measure branch coverage on scheduled quality runs
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        run: cargo +nightly llvm-cov --workspace --all-features --branch --summary-only | tee branch-coverage.txt
+
+      - name: Upload branch coverage report
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tzap-branch-coverage
+          path: branch-coverage.txt
+
+      - name: Build release binary
+        run: cargo build --locked --release -p tzap
+
+      - name: Run benchmark smoke
+        run: python3 scripts/tzap_benchmark_smoke.py --tzap target/release/tzap
+
+  fuzz:
+    name: Bounded parser fuzzing
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Run deterministic fuzz smoke
+        run: cargo run --manifest-path fuzz/Cargo.toml --bin fuzz_smoke --locked
+
+      - name: Check libFuzzer targets
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins --features libfuzzer --locked
+
+      - name: Run bounded fixed-structure fuzzing
+        working-directory: fuzz
+        run: cargo fuzz run --features libfuzzer parse_fixed_structures -- -max_total_time=30 -timeout=10
+
+      - name: Run bounded metadata fuzzing
+        working-directory: fuzz
+        run: cargo fuzz run --features libfuzzer parse_metadata -- -max_total_time=30 -timeout=10
+
+      - name: Run bounded compression fuzzing
+        working-directory: fuzz
+        run: cargo fuzz run --features libfuzzer parse_compressed_and_padding -- -max_total_time=30 -timeout=10

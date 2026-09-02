@@ -2840,4 +2840,28 @@ mod tests {
         // missing GNU.sparse.numblocks
         assert!(parse_primary_metadata(&rec).is_err());
     }
+
+    #[test]
+    fn generated_canonical_pax_records_round_trip_with_unicode_and_non_ascii_values() {
+        let keys = ["TZAP.path", "TZAP.owner.name", "TZAP.description", "TZAP.payload-hint"];
+        let values = ["資料/проекты/مرحبا-日本語.txt".as_bytes(), "München — café\n".as_bytes(), &[0x01, 0x7f, 0x80, 0xff][..], "こんにちは世界".as_bytes()];
+
+        let mut state = 0x1234_5678_9abc_def0u64;
+        for _case in 0..256 {
+            let mut records = PaxRecords::new();
+            let count = (next_u64(&mut state) % keys.len() as u64 + 1) as usize;
+            for _ in 0..count {
+                let key = keys[(next_u64(&mut state) as usize) % keys.len()];
+                let value = values[(next_u64(&mut state) as usize) % values.len()];
+                records.insert(key.to_owned(), value.to_vec());
+            }
+            let encoded = encode_canonical_pax(&records).unwrap();
+            assert_eq!(parse_canonical_pax(&encoded).unwrap(), records);
+        }
+    }
+
+    fn next_u64(state: &mut u64) -> u64 {
+        *state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        *state
+    }
 }

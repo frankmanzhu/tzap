@@ -86,6 +86,29 @@ Run the bounded parser fuzz smoke:
 cargo run --manifest-path fuzz/Cargo.toml --bin fuzz_smoke --locked
 ```
 
+Run the deterministic workflow benchmark smoke after building a release binary:
+
+```sh
+cargo build --release -p tzap
+python3 scripts/tzap_benchmark_smoke.py --tzap target/release/tzap
+```
+
+The smoke benchmark exercises create, list, verify, and extract against a
+Unicode-heavy corpus and records timings without asserting a machine-specific
+throughput threshold. The scheduled Quality workflow also enforces the
+workspace coverage floor, checks dependency usage with `cargo-machete`, and
+runs bounded libFuzzer jobs.
+
+For a local coverage report, install `cargo-llvm-cov` and run:
+
+```sh
+cargo llvm-cov --workspace --all-features --summary-only
+```
+
+Nightly Rust is required for branch instrumentation. Scheduled quality runs
+collect the branch summary with `cargo +nightly llvm-cov --branch`; the stable
+gate enforces line, function, and region floors.
+
 Run longer fuzz targets with `cargo-fuzz` installed:
 
 ```sh

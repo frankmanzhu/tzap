@@ -44,7 +44,6 @@ memmap2 = "0.9"
 rand = "0.8"
 openssl = { version = "0.10.81", features = ["vendored"] }
 sha2 = "0.10"
-tar = "0.4"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 unicode-normalization = "0.1"
@@ -61,6 +60,9 @@ version = "2"
 
 [workspace.dependencies.predicates]
 version = "3"
+
+[workspace.dependencies.proptest]
+version = "1"
 
 [workspace.dependencies.tempfile]
 version = "3"

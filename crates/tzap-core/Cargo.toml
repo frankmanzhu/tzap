@@ -25,7 +25,6 @@ hkdf.workspace = true
 hmac.workspace = true
 libc.workspace = true
 sha2.workspace = true
-tar.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
@@ -55,4 +54,5 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+proptest.workspace = true
 tempfile.workspace = true
