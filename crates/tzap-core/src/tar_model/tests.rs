@@ -1837,11 +1837,12 @@ fn os_restore_flags_and_auxiliary_checks() {
         sparse_layout: None,
         capture_report_payload: None,
     };
-    assert!(native_auxiliary_restore_supported(&aux, false, None));
+    let generic_xattr_restore_supported = cfg!(any(target_os = "linux", target_os = "macos"));
+    assert_eq!(native_auxiliary_restore_supported(&aux, false, None), generic_xattr_restore_supported);
 
     aux.restore_class = RestoreClass::System;
     assert!(!native_auxiliary_restore_supported(&aux, false, None));
-    assert!(native_auxiliary_restore_supported(&aux, true, None));
+    assert_eq!(native_auxiliary_restore_supported(&aux, true, None), generic_xattr_restore_supported);
 
     aux.kind = "unknown.kind".into();
     assert!(!native_auxiliary_restore_supported(&aux, false, None));
