@@ -11,8 +11,7 @@ const DEFAULT_ARGON2_PARALLELISM: u32 = 4;
 const DEFAULT_ARGON2_SALT_LEN: usize = 16;
 const INSECURE_ZERO_KEY: [u8; 32] = [0; 32];
 const LARGE_CREATE_LAYOUT_THRESHOLD: u64 = 100 * 1024 * 1024 * 1024;
-const OFFICIAL_TZAP_ROOT_CERT_SHA256: &str = "sha256:d80d318f6cd6096dc791e314ec6f41434caa47feb75e85ad6f87d5bf72bbd53d";
-const OFFICIAL_TZAP_ROOT_CERT_PEM: &[u8] = include_bytes!("trust/tzap-production-root-ca-2026.pem");
+use tzap_plugin_signing::trust::{OFFICIAL_TZAP_ROOT_CERT_PEM, OFFICIAL_TZAP_ROOT_CERT_SHA256};
 
 mod cli;
 mod commands;
