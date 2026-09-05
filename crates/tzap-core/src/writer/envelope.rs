@@ -2313,7 +2313,8 @@ pub(crate) fn build_primary_member_layout(
                 // portable_primary_pax) since portable-v1-only is a hard
                 // invariant elsewhere, e.g. hardlink aliases.
                 if key == "LIBARCHIVE.creationtime" && crate::entry_metadata::source_os_requires_posix_profile(&portable_metadata.source_os) {
-                    pax_records.insert("TZAP.metadata.required-profiles".into(), format!("{PORTABLE_PROFILE},{}", crate::entry_metadata::POSIX_PROFILE).into_bytes());
+                    pax_records
+                        .insert("TZAP.metadata.required-profiles".into(), format!("{PORTABLE_PROFILE},{}", crate::entry_metadata::POSIX_PROFILE).into_bytes());
                 }
             }
         }

@@ -2269,10 +2269,7 @@ mod tests {
 
         let mut records = bare.clone();
         records.insert("LIBARCHIVE.creationtime".into(), b"1700000000".to_vec());
-        assert!(
-            parse_primary_metadata(&records).is_err(),
-            "LIBARCHIVE.creationtime without POSIX_PROFILE declared should be rejected"
-        );
+        assert!(parse_primary_metadata(&records).is_err(), "LIBARCHIVE.creationtime without POSIX_PROFILE declared should be rejected");
 
         records.insert("TZAP.metadata.required-profiles".into(), format!("{PORTABLE_PROFILE},{POSIX_PROFILE}").into_bytes());
         let parsed = parse_primary_metadata(&records).unwrap();
