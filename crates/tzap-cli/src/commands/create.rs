@@ -1437,7 +1437,14 @@ pub(crate) fn ensure_create_output_paths_can_be_written(
 pub(crate) fn check_output_path_collisions_for_volume_size_output(output: &str) -> Result<()> {
     check_output_path_free("archive output", Path::new(output))?;
     let output_path = Path::new(output);
-    let parent = output_path.parent().unwrap_or_else(|| Path::new("."));
+    // A bare relative output path (`archive.tzap`, no directory component)
+    // has `parent() == Some("")`, not `None`; `unwrap_or_else` only
+    // substitutes "." on `None`, so `read_dir` below used to receive the
+    // empty path, fail with `NotFound`, and have that treated as "no
+    // existing volumes" -- silently skipping the collision check (and thus
+    // overwriting/corrupting pre-existing volume files) for the most common
+    // way to invoke this from inside the destination directory.
+    let parent = output_path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
     let file_name = output_path.file_name().and_then(|name| name.to_str()).ok_or_else(|| anyhow!("output path has invalid UTF-8: {output}"))?;
     let base = volume_file::multi_volume_base_name(file_name);
     let entries = match fs::read_dir(parent) {

@@ -254,7 +254,17 @@ pub(crate) fn repaired_archive_output_path(input: &str) -> Result<PathBuf> {
 }
 
 pub(crate) fn discover_volume_siblings(primary: &Path, base: &str) -> Result<Vec<String>> {
-    let parent = primary.parent().unwrap_or_else(|| Path::new("."));
+    // A bare relative file name (`archive.vol000.tzap`, no directory
+    // component) has `parent() == Some("")`, not `None` -- `unwrap_or_else`
+    // only substitutes on `None`, so the empty path used to reach
+    // `read_dir` unchanged. `read_dir("")` fails with `NotFound`, which the
+    // match below treats as "no siblings" instead of an error, so the most
+    // common way to invoke this CLI (from inside the archive's own
+    // directory, no `./` prefix) silently discovered zero sibling volumes
+    // and every multi-volume archive looked corrupt. Matches the same
+    // empty-parent normalization `volume_output_path` already applies on
+    // the write side.
+    let parent = primary.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
     let discovered = match volume_file::discover_sibling_volume_paths(parent, base) {
         Ok(paths) => paths,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
