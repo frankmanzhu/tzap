@@ -594,6 +594,40 @@ fn public_no_key_compares_only_public_crypto_profile_across_volumes() {
 }
 
 #[test]
+fn public_no_key_verify_readers_matches_slice_based_path_and_bounds_reads() {
+    // T2: the reader-based path must (a) agree byte-for-byte with the
+    // slice-based one, including the diagnostics list, and (b) never pull a
+    // large fraction of the archive into memory in one read, regardless of
+    // how many data blocks the archive holds. A multi-megabyte payload here
+    // stands in for the "multi-GB archive" scenario T2 targets: what matters
+    // is that no single read scales with total payload size, and that holds
+    // the same way at any size.
+    let payload = vec![0xABu8; 2 * 1024 * 1024 + 12_345];
+    let archive =
+        write_archive_with_root_auth(&[RegularFile::new("big.bin", &payload)], &master_key(), single_stream_options(), test_root_auth_config(), |request| {
+            Ok(test_root_auth_value(request))
+        })
+        .unwrap();
+
+    let slice_report =
+        public_no_key_verify_volumes_with(&[archive.bytes.as_slice()], |footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root))).unwrap();
+
+    let counting = CountingReadAt::new(archive.bytes.clone(), Vec::new());
+    let reader: &dyn ArchiveReadAt = &counting;
+    let reader_report = public_no_key_verify_readers_with(&[reader], |footer, archive_root| Ok(test_root_auth_verifies(footer, archive_root))).unwrap();
+
+    assert_eq!(slice_report, reader_report);
+
+    let max_single_read = counting.reads().iter().map(|(start, end)| end - start).max().unwrap();
+    const MAX_EXPECTED_SINGLE_READ: u64 = 200 * 1024; // one BlockRecord (64 KiB block + framing) with headroom.
+    assert!(
+        max_single_read <= MAX_EXPECTED_SINGLE_READ,
+        "reader-based verification must not materialize large chunks of the archive at once, saw a single read of {max_single_read} bytes (archive is {} bytes)",
+        archive.bytes.len(),
+    );
+}
+
+#[test]
 fn locator_based_cmra_recovery_treats_header_damage_as_recoverable() {
     let archive = write_archive_with_root_auth(
         &[RegularFile::new("cmra-header.txt", b"header fallback")],

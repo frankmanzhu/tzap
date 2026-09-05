@@ -300,6 +300,25 @@ pub fn verify_root_auth_footer(
     use_system_roots: bool,
     include_official_tzap_root: bool,
 ) -> Result<X509RootAuthReport, X509RootAuthError> {
+    verify_root_auth_footer_at_time(footer, archive_root, trusted_roots_der, use_system_roots, include_official_tzap_root, None)
+}
+
+/// Same as [`verify_root_auth_footer`], but the certificate chain is validated
+/// at `chain_validation_time_unix_seconds` instead of the verifier's current
+/// time when `Some`. `None` preserves the original behavior exactly.
+///
+/// This is what makes signing-time validation expressible: a caller can pass
+/// the footer's own claimed `signed_at_unix_seconds` to check the chain as it
+/// stood at signing time, independent of whether the certificate has since
+/// expired or been superseded.
+pub fn verify_root_auth_footer_at_time(
+    footer: &RootAuthFooterV1,
+    archive_root: &[u8; 32],
+    trusted_roots_der: &[Vec<u8>],
+    use_system_roots: bool,
+    include_official_tzap_root: bool,
+    chain_validation_time_unix_seconds: Option<i64>,
+) -> Result<X509RootAuthReport, X509RootAuthError> {
     if footer.authenticator_id != X509_AUTHENTICATOR_ID {
         return Err(X509RootAuthError::Invalid("unsupported authenticator id"));
     }
@@ -333,7 +352,14 @@ pub fn verify_root_auth_footer(
         return Err(X509RootAuthError::MissingTrustPolicy);
     }
 
-    let chain_validation_time_unix_seconds = current_unix_seconds()?;
+    let time_basis = match chain_validation_time_unix_seconds {
+        Some(_) => "explicit_validation_time",
+        None => "verifier_current_time",
+    };
+    let chain_validation_time_unix_seconds = match chain_validation_time_unix_seconds {
+        Some(time) => time,
+        None => current_unix_seconds()?,
+    };
     let verified_chain_subjects =
         verify_certificate_chain(&leaf_certificate, &parsed.chain_certificate_der, trusted_roots_der, use_system_roots, chain_validation_time_unix_seconds)?;
     let fingerprint = leaf_certificate.digest(MessageDigest::sha256())?;
@@ -346,8 +372,8 @@ pub fn verify_root_auth_footer(
         signature_scheme: signature_scheme_name(parsed.sig_scheme),
         chain_validation_time_unix_seconds,
         trust_store_policy: trust_store_policy_label(trusted_roots_der, use_system_roots, include_official_tzap_root),
-        x509_time_policy: "verifier_current_time",
-        chain_time_basis: "verifier_current_time",
+        x509_time_policy: time_basis,
+        chain_time_basis: time_basis,
         trusted_timestamp: false,
         revocation_checked: false,
         key_usage_policy: "archive_signature_minimal",
@@ -1459,6 +1485,32 @@ mod tests {
     }
 
     #[test]
+    fn signing_time_validation_accepts_a_certificate_expired_at_verifier_now() {
+        // T1: a certificate outside its validity window at verifier-now must
+        // still verify when the chain is validated at a passed-in time that
+        // falls inside that window.
+        let (root_cert, root_key) = test_ca_cert_valid_from("Acme Test Root CA", now_unix_seconds() - 30 * 86_400);
+        let (leaf_cert, leaf_key) = test_expired_leaf_cert("Acme Expired Signing", root_cert.as_ref(), root_key.as_ref());
+        let signed_at = now_unix_seconds() - 7200; // inside root's window and leaf's [0, now - 3600)
+        let signer = X509RootAuthSigner::new(leaf_cert.to_der().unwrap(), leaf_key, Vec::new(), signed_at).unwrap();
+        let request = RootAuthSigningRequest { root_auth_spec_id: ROOT_AUTH_SPEC_ID, archive_uuid: [1; 16], session_id: [2; 16], archive_root: [3; 32] };
+        let footer = signed_footer_for_request(&signer, &leaf_cert, &request, VOLUME_FORMAT_REV);
+        let roots = vec![root_cert.to_der().unwrap()];
+
+        // Default (verifier-now) behavior is unchanged: still rejected.
+        let err = verify_root_auth_footer(&footer, &request.archive_root, &roots, false, false).unwrap_err();
+        assert!(matches!(err, X509RootAuthError::UntrustedChain(message) if message.contains("certificate has expired")));
+        let err = verify_root_auth_footer_at_time(&footer, &request.archive_root, &roots, false, false, None).unwrap_err();
+        assert!(matches!(err, X509RootAuthError::UntrustedChain(message) if message.contains("certificate has expired")));
+
+        // Validating at the claimed signing time succeeds.
+        let report = verify_root_auth_footer_at_time(&footer, &request.archive_root, &roots, false, false, Some(signed_at)).unwrap();
+        assert_eq!(report.chain_validation_time_unix_seconds, signed_at);
+        assert_eq!(report.x509_time_policy, "explicit_validation_time");
+        assert_eq!(report.chain_time_basis, "explicit_validation_time");
+    }
+
+    #[test]
     fn no_key_usage_leaf_verifies_with_minimal_policy_report() {
         // §14.10: a leaf with no KeyUsage extension at all is accepted, and the
         // report pins the minimal policies.
@@ -2094,6 +2146,25 @@ UYmOb4/v/bM2BnDhU6S083QojMs7wNTPJ5UvDv9f6YflMj0nR1qpNuuQY7c8bVrU\n\
         builder.set_issuer_name(&name).unwrap();
         builder.set_pubkey(&key).unwrap();
         builder.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
+        builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
+        builder.append_extension(BasicConstraints::new().critical().ca().build().unwrap()).unwrap();
+        builder.append_extension(KeyUsage::new().critical().key_cert_sign().crl_sign().build().unwrap()).unwrap();
+        builder.sign(&key, MessageDigest::sha256()).unwrap();
+        (builder.build(), key)
+    }
+
+    fn test_ca_cert_valid_from(cn: &str, not_before_unix: i64) -> (X509, PKey<Private>) {
+        let key = PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap();
+        let mut name = X509NameBuilder::new().unwrap();
+        name.append_entry_by_text("CN", cn).unwrap();
+        let name = name.build();
+        let mut builder = X509::builder().unwrap();
+        builder.set_version(2).unwrap();
+        builder.set_serial_number(&random_serial_number()).unwrap();
+        builder.set_subject_name(&name).unwrap();
+        builder.set_issuer_name(&name).unwrap();
+        builder.set_pubkey(&key).unwrap();
+        builder.set_not_before(&Asn1Time::from_unix(not_before_unix).unwrap()).unwrap();
         builder.set_not_after(&Asn1Time::days_from_now(365).unwrap()).unwrap();
         builder.append_extension(BasicConstraints::new().critical().ca().build().unwrap()).unwrap();
         builder.append_extension(KeyUsage::new().critical().key_cert_sign().crl_sign().build().unwrap()).unwrap();

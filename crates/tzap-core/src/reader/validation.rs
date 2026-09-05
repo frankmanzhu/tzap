@@ -14,6 +14,7 @@ use crate::metadata::{
     hash_prefix, DirectoryHintShardEntry, DirectoryHintTable, EnvelopeEntry, FileEntry, FrameEntry, IndexRoot, IndexShard, MetadataLimits, ShardEntry,
 };
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
+use crate::root_auth::data_block_merkle_leaf_hash_for_revision;
 use crate::tar_model::{validate_tar_stream_total_extraction_size, TarEntryKind, TarStreamTotalExtractionSizeValidator};
 use crate::wire::{
     BlockRecord, CriticalMetadataImage, CryptoHeader, CryptoHeaderFixed, ExtensionTlv, ManifestFooter, RootAuthFooterV1, VolumeHeader, VolumeTrailer,
@@ -164,6 +165,114 @@ pub(crate) fn parse_public_block_observation(
     }
 
     Ok(blocks)
+}
+
+/// Result of [`parse_public_block_observation_read_at`]: block indices seen in
+/// this volume (data and parity, for coverage/duplicate checks) plus the
+/// Merkle leaf hash of every *data* block, keyed by global block index.
+///
+/// Deliberately holds no block payloads: each record's payload is hashed and
+/// dropped immediately, which is what keeps this path's memory bounded
+/// regardless of archive size (T2).
+pub(crate) struct PublicBlockObservationReadAt {
+    pub(crate) block_indices: BTreeSet<u64>,
+    pub(crate) data_leaf_hashes: BTreeMap<u64, [u8; 32]>,
+}
+
+/// Seek-based counterpart of [`parse_public_block_observation`]: identical
+/// framing, ordering, and error semantics, but driven through
+/// [`ArchiveReadAt`] one record at a time instead of over an in-memory slice,
+/// and it never retains a data block's payload past computing its Merkle leaf
+/// hash. `archive_len` is the volume's total length, established once by the
+/// caller, so this does not re-query it per record.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn parse_public_block_observation_read_at(
+    reader: &dyn ArchiveReadAt,
+    archive_len: u64,
+    start: u64,
+    image: &CriticalMetadataImage,
+    block_size: usize,
+    volume_header: &VolumeHeader,
+    format_version: u16,
+    volume_format_rev: u16,
+) -> Result<PublicBlockObservationReadAt, FormatError> {
+    if start != image.block_records_offset {
+        return Err(FormatError::InvalidArchive("public BlockRecord observation start mismatch"));
+    }
+    let scan_limit = image
+        .block_records_offset
+        .checked_add(image.block_records_length)
+        .ok_or(FormatError::InvalidArchive("public BlockRecord observation limit overflow"))?;
+    if scan_limit != image.manifest_footer_offset {
+        return Err(FormatError::InvalidArchive("public BlockRecord observation limit mismatch"));
+    }
+    if scan_limit < start {
+        return Err(FormatError::InvalidArchive("public BlockRecord observation limit before start"));
+    }
+    if scan_limit > archive_len {
+        return Err(FormatError::InvalidArchive("public BlockRecord observation limit exceeds archive length"));
+    }
+    let record_len_usize = block_size.checked_add(BLOCK_RECORD_FRAMING_LEN).ok_or(FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let record_len = u64::try_from(record_len_usize).map_err(|_| FormatError::InvalidArchive("BlockRecord length overflow"))?;
+    let region_len = scan_limit - start;
+    if region_len % record_len != 0 {
+        return Err(FormatError::InvalidArchive("public BlockRecord observation window is not aligned"));
+    }
+
+    let mut block_indices = BTreeSet::new();
+    let mut data_leaf_hashes = BTreeMap::new();
+    let mut offset = start;
+    let mut observed_slot = 0u64;
+    while offset < scan_limit {
+        let mut magic = [0u8; 4];
+        reader.read_exact_at(offset, &mut magic)?;
+        if magic != *b"TZBK" {
+            break;
+        }
+        let record_end = checked_u64_add(offset, record_len, "BlockRecord")?;
+        if record_end > scan_limit {
+            return Err(FormatError::InvalidArchive("public BlockRecord observation slot is incomplete"));
+        }
+        let raw = read_at_vec_unchecked(reader, offset, record_len_usize)?;
+        let record = BlockRecord::parse(&raw, block_size)?;
+        drop(raw);
+        let expected_block_index = checked_u64_add(
+            volume_header.volume_index as u64,
+            checked_u64_mul(observed_slot, volume_header.stripe_width as u64, "BlockRecord index overflow")?,
+            "BlockRecord index overflow",
+        )?;
+        if record.block_index != expected_block_index {
+            return Err(FormatError::InvalidArchive("public BlockRecord index does not match volume position"));
+        }
+        if record.kind.is_data() {
+            let hash =
+                data_block_merkle_leaf_hash_for_revision(format_version, volume_format_rev, record.block_index, record.kind, record.flags, &record.payload)?;
+            data_leaf_hashes.insert(record.block_index, hash);
+        }
+        if !block_indices.insert(record.block_index) {
+            return Err(FormatError::InvalidArchive("duplicate BlockRecord index"));
+        }
+        offset = record_end;
+        observed_slot = observed_slot.checked_add(1).ok_or(FormatError::InvalidArchive("BlockRecord count overflow"))?;
+    }
+
+    let mut scan = if offset < scan_limit { checked_u64_add(offset, record_len, "BlockRecord")? } else { scan_limit };
+    while scan < scan_limit {
+        let record_end = checked_u64_add(scan, record_len, "BlockRecord")?;
+        if record_end <= scan_limit {
+            let mut magic = [0u8; 4];
+            reader.read_exact_at(scan, &mut magic)?;
+            if magic == *b"TZBK" {
+                let raw = read_at_vec_unchecked(reader, scan, record_len_usize)?;
+                if BlockRecord::parse(&raw, block_size).is_ok() {
+                    return Err(FormatError::InvalidArchive("public observation has ambiguous extra BlockRecord"));
+                }
+            }
+        }
+        scan = record_end;
+    }
+
+    Ok(PublicBlockObservationReadAt { block_indices, data_leaf_hashes })
 }
 
 pub(crate) fn block_record_error_is_recoverable_erasure(error: &FormatError) -> bool {

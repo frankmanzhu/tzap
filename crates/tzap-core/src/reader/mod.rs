@@ -45,6 +45,7 @@ pub(crate) use cmra::*;
 pub(crate) use sidecar::*;
 pub(crate) use validation::*;
 pub use volume::public_no_key_inspect_footer;
+pub use volume::public_no_key_verify_readers_with_options;
 pub use volume::public_no_key_verify_volumes_with_options;
 pub(crate) use volume::*;
 pub use volume::{validate_volume_set_member_metadata, PublicNoKeyFooterInspection, PublicNoKeyFooterStatus};
@@ -832,6 +833,13 @@ where
     F: FnMut(&RootAuthFooterV1, &[u8; 32]) -> Result<bool, FormatError>,
 {
     public_no_key_verify_volumes_with_options(volumes, verifier, ReaderOptions::default())
+}
+
+pub fn public_no_key_verify_readers_with<F>(volumes: &[&dyn ArchiveReadAt], verifier: F) -> Result<PublicNoKeyVerification, FormatError>
+where
+    F: FnMut(&RootAuthFooterV1, &[u8; 32]) -> Result<bool, FormatError>,
+{
+    public_no_key_verify_readers_with_options(volumes, verifier, ReaderOptions::default())
 }
 
 /// Decode a single-volume, dictionary-free non-seekable archive image into tar

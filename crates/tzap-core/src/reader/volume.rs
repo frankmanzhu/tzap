@@ -7,8 +7,8 @@ use crate::crypto::{verify_integrity_tag, HmacDomain, KdfParams, MasterKey, Subk
 use crate::format::{FormatError, MANIFEST_FOOTER_LEN, VOLUME_FORMAT_REV_45, VOLUME_HEADER_LEN, VOLUME_TRAILER_LEN};
 use crate::raw_stream_profile::reject_unsupported_raw_stream_profile;
 use crate::root_auth::{
-    archive_root_for_revision, data_block_merkle_root_for_revision, root_auth_descriptor_digest_for_revision, signer_identity_digest, ArchiveRootInputs,
-    DataBlockMerkleLeaf,
+    archive_root_for_revision, data_block_merkle_root_for_revision, data_block_merkle_root_from_leaf_hashes_for_revision,
+    root_auth_descriptor_digest_for_revision, signer_identity_digest, ArchiveRootInputs, DataBlockMerkleLeaf,
 };
 use crate::wire::{
     compute_key_wrap_table_digest, BlockRecord, CryptoHeader, CryptoHeaderFixed, ExtensionTlv, KeyWrapTableV1, ManifestFooter, RootAuthFooterV1, VolumeHeader,
@@ -902,6 +902,157 @@ pub(crate) fn parse_public_no_key_volume(bytes: &[u8], options: ReaderOptions) -
     })
 }
 
+/// Reader-based counterpart of [`ParsedPublicNoKeyVolume`]: carries no
+/// `BlockRecord`s (and therefore no block payloads) at all. Coverage and
+/// cross-volume duplicate checks need only indices; the data-block Merkle
+/// commitment needs only per-block leaf hashes. Holding either a `BlockRecord`
+/// map or a `DataBlockMerkleLeaf` list here would reintroduce the
+/// double-materialization T2 removes.
+pub(crate) struct ParsedPublicNoKeyVolumeReadAt {
+    pub(crate) volume_header: VolumeHeader,
+    pub(crate) crypto_header: CryptoHeaderFixed,
+    pub(crate) kdf_params: KdfParams,
+    pub(crate) root_auth_footer: RootAuthFooterV1,
+    pub(crate) root_auth_footer_bytes: Vec<u8>,
+    pub(crate) block_indices: BTreeSet<u64>,
+    pub(crate) data_leaf_hashes: BTreeMap<u64, [u8; 32]>,
+}
+
+pub(crate) fn parse_public_no_key_volume_read_at(reader: &dyn ArchiveReadAt, options: ReaderOptions) -> Result<ParsedPublicNoKeyVolumeReadAt, FormatError> {
+    validate_reader_options(options)?;
+    let len = reader.len()?;
+    if len < (VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN) as u64 {
+        return Err(FormatError::InvalidLength {
+            structure: "archive",
+            expected: VOLUME_HEADER_LEN + VOLUME_TRAILER_LEN,
+            actual: to_usize(len, "archive length")?,
+        });
+    }
+    let volume_header_bytes = read_at_vec(reader, 0, VOLUME_HEADER_LEN, "archive")?;
+    let volume_header = VolumeHeader::parse(&volume_header_bytes)?;
+    parse_volume_format_dispatch(&volume_header)?;
+    let crypto_start = volume_header.crypto_header_offset as u64;
+    let crypto_len = volume_header.crypto_header_length as usize;
+    let crypto_bytes = read_at_vec(reader, crypto_start, crypto_len, "CryptoHeader")?;
+    let parsed_crypto = CryptoHeader::parse(&crypto_bytes, volume_header.crypto_header_length)?;
+    parsed_crypto.validate_extension_semantics()?;
+    validate_seekable_supported_volume(&volume_header, &parsed_crypto.fixed, &parsed_crypto.extensions)?;
+    validate_crypto_class_parity_exactness(&parsed_crypto.fixed)?;
+
+    let terminal = locate_v45_public_terminal_read_at(reader, len, &volume_header, &parsed_crypto, options)?;
+    let crypto_end = checked_u64_add(crypto_start, crypto_len as u64, "CryptoHeader")?;
+    let block_records_start = match &parsed_crypto.kdf_params {
+        KdfParams::RecipientWrap { key_wrap_table_length, .. } => checked_u64_add(crypto_end, *key_wrap_table_length as u64, "KeyWrapTableV1")?,
+        _ => crypto_end,
+    };
+    let footer = &terminal.root_auth_footer;
+    let observation = parse_public_block_observation_read_at(
+        reader,
+        len,
+        block_records_start,
+        &terminal.image,
+        parsed_crypto.fixed.block_size as usize,
+        &volume_header,
+        footer.format_version,
+        footer.volume_format_rev,
+    )?;
+    Ok(ParsedPublicNoKeyVolumeReadAt {
+        volume_header,
+        crypto_header: parsed_crypto.fixed,
+        kdf_params: parsed_crypto.kdf_params,
+        root_auth_footer: terminal.root_auth_footer,
+        root_auth_footer_bytes: terminal.root_auth_footer_bytes,
+        block_indices: observation.block_indices,
+        data_leaf_hashes: observation.data_leaf_hashes,
+    })
+}
+
+/// Reader-based counterpart of [`public_no_key_verify_volumes_with_options`]
+/// (T2): takes one [`ArchiveReadAt`] per volume instead of `&[&[u8]]`, so a
+/// caller can pass a `File` and never `fs::read` the volume, and it never
+/// materializes data-block payloads for the whole archive at once — only a
+/// 32-byte Merkle leaf hash per data block is retained. Produces byte-for-byte
+/// identical reports and diagnostics to the slice-based path on the same
+/// input; that path is untouched by this addition.
+pub fn public_no_key_verify_readers_with_options<F>(
+    volumes: &[&dyn ArchiveReadAt],
+    mut verifier: F,
+    options: ReaderOptions,
+) -> Result<PublicNoKeyVerification, FormatError>
+where
+    F: FnMut(&RootAuthFooterV1, &[u8; 32]) -> Result<bool, FormatError>,
+{
+    validate_reader_options(options)?;
+    if volumes.is_empty() {
+        return Err(FormatError::InvalidArchive("no volumes supplied"));
+    }
+    let mut parsed = Vec::with_capacity(volumes.len());
+    for volume in volumes {
+        parsed.push(parse_public_no_key_volume_read_at(*volume, options)?);
+    }
+    let first = parsed.first().ok_or(FormatError::InvalidArchive("no volumes supplied"))?;
+    if parsed.len() != first.crypto_header.stripe_width as usize {
+        return Err(FormatError::ReaderUnsupported("public no-key verification requires a complete volume set"));
+    }
+
+    let mut seen_volume_indexes = BTreeSet::new();
+    let mut block_indices = BTreeSet::new();
+    let mut data_leaf_hashes = BTreeMap::new();
+    for volume in &parsed {
+        if volume.volume_header.archive_uuid != first.volume_header.archive_uuid
+            || volume.volume_header.session_id != first.volume_header.session_id
+            || !public_crypto_headers_agree(&volume.crypto_header, &first.crypto_header)
+            || !public_kdf_profiles_agree(&volume.kdf_params, &first.kdf_params)
+        {
+            return Err(FormatError::InvalidArchive("public no-key volume global metadata differs"));
+        }
+        if volume.root_auth_footer_bytes != first.root_auth_footer_bytes {
+            return Err(FormatError::InvalidArchive("public no-key RootAuthFooter copies differ"));
+        }
+        if !seen_volume_indexes.insert(volume.volume_header.volume_index) {
+            return Err(FormatError::InvalidArchive("duplicate public no-key volume index"));
+        }
+        for block_index in &volume.block_indices {
+            if !block_indices.insert(*block_index) {
+                return Err(FormatError::InvalidArchive("duplicate BlockRecord index"));
+            }
+        }
+        for (block_index, hash) in &volume.data_leaf_hashes {
+            data_leaf_hashes.insert(*block_index, *hash);
+        }
+    }
+    validate_complete_global_block_coverage_over_indices(block_indices.iter().copied(), &BTreeSet::new())?;
+
+    let footer = &first.root_auth_footer;
+    let total_data_block_count = u64::try_from(data_leaf_hashes.len()).map_err(|_| FormatError::InvalidArchive("public no-key data block count overflow"))?;
+    let leaf_hashes = data_leaf_hashes.values().copied().collect::<Vec<_>>();
+    let observed_data_root = data_block_merkle_root_from_leaf_hashes_for_revision(footer.format_version, footer.volume_format_rev, &leaf_hashes)?;
+    if total_data_block_count != footer.total_data_block_count || observed_data_root != footer.data_block_merkle_root {
+        return Err(FormatError::InvalidArchive("public no-key data-block commitment mismatch"));
+    }
+    let archive_root = recompute_public_archive_root(footer, &first.crypto_header)?;
+    if archive_root != footer.archive_root {
+        return Err(FormatError::InvalidArchive("public no-key archive_root mismatch"));
+    }
+    if !verifier(footer, &archive_root)? {
+        return Err(FormatError::InvalidArchive("public no-key authenticator verification failed"));
+    }
+    Ok(PublicNoKeyVerification {
+        format_version: footer.format_version,
+        volume_format_rev: footer.volume_format_rev,
+        archive_root,
+        authenticator_id: footer.authenticator_id,
+        signer_identity_type: footer.signer_identity_type,
+        signer_identity_bytes: footer.signer_identity_bytes.clone(),
+        total_data_block_count,
+        diagnostics: vec![
+            PublicNoKeyDiagnostic::PublicDataBlockCommitmentVerified,
+            PublicNoKeyDiagnostic::PublicPhysicalCompletenessUnverified,
+            PublicNoKeyDiagnostic::PublicRecoveryMarginUnchecked,
+        ],
+    })
+}
+
 pub(crate) fn public_crypto_headers_agree(left: &CryptoHeaderFixed, right: &CryptoHeaderFixed) -> bool {
     left.length == right.length
         && left.stripe_width == right.stripe_width
@@ -1079,8 +1230,19 @@ pub(crate) fn manifest_bootstrap_fields_match(left: &ManifestFooter, right: &Man
 }
 
 pub(crate) fn validate_complete_global_block_coverage(blocks: &BTreeMap<u64, BlockRecord>, erased_block_indices: &BTreeSet<u64>) -> Result<(), FormatError> {
+    validate_complete_global_block_coverage_over_indices(blocks.keys().copied(), erased_block_indices)
+}
+
+/// Same check as [`validate_complete_global_block_coverage`], generalized over
+/// any source of block indices rather than a `BlockRecord` map — the
+/// reader-based verification path (T2) tracks indices in a `BTreeSet` without
+/// ever materializing a `BlockRecord` per index.
+pub(crate) fn validate_complete_global_block_coverage_over_indices(
+    block_indices: impl Iterator<Item = u64>,
+    erased_block_indices: &BTreeSet<u64>,
+) -> Result<(), FormatError> {
     let mut expected = 0u64;
-    let mut block_iter = blocks.keys().copied().peekable();
+    let mut block_iter = block_indices.peekable();
     let mut erasure_iter = erased_block_indices.iter().copied().peekable();
 
     loop {
