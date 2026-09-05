@@ -513,10 +513,20 @@ pub fn portable_primary_pax(path: &[u8], mode: u32, source_os: &str, path_requir
     if !is_source_os(source_os) {
         return Err(FormatError::WriterUnsupported("invalid metadata source OS"));
     }
+    // freebsd/netbsd/openbsd/solaris/other-unix sources still carry POSIX
+    // ownership and timestamp fields (added later by the caller), which
+    // validate_profile_owned_primary_fields requires POSIX_PROFILE to cover.
+    // Without this, any of those sources hits "primary key owner profile is
+    // not selected" the moment the caller attaches a creation/access time or
+    // a POSIX owner, since portable-v1 alone doesn't claim that ownership.
+    let required_profiles = match source_os {
+        "freebsd" | "netbsd" | "openbsd" | "solaris" | "other-unix" => format!("{PORTABLE_PROFILE},{POSIX_PROFILE}"),
+        _ => PORTABLE_PROFILE.to_owned(),
+    };
     let mut records = PaxRecords::new();
     records.insert("TZAP.metadata.capture-status".into(), b"complete".to_vec());
     records.insert("TZAP.metadata.optional-profiles".into(), Vec::new());
-    records.insert("TZAP.metadata.required-profiles".into(), PORTABLE_PROFILE.as_bytes().to_vec());
+    records.insert("TZAP.metadata.required-profiles".into(), required_profiles.into_bytes());
     records.insert("TZAP.metadata.source-filesystem".into(), b"unknown".to_vec());
     records.insert("TZAP.metadata.source-os".into(), source_os.as_bytes().to_vec());
     records.insert("TZAP.metadata.version".into(), b"1".to_vec());
@@ -2225,6 +2235,30 @@ mod tests {
         let mut reversed = encoded.split_inclusive(|byte| *byte == b'\n').map(<[u8]>::to_vec).collect::<Vec<_>>();
         reversed.swap(0, 1);
         assert!(parse_canonical_pax(&reversed.concat()).is_err());
+    }
+
+    /// Regression test for a bug found via mobile (iOS/Android) real-file
+    /// archive creation: those platforms report `source_os` values that fall
+    /// into tzap-core's generic "other-unix" bucket (they aren't linux, macos,
+    /// or windows), yet the caller in envelope.rs still attaches a POSIX
+    /// owner and a `LIBARCHIVE.creationtime`/`atime` timestamp, since those
+    /// come from plain `std::fs` calls available on any Unix. Those fields
+    /// are owned by `POSIX_PROFILE` per `validate_profile_owned_primary_fields`,
+    /// so a declaration that only requires `PORTABLE_PROFILE` and then gains
+    /// one of those keys fails parsing with "primary key owner profile is not
+    /// selected" the moment it's used for anything but a bare synthetic file.
+    #[test]
+    fn other_unix_source_with_posix_owned_fields_parses_as_native_metadata() {
+        let mut records = portable_primary_pax(b"file.txt", 0o644, "other-unix", false).unwrap();
+        records.insert("TZAP.portable.owner-kind".into(), b"posix".to_vec());
+        records.insert("uid".into(), b"501".to_vec());
+        records.insert("gid".into(), b"20".to_vec());
+        records.insert("LIBARCHIVE.creationtime".into(), b"1700000000".to_vec());
+        records.insert("atime".into(), b"1700000000".to_vec());
+
+        let parsed = parse_primary_metadata(&records).unwrap();
+        assert_eq!(parsed.declaration.source_os, "other-unix");
+        assert!(parsed.declaration.required_profiles.contains(&POSIX_PROFILE.to_owned()));
     }
 
     #[test]
