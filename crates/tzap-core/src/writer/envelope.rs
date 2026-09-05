@@ -2304,6 +2304,17 @@ pub(crate) fn build_primary_member_layout(
                 }
             } else {
                 pax_records.insert(key.into(), value);
+                // LIBARCHIVE.creationtime (unlike atime, uid, gid, ...) is
+                // owned by POSIX_PROFILE for these source OSes per
+                // validate_profile_owned_primary_fields's source_profile
+                // match; declaring it without that profile fails the
+                // writer's own round-trip parse. This must stay scoped to
+                // exactly this insertion (not a blanket per-source-OS rule in
+                // portable_primary_pax) since portable-v1-only is a hard
+                // invariant elsewhere, e.g. hardlink aliases.
+                if key == "LIBARCHIVE.creationtime" && crate::entry_metadata::source_os_requires_posix_profile(&portable_metadata.source_os) {
+                    pax_records.insert("TZAP.metadata.required-profiles".into(), format!("{PORTABLE_PROFILE},{}", crate::entry_metadata::POSIX_PROFILE).into_bytes());
+                }
             }
         }
     }
@@ -2644,6 +2655,9 @@ pub(crate) fn v45_portable_file_entry_flags(mode: u32, primary_sparse: bool, met
         | if metadata.native.required_profiles.iter().chain(&metadata.native.optional_profiles).any(|profile| profile != PORTABLE_PROFILE)
             || !metadata.native.primary_pax_records.is_empty()
             || metadata.native.auxiliary_records.iter().any(|record| record.native)
+            || (metadata.created.is_some()
+                && !metadata.native.primary_pax_records.contains_key("LIBARCHIVE.creationtime")
+                && crate::entry_metadata::source_os_requires_posix_profile(&metadata.source_os))
         {
             HAS_NATIVE_METADATA
         } else {

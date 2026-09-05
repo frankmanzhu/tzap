@@ -513,20 +513,10 @@ pub fn portable_primary_pax(path: &[u8], mode: u32, source_os: &str, path_requir
     if !is_source_os(source_os) {
         return Err(FormatError::WriterUnsupported("invalid metadata source OS"));
     }
-    // freebsd/netbsd/openbsd/solaris/other-unix sources still carry POSIX
-    // ownership and timestamp fields (added later by the caller), which
-    // validate_profile_owned_primary_fields requires POSIX_PROFILE to cover.
-    // Without this, any of those sources hits "primary key owner profile is
-    // not selected" the moment the caller attaches a creation/access time or
-    // a POSIX owner, since portable-v1 alone doesn't claim that ownership.
-    let required_profiles = match source_os {
-        "freebsd" | "netbsd" | "openbsd" | "solaris" | "other-unix" => format!("{PORTABLE_PROFILE},{POSIX_PROFILE}"),
-        _ => PORTABLE_PROFILE.to_owned(),
-    };
     let mut records = PaxRecords::new();
     records.insert("TZAP.metadata.capture-status".into(), b"complete".to_vec());
     records.insert("TZAP.metadata.optional-profiles".into(), Vec::new());
-    records.insert("TZAP.metadata.required-profiles".into(), required_profiles.into_bytes());
+    records.insert("TZAP.metadata.required-profiles".into(), PORTABLE_PROFILE.as_bytes().to_vec());
     records.insert("TZAP.metadata.source-filesystem".into(), b"unknown".to_vec());
     records.insert("TZAP.metadata.source-os".into(), source_os.as_bytes().to_vec());
     records.insert("TZAP.metadata.version".into(), b"1".to_vec());
@@ -2107,6 +2097,22 @@ pub(crate) fn is_source_os(value: &str) -> bool {
     matches!(value, "linux" | "freebsd" | "netbsd" | "openbsd" | "solaris" | "macos" | "windows" | "other-unix" | "other")
 }
 
+/// Whether this source OS's `LIBARCHIVE.creationtime` is owned by
+/// `POSIX_PROFILE` rather than being unowned like `uid`/`gid`/`atime`.
+/// `validate_profile_owned_primary_fields` requires `POSIX_PROFILE` to be
+/// declared before it will accept that key for
+/// freebsd/netbsd/openbsd/solaris/other-unix sources (see its `source_profile`
+/// match). The writer (`writer::envelope`) must add `POSIX_PROFILE` to
+/// required-profiles exactly when it is about to attach that key for one of
+/// these sources — and nowhere else, since portable-v1-only is a hard
+/// invariant for e.g. hardlink aliases — and
+/// `v45_portable_file_entry_flags` must predict `HAS_NATIVE_METADATA` under
+/// the identical condition, or the flags it predicts disagree with the ones
+/// actually written.
+pub(crate) fn source_os_requires_posix_profile(source_os: &str) -> bool {
+    matches!(source_os, "freebsd" | "netbsd" | "openbsd" | "solaris" | "other-unix")
+}
+
 pub(crate) fn valid_filesystem_token(value: &str) -> bool {
     value == "unknown"
         || (1..=32).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.' | b'_'))
@@ -2240,22 +2246,35 @@ mod tests {
     /// Regression test for a bug found via mobile (iOS/Android) real-file
     /// archive creation: those platforms report `source_os` values that fall
     /// into tzap-core's generic "other-unix" bucket (they aren't linux, macos,
-    /// or windows), yet the caller in envelope.rs still attaches a POSIX
-    /// owner and a `LIBARCHIVE.creationtime`/`atime` timestamp, since those
-    /// come from plain `std::fs` calls available on any Unix. Those fields
-    /// are owned by `POSIX_PROFILE` per `validate_profile_owned_primary_fields`,
-    /// so a declaration that only requires `PORTABLE_PROFILE` and then gains
-    /// one of those keys fails parsing with "primary key owner profile is not
-    /// selected" the moment it's used for anything but a bare synthetic file.
+    /// or windows), yet the caller in envelope.rs still attaches a
+    /// `LIBARCHIVE.creationtime`, since that comes from a plain `std::fs`
+    /// call available on any Unix. That key is owned by `POSIX_PROFILE` per
+    /// `validate_profile_owned_primary_fields`'s `source_profile` match, so a
+    /// declaration that only requires `PORTABLE_PROFILE` and then gains that
+    /// key fails parsing with "primary key owner profile is not selected"
+    /// the moment a real file (with a real creation time) is archived rather
+    /// than a bare synthetic fixture.
+    ///
+    /// `portable_primary_pax` itself always requires only `PORTABLE_PROFILE`
+    /// (checked by the second assertion) — adding `POSIX_PROFILE` unconditionally
+    /// there regressed hardlink aliases and other truly-portable-only entries,
+    /// which require `required_profiles == ["portable-v1"]` exactly. The real
+    /// fix is scoped to envelope.rs, at the exact point it attaches
+    /// `LIBARCHIVE.creationtime`; this test exercises the parser's side of
+    /// that contract by adding the profile the same way that call site does.
     #[test]
-    fn other_unix_source_with_posix_owned_fields_parses_as_native_metadata() {
-        let mut records = portable_primary_pax(b"file.txt", 0o644, "other-unix", false).unwrap();
-        records.insert("TZAP.portable.owner-kind".into(), b"posix".to_vec());
-        records.insert("uid".into(), b"501".to_vec());
-        records.insert("gid".into(), b"20".to_vec());
-        records.insert("LIBARCHIVE.creationtime".into(), b"1700000000".to_vec());
-        records.insert("atime".into(), b"1700000000".to_vec());
+    fn other_unix_source_with_posix_owned_creationtime_parses_only_with_posix_profile_declared() {
+        let bare = portable_primary_pax(b"file.txt", 0o644, "other-unix", false).unwrap();
+        assert_eq!(bare.get("TZAP.metadata.required-profiles").map(Vec::as_slice), Some(PORTABLE_PROFILE.as_bytes()));
 
+        let mut records = bare.clone();
+        records.insert("LIBARCHIVE.creationtime".into(), b"1700000000".to_vec());
+        assert!(
+            parse_primary_metadata(&records).is_err(),
+            "LIBARCHIVE.creationtime without POSIX_PROFILE declared should be rejected"
+        );
+
+        records.insert("TZAP.metadata.required-profiles".into(), format!("{PORTABLE_PROFILE},{POSIX_PROFILE}").into_bytes());
         let parsed = parse_primary_metadata(&records).unwrap();
         assert_eq!(parsed.declaration.source_os, "other-unix");
         assert!(parsed.declaration.required_profiles.contains(&POSIX_PROFILE.to_owned()));

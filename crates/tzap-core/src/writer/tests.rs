@@ -698,6 +698,42 @@ fn regular_file_writer_serializes_portable_creation_and_access_times() {
     assert_eq!(parsed.v45_metadata.primary_records.get("atime").map(Vec::as_slice), Some(b"1700000000.987654321".as_slice()));
 }
 
+/// Regression test for a bug found via mobile (iOS/Android) real-file
+/// archive creation: `source_os` values in tzap-core's generic "other-unix"
+/// bucket (anything that isn't linux/macos/windows, including iOS and
+/// Android) still get a real `created` timestamp from a plain `std::fs`
+/// call, and `LIBARCHIVE.creationtime` is owned by `POSIX_PROFILE` for that
+/// bucket. Before this fix, `portable_primary_pax` always declared only
+/// `PORTABLE_PROFILE`, so the writer produced a PAX header its own parser
+/// then rejected with "primary key owner profile is not selected" —
+/// `build_regular_file_member_group` here is exactly `write_regular_v45_header`'s
+/// entry point, so this exercises the real path, not a hand-built one.
+///
+/// It also covers the narrower bug from fixing that too broadly the first
+/// time: unconditionally requiring `POSIX_PROFILE` for every "other-unix"
+/// entry (rather than only when `created` is actually attached) desynced
+/// `v45_portable_file_entry_flags`'s predicted `HAS_NATIVE_METADATA` flag
+/// from the flag the reader recomputes from the written PAX header, which
+/// surfaces later as "streamed tar member metadata flags do not match
+/// FileEntry flags" — a mismatch this test's flag assertion would catch.
+#[test]
+fn other_unix_source_with_creation_time_round_trips_with_consistent_native_metadata_flag() {
+    let portable_metadata =
+        PortableFileMetadata { source_os: "other-unix".into(), created: Some(ArchiveTimestamp::new(1_700_000_000, 0)), ..PortableFileMetadata::default() };
+
+    let group = build_regular_file_member_group(b"photo.jpg", b"contents", 0o644, ArchiveTimestamp::UNIX_EPOCH, &portable_metadata).unwrap();
+    let parsed = parse_tar_member_group(&group, 4096).unwrap();
+
+    assert_eq!(parsed.v45_metadata.declaration.source_os, "other-unix");
+    assert!(parsed.v45_metadata.declaration.required_profiles.iter().any(|profile| profile == "posix-backup-v1"));
+    assert_ne!(parsed.v45_metadata.file_entry_flags & HAS_NATIVE_METADATA, 0);
+    assert_eq!(
+        v45_portable_file_entry_flags(0o644, false, &portable_metadata) & HAS_NATIVE_METADATA,
+        parsed.v45_metadata.file_entry_flags & HAS_NATIVE_METADATA,
+        "the writer's predicted flags must agree with what the reader recomputes from the written header"
+    );
+}
+
 #[test]
 fn directory_writer_emits_type_and_portable_ownership_metadata() {
     let portable_metadata = PortableFileMetadata {
