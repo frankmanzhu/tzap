@@ -3396,7 +3396,8 @@ fn bare_relative_path_discovers_volume_siblings_in_current_directory() {
     let _guard = Cleanup(vec![vol0.clone(), vol1.clone()]);
 
     let discovered = discover_volume_siblings(Path::new(&vol0_name), &base).expect("discover");
-    assert_eq!(discovered, vec![format!("./{vol0_name}"), format!("./{vol1_name}")]);
+    let expected = vec![Path::new(".").join(&vol0_name).to_string_lossy().into_owned(), Path::new(".").join(&vol1_name).to_string_lossy().into_owned()];
+    assert_eq!(discovered, expected);
 }
 
 #[test]
