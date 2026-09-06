@@ -37,7 +37,6 @@ use std::fs::File;
 use std::io;
 #[cfg(any(target_os = "linux", windows))]
 use std::io::{Seek, SeekFrom, Write};
-#[cfg(windows)]
 use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use tzap_core::{write_archive_sources_to_sink, RegularFileSource};
@@ -3372,4 +3371,53 @@ fn cli_bootstrap_sidecar_and_options_suite() {
     let mut bad_size_create = default_create_args("out.tzap".to_string(), vec!["src".to_string()]);
     bad_size_create.volume_size = Some("not_a_size".to_string());
     assert!(run_create(true, bad_size_create).is_err());
+}
+
+#[test]
+fn bare_relative_path_discovers_volume_siblings_in_current_directory() {
+    let base = format!("bare_sibling_test_{}", std::process::id());
+    let vol0_name = format!("{base}.vol000.tzap");
+    let vol1_name = format!("{base}.vol001.tzap");
+    let vol0 = PathBuf::from(&vol0_name);
+    let vol1 = PathBuf::from(&vol1_name);
+    let _ = fs::remove_file(&vol0);
+    let _ = fs::remove_file(&vol1);
+    fs::write(&vol0, b"vol0").unwrap();
+    fs::write(&vol1, b"vol1").unwrap();
+
+    struct Cleanup(Vec<PathBuf>);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            for path in &self.0 {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+    let _guard = Cleanup(vec![vol0.clone(), vol1.clone()]);
+
+    let discovered = discover_volume_siblings(Path::new(&vol0_name), &base).expect("discover");
+    assert_eq!(discovered, vec![format!("./{vol0_name}"), format!("./{vol1_name}")]);
+}
+
+#[test]
+fn bare_relative_path_detects_output_collision_for_multi_volume() {
+    let base = format!("bare_collision_test_{}", std::process::id());
+    let archive_name = format!("{base}.tzap");
+    let vol0_name = format!("{base}.vol000.tzap");
+    let vol0 = PathBuf::from(&vol0_name);
+    let _ = fs::remove_file(&vol0);
+    fs::write(&vol0, b"existing volume").unwrap();
+
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+    let _guard = Cleanup(vol0);
+
+    let result = check_output_path_collisions_for_volume_size_output(&archive_name);
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("already exists"), "expected collision error, got: {err_msg}");
 }
